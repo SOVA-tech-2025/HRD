@@ -1,0 +1,204 @@
+# === PYTHON ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# === ВИРТУАЛЬНЫЕ ОКРУЖЕНИЯ ===
+.env/
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.conda/
+
+# === ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ И СЕКРЕТЫ ===
+.env
+.env.local
+.env.development
+.env.staging
+.env.production
+.env.backup
+
+# Исключения: разрешаем примеры
+!.env.example
+!.env.template
+
+# === ЛОГИ И ОТЛАДКА ===
+logs/
+*.log
+pip-log.txt
+pip-delete-this-directory.txt
+
+# === БАЗА ДАННЫХ ===
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# Бэкапы БД
+*.sql
+*.dump
+*.backup
+backup_*.sql
+db_backup_*
+
+# === ТЕСТИРОВАНИЕ ===
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# === JUPYTER NOTEBOOKS ===
+.ipynb_checkpoints
+
+# === ДОКУМЕНТАЦИЯ ===
+docs/_build/
+.readthedocs.yml
+
+# === PyInstaller ===
+*.manifest
+*.spec
+
+# === mypy ===
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# === Pyre type checker ===
+.pyre/
+
+# === pytype static type analyzer ===
+.pytype/
+
+# === Cython debug symbols ===
+cython_debug/
+
+# === IDE И РЕДАКТОРЫ ===
+# PyCharm
+.idea/
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+
+# === ОПЕРАЦИОННЫЕ СИСТЕМЫ ===
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+
+# === DOCKER ===
+docker-compose.override.yml
+docker-compose.dev.yml
+docker-compose.local.yml
+
+# Логи Docker
+*.log
+
+# === ВРЕМЕННЫЕ ФАЙЛЫ ===
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+# Токены и ключи
+*token*
+*secret*
+*key*
+*password*
+
+# Исключения для наших файлов
+!generate_token.py
+!handlers/
+!keyboards/
+!database/
+
+# Файлы состояния
+*.state
+
+# Загруженные файлы пользователей
+uploads/
+downloads/
+media/
+
+# Кэш aiogram
+.aiogram_cache/
+
+# Сессии
+sessions/
+*.session
+
+# === РАЗРАБОТКА ===
+# Файлы разработчика
+TODO.md
+NOTES.md
+.notes/
+
+# Тестовые данные
+test_data/
+sample_data/
