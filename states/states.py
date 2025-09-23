@@ -10,6 +10,7 @@ class RegistrationStates(StatesGroup):
     waiting_for_phone = State()
     waiting_for_role = State()
     waiting_for_admin_token = State()
+    waiting_for_admin_role_selection = State()
 
 class AdminStates(StatesGroup):
     """Состояния для административной панели"""
@@ -76,9 +77,208 @@ class MentorshipStates(StatesGroup):
     waiting_for_trainee_action = State()
     waiting_for_test_assignment = State()
     waiting_for_test_selection_for_trainee = State()
+    selecting_trajectory = State()  # Выбор траектории для стажера
+    confirming_trajectory_assignment = State()  # Подтверждение назначения траектории
+    selecting_manager = State()  # Выбор руководителя для стажера
+    confirming_manager_assignment = State()  # Подтверждение назначения руководителя
+
+
+class ManagerAttestationStates(StatesGroup):
+    """Состояния для проведения аттестаций руководителями (Task 7)"""
+    waiting_for_date = State()  # Ввод новой даты аттестации
+    waiting_for_time = State()  # Ввод нового времени аттестации
+    confirming_schedule = State()  # Подтверждение нового расписания
+    waiting_for_score = State()  # Ввод балла за вопрос аттестации
+    confirming_result = State()  # Подтверждение результатов
 
 class TraineeManagementStates(StatesGroup):
     """Состояния для управления стажерами"""
     waiting_for_trainee_selection = State()
     waiting_for_trainee_action = State()
     waiting_for_test_access_grant = State()
+
+class GroupManagementStates(StatesGroup):
+    """Состояния для управления группами пользователей"""
+    # Создание группы
+    waiting_for_group_name = State()
+    
+    # Изменение группы
+    waiting_for_group_selection = State()
+    waiting_for_new_group_name = State()
+    waiting_for_rename_confirmation = State()
+
+
+class ObjectManagementStates(StatesGroup):
+    """Состояния для управления объектами"""
+    # Создание объекта
+    waiting_for_object_name = State()
+    
+    # Изменение объекта
+    waiting_for_object_selection = State()
+    waiting_for_new_object_name = State()
+    waiting_for_object_rename_confirmation = State()
+
+
+class UserActivationStates(StatesGroup):
+    """Состояния для активации новых пользователей рекрутером"""
+    # Выбор пользователя для активации
+    waiting_for_user_selection = State()
+    
+    # Workflow назначения параметров
+    waiting_for_role_selection = State()
+    waiting_for_group_selection = State()
+    waiting_for_internship_object_selection = State()
+    waiting_for_work_object_selection = State()
+    
+    # Подтверждение активации
+    waiting_for_activation_confirmation = State()
+
+
+class UserEditStates(StatesGroup):
+    """Состояния для редактирования данных пользователей рекрутером"""
+    # Фильтрация пользователей
+    waiting_for_filter_selection = State()
+    waiting_for_user_selection = State()
+    viewing_user_info = State()
+    
+    # Старый способ (для совместимости)
+    waiting_for_user_number = State()
+    
+    # Редактирование различных полей
+    waiting_for_new_full_name = State()
+    waiting_for_new_phone = State()
+    waiting_for_new_role = State()
+    waiting_for_new_group = State()
+    waiting_for_new_internship_object = State()
+    waiting_for_new_work_object = State()
+    
+    # Подтверждение изменений
+    waiting_for_change_confirmation = State()
+
+
+class LearningPathStates(StatesGroup):
+    """Состояния для создания и редактирования траекторий обучения"""
+    # Основное меню траекторий
+    main_menu = State()
+    
+    # Создание траектории
+    waiting_for_trajectory_name = State()
+    waiting_for_stage_name = State()
+    waiting_for_session_name = State()
+    waiting_for_test_selection = State()
+    
+    # Создание нового теста в процессе создания траектории
+    creating_test_name = State()
+    creating_test_materials_choice = State()
+    creating_test_materials = State()
+    creating_test_description = State()
+    creating_test_question_type = State()
+    creating_test_question_text = State()
+    creating_test_question_answer = State()
+    creating_test_question_points = State()
+    creating_test_more_questions = State()
+    creating_test_threshold = State()
+    
+    # Управление этапами и сессиями
+    adding_session_to_stage = State()
+    adding_stage_to_trajectory = State()
+    
+    # Финальные шаги траектории
+    waiting_for_attestation_selection = State()
+    waiting_for_attestation_confirmation = State()  # ПУНКТ 49 ТЗ: подтверждение аттестации
+    waiting_for_group_selection = State()
+    waiting_for_trajectory_save_confirmation = State()
+    waiting_for_final_save_confirmation = State()  # Новое состояние для пункта 55 ТЗ
+    
+    # Редактирование существующих траекторий
+    waiting_for_trajectory_selection = State()
+    editing_trajectory = State()
+
+
+class AttestationStates(StatesGroup):
+    """Состояния для создания и редактирования аттестаций"""
+    # Основное меню аттестаций
+    main_menu = State()
+    
+    # Создание аттестации
+    waiting_for_attestation_creation_start = State()  # ПУНКТ 6-7 ТЗ
+    waiting_for_attestation_name = State()
+    waiting_for_attestation_question = State()
+    waiting_for_more_questions = State()
+    waiting_for_passing_score = State()
+    
+    # Редактирование аттестаций
+    waiting_for_attestation_selection = State()
+    editing_attestation = State()
+    
+    # Удаление аттестации
+    waiting_for_delete_confirmation = State()
+
+
+class MentorAssignmentStates(StatesGroup):
+    """Состояния для назначения наставников стажерам"""
+    selecting_trainee = State()  # Выбор стажера
+    selecting_mentor = State()   # Выбор наставника
+    confirming_assignment = State()  # Подтверждение назначения
+
+
+class TraineeTrajectoryStates(StatesGroup):
+    """Состояния для прохождения траекторий стажерами (Task 6)"""
+    selecting_stage = State()     # Выбор этапа траектории
+    selecting_session = State()   # Выбор сессии в этапе
+    selecting_test = State()      # Выбор теста в сессии
+    viewing_materials = State()   # Просмотр материалов теста
+    taking_test = State()        # Прохождение теста
+
+
+class AttestationAssignmentStates(StatesGroup):
+    """Состояния для назначения аттестации стажерам наставником (Task 7)"""
+    selecting_manager_for_attestation = State()  # Выбор руководителя для аттестации
+    confirming_attestation_assignment = State()  # Подтверждение назначения аттестации
+
+
+class BroadcastStates(StatesGroup):
+    """Состояния для массовой рассылки тестов по группам (Task 8)"""
+    selecting_test = State()  # Выбор теста для рассылки
+    selecting_groups = State()  # Выбор групп для рассылки
+    confirming_broadcast = State()  # Подтверждение рассылки
+
+
+class KnowledgeBaseStates(StatesGroup):
+    """Состояния для управления базой знаний (Task 9)"""
+    # Основное меню базы знаний (рекрутер)
+    main_menu = State()
+    
+    # Создание папки (9-1)
+    waiting_for_folder_name = State()
+    folder_created_add_material = State()
+    
+    # Добавление материала в папку
+    waiting_for_material_name = State()
+    waiting_for_material_content = State()  # PDF файл или ссылка
+    waiting_for_material_description = State()
+    waiting_for_material_photos = State()  # Необязательные фотографии
+    confirming_material_save = State()
+    
+    # Просмотр папки (9-2)
+    viewing_folder = State()
+    viewing_material = State()
+    
+    # Изменение доступа к папке (9-3)
+    selecting_access_groups = State()
+    confirming_access_changes = State()
+    
+    # Изменение названия папки (9-4)
+    waiting_for_new_folder_name = State()
+    confirming_folder_rename = State()
+    
+    # Удаление папки (9-5)
+    confirming_folder_deletion = State()
+    
+    # Удаление материала
+    confirming_material_deletion = State()
+    
+    # Просмотр базы знаний (для сотрудников)
+    employee_browsing = State()
+    employee_viewing_folder = State()
+    employee_viewing_material = State()

@@ -7,36 +7,11 @@ async def set_bot_commands(bot: Bot, role: str = None):
         BotCommand(command="start", description="Запуск/перезапуск бота"),
         BotCommand(command="help", description="Получить справку")
     ]
-    
-    if role == "Управляющий":
+
+    # Все команды дублируют клавиатуру, поэтому оставляем только базовые команды
+    # + logout для всех авторизованных пользователей
+    if role in ["Руководитель", "Рекрутер", "Наставник", "Сотрудник", "Стажер"]:
         commands.extend([
-            BotCommand(command="profile", description="Мой профиль"),
-            BotCommand(command="manage_users", description="Управление пользователями"),
-            BotCommand(command="manage_permissions", description="Управление правами ролей"),
-            BotCommand(command="trainees", description="Список Стажеров"),
-            BotCommand(command="logout", description="Выйти из системы")
-        ])
-    elif role == "Рекрутер":
-        commands.extend([
-            BotCommand(command="profile", description="Мой профиль"),
-            BotCommand(command="create_test", description="Создать новый тест"),
-            BotCommand(command="manage_tests", description="Управление тестами"),
-            BotCommand(command="assign_mentor", description="Назначить наставника"),
-            BotCommand(command="trainees", description="Список Стажеров"),
-            BotCommand(command="logout", description="Выйти из системы")
-        ])
-    elif role == "Сотрудник":
-        commands.extend([
-            BotCommand(command="profile", description="Мой профиль"),
-            BotCommand(command="my_trainees", description="Мои стажеры"),
-            BotCommand(command="all_tests", description="Просмотр всех тестов"),
-            BotCommand(command="logout", description="Выйти из системы")
-        ])
-    elif role == "Стажер":
-        commands.extend([
-            BotCommand(command="profile", description="Мой профиль"),
-            BotCommand(command="my_tests", description="Мои доступные тесты"),
-            BotCommand(command="my_mentor", description="Мой наставник"),
             BotCommand(command="logout", description="Выйти из системы")
         ])
     else: # Неавторизованный пользователь

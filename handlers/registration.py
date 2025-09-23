@@ -5,7 +5,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from sqlalchemy.ext.asyncio import AsyncSession
 import os
 
-from database.db import get_user_by_tg_id, create_user, check_phone_exists, create_initial_admin_with_token, get_users_by_role
+from database.db import get_user_by_tg_id, create_user, create_user_without_role, check_phone_exists, create_initial_admin_with_token, get_users_by_role
 from keyboards.keyboards import get_contact_keyboard, get_role_selection_keyboard
 from states.states import RegistrationStates
 from utils.validators import validate_full_name, validate_phone_number
@@ -76,7 +76,7 @@ async def process_contact(message: Message, state: FSMContext, session: AsyncSes
     # Проверяем настройки для показа опции токена администратора
     import os
     max_admins = int(os.getenv("MAX_ADMINS", "5"))
-    existing_managers = await get_users_by_role(session, "Управляющий")
+    existing_managers = await get_users_by_role(session, "Руководитель")
     admin_tokens_str = os.getenv("ADMIN_INIT_TOKENS", os.getenv("ADMIN_INIT_TOKEN", ""))
     allow_auto_role = os.getenv("ALLOW_AUTO_ROLE_ASSIGNMENT", "false").lower() == "true"
     
@@ -150,14 +150,37 @@ async def process_contact(message: Message, state: FSMContext, session: AsyncSes
             return
         except Exception as e:
             log_user_error(message.from_user.id, message.from_user.username, "auto registration error", e)
-            await message.answer(f"Произошла ошибка при автоматической регистрации. Выберите роль вручную:")
+            await message.answer(f"Произошла ошибка при автоматической регистрации. Попробуем зарегистрировать вас для активации рекрутером.")
     
-    # Если автоматическое назначение отключено или произошла ошибка
-    await message.answer(
-        "Выберите вашу роль:",
-        reply_markup=get_role_selection_keyboard()
-    )
-    await state.set_state(RegistrationStates.waiting_for_role)
+    # Создаем пользователя без роли для последующей активации рекрутером
+    user_data = await state.get_data()
+    user_data['tg_id'] = message.from_user.id
+    user_data['username'] = message.from_user.username
+    
+    try:
+        await create_user_without_role(session, user_data, bot)
+        
+        await message.answer(
+            "✅ Регистрация завершена!\n\n"
+            "Ваши данные переданы рекрутеру для активации доступа к чат-боту.\n"
+            "Ожидайте подтверждения. Вам придет уведомление, как только доступ будет открыт."
+        )
+        
+        log_user_action(
+            message.from_user.id, 
+            message.from_user.username, 
+            "registration completed (waiting activation)", 
+            {"full_name": user_data['full_name'], "phone": user_data['phone_number']}
+        )
+        
+        await state.clear()
+        
+    except Exception as e:
+        log_user_error(message.from_user.id, message.from_user.username, "registration error", str(e))
+        await message.answer(
+            "❌ Произошла ошибка при регистрации. Попробуйте еще раз позже или обратитесь к администратору."
+        )
+        await state.clear()
 
 @router.message(RegistrationStates.waiting_for_phone)
 async def process_phone_manually(message: Message, state: FSMContext, session: AsyncSession, bot: Bot):
@@ -186,7 +209,7 @@ async def process_phone_manually(message: Message, state: FSMContext, session: A
     # Проверяем настройки для показа опции токена администратора
     import os
     max_admins = int(os.getenv("MAX_ADMINS", "5"))
-    existing_managers = await get_users_by_role(session, "Управляющий")
+    existing_managers = await get_users_by_role(session, "Руководитель")
     admin_tokens_str = os.getenv("ADMIN_INIT_TOKENS", os.getenv("ADMIN_INIT_TOKEN", ""))
     allow_auto_role = os.getenv("ALLOW_AUTO_ROLE_ASSIGNMENT", "false").lower() == "true"
     
@@ -260,65 +283,166 @@ async def process_phone_manually(message: Message, state: FSMContext, session: A
             return
         except Exception as e:
             log_user_error(message.from_user.id, message.from_user.username, "auto registration error", e)
-            await message.answer(f"Произошла ошибка при автоматической регистрации. Выберите роль вручную:")
+            await message.answer(f"Произошла ошибка при автоматической регистрации. Попробуем зарегистрировать вас для активации рекрутером.")
     
-    # Если автоматическое назначение отключено или произошла ошибка
-    await message.answer(
-        "Выберите вашу роль:",
-        reply_markup=get_role_selection_keyboard()
-    )
-    await state.set_state(RegistrationStates.waiting_for_role)
+    # Создаем пользователя без роли для последующей активации рекрутером
+    user_data = await state.get_data()
+    user_data['tg_id'] = message.from_user.id
+    user_data['username'] = message.from_user.username
+    
+    try:
+        await create_user_without_role(session, user_data, bot)
+        
+        await message.answer(
+            "✅ Регистрация завершена!\n\n"
+            "Ваши данные переданы рекрутеру для активации доступа к чат-боту.\n"
+            "Ожидайте подтверждения. Вам придет уведомление, как только доступ будет открыт."
+        )
+        
+        log_user_action(
+            message.from_user.id, 
+            message.from_user.username, 
+            "registration completed (waiting activation)", 
+            {"full_name": user_data['full_name'], "phone": user_data['phone_number']}
+        )
+        
+        await state.clear()
+        
+    except Exception as e:
+        log_user_error(message.from_user.id, message.from_user.username, "registration error", str(e))
+        await message.answer(
+            "❌ Произошла ошибка при регистрации. Попробуйте еще раз позже или обратитесь к администратору."
+        )
+        await state.clear()
 
 @router.callback_query(RegistrationStates.waiting_for_admin_token, F.data == "admin_token:skip")
-async def process_skip_admin_token(callback: CallbackQuery, state: FSMContext):
+async def process_skip_admin_token(callback: CallbackQuery, state: FSMContext, session: AsyncSession, bot: Bot):
     """Обработка пропуска токена администратора"""
-    await callback.message.edit_text(
-        "Выберите вашу роль:",
-        reply_markup=get_role_selection_keyboard()
-    )
-    await state.set_state(RegistrationStates.waiting_for_role)
+    # Создаем пользователя без роли для последующей активации рекрутером
+    user_data = await state.get_data()
+    user_data['tg_id'] = callback.from_user.id
+    user_data['username'] = callback.from_user.username
+    
+    try:
+        await create_user_without_role(session, user_data, bot)
+        
+        await callback.message.edit_text(
+            "✅ Регистрация завершена!\n\n"
+            "Ваши данные переданы рекрутеру для активации доступа к чат-боту.\n"
+            "Ожидайте подтверждения. Вам придет уведомление, как только доступ будет открыт."
+        )
+        
+        log_user_action(
+            callback.from_user.id, 
+            callback.from_user.username, 
+            "registration completed (waiting activation, skipped admin token)", 
+            {"full_name": user_data['full_name'], "phone": user_data['phone_number']}
+        )
+        
+        await state.clear()
+        
+    except Exception as e:
+        log_user_error(callback.from_user.id, callback.from_user.username, "registration error", str(e))
+        await callback.message.edit_text(
+            "❌ Произошла ошибка при регистрации. Попробуйте еще раз позже или обратитесь к администратору."
+        )
+        await state.clear()
+    
     await callback.answer()
 
 @router.message(RegistrationStates.waiting_for_admin_token)
-async def process_admin_token(message: Message, state: FSMContext, session: AsyncSession):
+async def process_admin_token(message: Message, state: FSMContext, session: AsyncSession, bot: Bot):
     """Обработка токена администратора"""
     if message.text.lower() == 'пропустить':
-        await message.answer(
-            "Выберите вашу роль:",
-            reply_markup=get_role_selection_keyboard()
-        )
-        await state.set_state(RegistrationStates.waiting_for_role)
+        # Создаем пользователя без роли для последующей активации рекрутером
+        user_data = await state.get_data()
+        user_data['tg_id'] = message.from_user.id
+        user_data['username'] = message.from_user.username
+        
+        try:
+            await create_user_without_role(session, user_data, bot)
+            
+            await message.answer(
+                "✅ Регистрация завершена!\n\n"
+                "Ваши данные переданы рекрутеру для активации доступа к чат-боту.\n"
+                "Ожидайте подтверждения. Вам придет уведомление, как только доступ будет открыт."
+            )
+            
+            log_user_action(
+                message.from_user.id, 
+                message.from_user.username, 
+                "registration completed (waiting activation, skipped admin token)", 
+                {"full_name": user_data['full_name'], "phone": user_data['phone_number']}
+            )
+            
+            await state.clear()
+            
+        except Exception as e:
+            log_user_error(message.from_user.id, message.from_user.username, "registration error", str(e))
+            await message.answer(
+                "❌ Произошла ошибка при регистрации. Попробуйте еще раз позже или обратитесь к администратору."
+            )
+            await state.clear()
         return
     
     user_data = await state.get_data()
     user_data['tg_id'] = message.from_user.id
     user_data['username'] = message.from_user.username
     
-    success = await create_initial_admin_with_token(session, user_data, message.text.strip())
-    
-    if success:
+    # Проверяем токен
+    from database.db import validate_admin_token
+    if await validate_admin_token(session, message.text.strip()):
+        # Токен верный, предлагаем выбрать роль
         await message.answer(
-            "🎉 <b>Поздравляем!</b>\n\n"
-            "Вы успешно стали администратором системы.\n"
-            "Используйте команду /login для входа.",
-            parse_mode="HTML"
+            "🎉 <b>Токен администратора принят!</b>\n\n"
+            "Теперь выберите роль, которую вы хотите получить:",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="👑 Руководитель", callback_data="select_admin_role:Руководитель"),
+                    InlineKeyboardButton(text="👨‍💼 Рекрутер", callback_data="select_admin_role:Рекрутер")
+                ],
+                [
+                    InlineKeyboardButton(text="🚫 Отменить", callback_data="cancel_admin_role_selection")
+                ]
+            ])
         )
+        await state.set_state(RegistrationStates.waiting_for_admin_role_selection)
         log_user_action(
-            message.from_user.id, 
-            message.from_user.username, 
-            "became admin", 
+            message.from_user.id,
+            message.from_user.username,
+            "admin_token_validated",
             {"full_name": user_data['full_name']}
         )
-        await state.clear()
     else:
-        await message.answer(
-            "❌ <b>Неверный токен или достигнут лимит</b>\n\n"
-            "Токен инициализации неверный или достигнут лимит администраторов.\n"
-            "Выберите обычную роль:",
-            parse_mode="HTML",
-            reply_markup=get_role_selection_keyboard()
-        )
-        await state.set_state(RegistrationStates.waiting_for_role)
+        # Токен неверный - создаем пользователя без роли для последующей активации рекрутером
+        try:
+            await create_user_without_role(session, user_data, bot)
+            
+            await message.answer(
+                "❌ <b>Неверный токен или достигнут лимит</b>\n\n"
+                "Токен инициализации неверный или достигнут лимит администраторов.\n\n"
+                "✅ Регистрация завершена!\n\n"
+                "Ваши данные переданы рекрутеру для активации доступа к чат-боту.\n"
+                "Ожидайте подтверждения. Вам придет уведомление, как только доступ будет открыт.",
+                parse_mode="HTML"
+            )
+            
+            log_user_action(
+                message.from_user.id, 
+                message.from_user.username, 
+                "registration completed (waiting activation, invalid admin token)", 
+                {"full_name": user_data['full_name'], "phone": user_data['phone_number']}
+            )
+            
+            await state.clear()
+            
+        except Exception as e:
+            log_user_error(message.from_user.id, message.from_user.username, "registration error", str(e))
+            await message.answer(
+                "❌ Произошла ошибка при регистрации. Попробуйте еще раз позже или обратитесь к администратору."
+            )
+            await state.clear()
 
 @router.callback_query(RegistrationStates.waiting_for_role, F.data.startswith("role:"))
 async def process_role_selection(callback: CallbackQuery, state: FSMContext, session: AsyncSession, bot: Bot):
@@ -383,30 +507,39 @@ async def role_selection_error(message: Message, state: FSMContext, session: Asy
     import os
     admin_tokens_str = os.getenv("ADMIN_INIT_TOKENS", os.getenv("ADMIN_INIT_TOKEN", ""))
     max_admins = int(os.getenv("MAX_ADMINS", "5"))
-    existing_managers = await get_users_by_role(session, "Управляющий")
+    existing_managers = await get_users_by_role(session, "Руководитель")
     
-    # Если есть токены и не достигнут лимит, проверяем введенный текст как потенциальный токен
-    if admin_tokens_str and len(existing_managers) < max_admins:
+    # Если есть токены, проверяем введенный текст как потенциальный токен
+    if admin_tokens_str:
         user_data = await state.get_data()
         user_data['tg_id'] = message.from_user.id
         user_data['username'] = message.from_user.username
-        
-        success = await create_initial_admin_with_token(session, user_data, message.text.strip())
-        
-        if success:
+
+        # Проверяем токен
+        from database.db import validate_admin_token
+        if await validate_admin_token(session, message.text.strip()):
+            # Токен верный, предлагаем выбрать роль
             await message.answer(
-                "🎉 <b>Поздравляем!</b>\n\n"
-                "Вы успешно стали администратором системы.\n"
-                "Используйте команду /login для входа.",
-                parse_mode="HTML"
+                "🎉 <b>Токен администратора принят!</b>\n\n"
+                "Теперь выберите роль, которую вы хотите получить:",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [
+                        InlineKeyboardButton(text="👑 Руководитель", callback_data="select_admin_role:Руководитель"),
+                        InlineKeyboardButton(text="👨‍💼 Рекрутер", callback_data="select_admin_role:Рекрутер")
+                    ],
+                    [
+                        InlineKeyboardButton(text="🚫 Отменить", callback_data="cancel_admin_role_selection")
+                    ]
+                ])
             )
+            await state.set_state(RegistrationStates.waiting_for_admin_role_selection)
             log_user_action(
-                message.from_user.id, 
-                message.from_user.username, 
-                "became admin via fallback", 
+                message.from_user.id,
+                message.from_user.username,
+                "admin_token_validated",
                 {"full_name": user_data['full_name']}
             )
-            await state.clear()
             return
     
     await message.answer("Пожалуйста, выберите роль из предложенного списка.")
@@ -420,4 +553,57 @@ async def phone_error(message: Message):
 
 @router.message(RegistrationStates.waiting_for_full_name)
 async def full_name_error(message: Message):
-    await message.answer("Пожалуйста, введите имя и фамилию, используя только буквы, пробелы и дефисы.") 
+    await message.answer("Пожалуйста, введите имя и фамилию, используя только буквы, пробелы и дефисы.")
+
+
+@router.callback_query(F.data.startswith("select_admin_role:"), RegistrationStates.waiting_for_admin_role_selection)
+async def callback_select_admin_role(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик выбора роли администратора"""
+    role_name = callback.data.split(":")[1]
+
+    # Получаем данные пользователя
+    user_data = await state.get_data()
+    user_data['tg_id'] = callback.from_user.id
+    user_data['username'] = callback.from_user.username
+
+    # Создаем администратора с выбранной ролью
+    from database.db import create_admin_with_role
+    success = await create_admin_with_role(session, user_data, role_name)
+
+    if success:
+        role_display = "👑 Руководителем" if role_name == "Руководитель" else "👨‍💼 Рекрутером"
+
+        await callback.message.edit_text(
+            f"🎉 <b>Поздравляем!</b>\n\n"
+            f"Вы успешно стали {role_display} системы.\n"
+            "Используйте команду /login для входа.",
+            parse_mode="HTML"
+        )
+        log_user_action(
+            callback.from_user.id,
+            callback.from_user.username,
+            f"admin_created_with_role_{role_name}",
+            {"full_name": user_data['full_name'], "role": role_name}
+        )
+        await state.clear()
+    else:
+        await callback.message.edit_text(
+            "❌ <b>Ошибка создания администратора</b>\n\n"
+            "Произошла ошибка при создании учетной записи администратора.\n"
+            "Попробуйте позже или обратитесь к разработчику.",
+            parse_mode="HTML"
+        )
+
+    await callback.answer()
+
+
+@router.callback_query(F.data == "cancel_admin_role_selection", RegistrationStates.waiting_for_admin_role_selection)
+async def callback_cancel_admin_role_selection(callback: CallbackQuery, state: FSMContext):
+    """Обработчик отмены выбора роли администратора"""
+    await callback.message.edit_text(
+        "🚫 <b>Регистрация администратора отменена</b>\n\n"
+        "Вы можете начать регистрацию заново с помощью команды /register.",
+        parse_mode="HTML"
+    )
+    await state.clear()
+    await callback.answer() 

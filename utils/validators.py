@@ -111,4 +111,26 @@ def validate_test_options(options: List[str]) -> Tuple[bool, Optional[str]]:
         if len(option) > 500:
             return False, f"Вариант {i+1} слишком длинный (максимум 500 символов)"
     
-    return True, None 
+    return True, None
+
+def validate_name(name: str) -> bool:
+    """Валидация названия группы, теста и других сущностей"""
+    if not name or not isinstance(name, str):
+        return False
+    
+    # Убираем лишние пробелы
+    cleaned_name = name.strip()
+    
+    # Проверка длины
+    if len(cleaned_name) < 2 or len(cleaned_name) > 100:
+        return False
+    
+    # Проверка на разрешенные символы: буквы, цифры, пробелы, основные знаки препинания
+    if not re.match(r'^[а-яА-ЯёЁa-zA-Z0-9\s\-_.,!?()\[\]{}":;]+$', cleaned_name):
+        return False
+    
+    # Проверка что не состоит только из пробелов и знаков препинания
+    if not re.search(r'[а-яА-ЯёЁa-zA-Z0-9]', cleaned_name):
+        return False
+    
+    return True 

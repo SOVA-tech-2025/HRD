@@ -16,7 +16,7 @@ from database.db import (
 from database.models import InternshipStage, TestQuestion
 from sqlalchemy import select
 from keyboards.keyboards import (
-    get_test_selection_keyboard, get_stage_selection_keyboard,
+    get_simple_test_selection_keyboard, get_stage_selection_keyboard,
     get_yes_no_keyboard, get_question_selection_keyboard,
     get_test_actions_keyboard, get_test_filter_keyboard,
     get_question_type_keyboard, get_test_edit_menu,
@@ -133,7 +133,7 @@ async def cmd_list_tests(message: Message, state: FSMContext, session: AsyncSess
         f"📋 <b>Список доступных тестов</b>\n\n{tests_list}\n\n"
         f"Выберите тест для просмотра и предоставления доступа:",
         parse_mode="HTML",
-        reply_markup=get_test_selection_keyboard(tests)
+        reply_markup=get_simple_test_selection_keyboard(tests)
     )
 
 @router.message(TestCreationStates.waiting_for_test_name)
@@ -577,16 +577,16 @@ async def process_test_selection(callback: CallbackQuery, state: FSMContext, ses
 🎯 <b>Порог прохождения:</b> {test.threshold_score} баллов
 {stage_info}📅 <b>Дата создания:</b> {test.created_date.strftime('%d.%m.%Y %H:%M')}
 🔗 <b>Материалы:</b> {f"📎 {test.material_link}" if test.material_link else 'Отсутствуют'}
-🟢 <b>Статус:</b> {'Активен' if test.is_active else 'Неактивен'}"""
+"""
     
     # Определяем роль пользователя для показа подходящих кнопок
     user = await get_user_by_tg_id(session, callback.from_user.id)
     user_roles = await get_user_roles(session, user.id)
     role_names = [role.name for role in user_roles]
     
-    # Проверяем, является ли пользователь стажёром
-    if "Стажер" in role_names:
-        # Для стажёров - перенаправляем на прохождение теста
+    # Проверяем роль пользователя для определения интерфейса
+    if "Стажер" in role_names or "Сотрудник" in role_names:
+        # Для стажёров и сотрудников - интерфейс прохождения теста
         # Проверяем доступ к конкретному тесту
         has_access = await check_test_access(session, user.id, test_id)
         
@@ -602,7 +602,7 @@ async def process_test_selection(callback: CallbackQuery, state: FSMContext, ses
         # Проверяем, есть ли уже результат
         existing_result = await get_user_test_result(session, user.id, test_id)
         
-        # Получаем информацию о тесте для стажёра
+        # Получаем информацию о тесте для прохождения
         questions = await get_test_questions(session, test_id)
         questions_count = len(questions)
         
@@ -633,7 +633,7 @@ async def process_test_selection(callback: CallbackQuery, state: FSMContext, ses
 
 """
         
-        test_info_for_trainee = f"""📋 <b>Информация о тесте</b>
+        test_info_for_user = f"""📋 <b>Информация о тесте</b>
 
 📌 <b>Название:</b> {test.name}
 📝 <b>Описание:</b> {test.description or 'Не указано'}
@@ -642,7 +642,7 @@ async def process_test_selection(callback: CallbackQuery, state: FSMContext, ses
 {materials_info}{previous_result_info}"""
         
         await callback.message.edit_text(
-            test_info_for_trainee,
+            test_info_for_user,
             parse_mode="HTML",
             reply_markup=get_test_start_keyboard(test_id, bool(existing_result))
         )
@@ -1485,6 +1485,11 @@ async def process_confirm_delete_test(callback: CallbackQuery, state: FSMContext
 async def process_test_filter(callback: CallbackQuery, session: AsyncSession):
     """Обработчик выбора фильтра тестов"""
     filter_type = callback.data.split(':')[1]
+    
+    # Пропускаем broadcast - он обрабатывается в broadcast.py
+    if filter_type == "broadcast":
+        return
+    
     user = await get_user_by_tg_id(session, callback.from_user.id)
     if not user:
         await callback.answer("❌ Пользователь не найден.", show_alert=True)
@@ -1518,7 +1523,7 @@ async def process_test_filter(callback: CallbackQuery, session: AsyncSession):
             f"{list_title}\n\n{tests_list}\n\n"
             f"Выберите тест для редактирования и управления:",
             parse_mode="HTML",
-            reply_markup=get_test_selection_keyboard(tests)
+            reply_markup=get_simple_test_selection_keyboard(tests)
         )
     await callback.answer()
 
@@ -1557,7 +1562,7 @@ async def process_back_to_tests(callback: CallbackQuery, state: FSMContext, sess
                 f"📋 <b>Список доступных тестов</b>\n\n{tests_list}\n\n"
                 f"Выберите тест для просмотра и предоставления доступа:",
                 parse_mode="HTML",
-                reply_markup=get_test_selection_keyboard(tests)
+                reply_markup=get_simple_test_selection_keyboard(tests)
             )
     await callback.answer()
 

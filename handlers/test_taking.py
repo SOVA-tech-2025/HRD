@@ -8,13 +8,16 @@ import random
 from datetime import datetime
 
 from database.db import (
-    get_trainee_available_tests, get_user_test_results, check_user_permission,
+    get_trainee_available_tests, get_user_available_tests, get_user_test_results, check_user_permission,
     get_user_by_tg_id, get_test_by_id, check_test_access, get_user_test_result,
-    get_test_questions, save_test_result, get_user_test_attempts_count, can_user_take_test
+    get_test_questions, save_test_result, get_user_test_attempts_count, can_user_take_test,
+    get_trainee_learning_path, get_trainee_stage_progress, get_stage_session_progress,
+    complete_session_for_trainee, complete_stage_for_trainee, get_user_by_id,
+    get_trainee_attestation_status, get_user_roles
 )
 from database.models import InternshipStage, TestResult
 from sqlalchemy import select
-from keyboards.keyboards import get_test_selection_keyboard, get_test_start_keyboard, get_test_selection_for_taking_keyboard
+from keyboards.keyboards import get_simple_test_selection_keyboard, get_test_start_keyboard, get_test_selection_for_taking_keyboard
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from states.states import TestTakingStates
 from utils.logger import log_user_action, log_user_error, logger
@@ -52,7 +55,8 @@ async def cmd_take_test(message: Message, state: FSMContext, session: AsyncSessi
         await message.answer("У вас нет прав для прохождения тестов.")
         return
     
-    available_tests = await get_trainee_available_tests(session, user.id)
+    # Получаем доступные тесты, включая пройденные для пересдачи (бесконечные попытки)
+    available_tests = await get_user_available_tests(session, user.id, exclude_completed=False)
     
     if not available_tests:
         await message.answer(
@@ -74,9 +78,16 @@ async def cmd_take_test(message: Message, state: FSMContext, session: AsyncSessi
         
         materials_info = " | 📚 Есть материалы" if test.material_link else ""
         
+        # Получаем результат последнего прохождения для отображения статуса
+        test_result = await get_user_test_result(session, user.id, test.id)
+        if test_result and test_result.is_passed:
+            status_info = f" | ✅ Пройден ({test_result.score}/{test_result.max_possible_score})"
+        else:
+            status_info = " | 📋 Доступен"
+        
         tests_list.append(
             f"<b>{i}. {test.name}</b>\n"
-            f"   🎯 Порог: {test.threshold_score}/{test.max_score} баллов{stage_info}{materials_info}\n"
+            f"   🎯 Порог: {test.threshold_score}/{test.max_score} баллов{stage_info}{materials_info}{status_info}\n"
             f"   📝 {test.description or 'Описание не указано'}"
         )
     
@@ -86,7 +97,7 @@ async def cmd_take_test(message: Message, state: FSMContext, session: AsyncSessi
         f"📋 <b>Доступные тесты</b>\n\n"
         f"У вас есть доступ к <b>{len(available_tests)}</b> тестам:\n\n"
         f"{tests_display}\n\n"
-        "💡 <b>Рекомендация:</b> Изучите материалы перед прохождением теста!",
+        "💡 <b>Рекомендация:</b> Пройденные тесты можно пересдать для улучшения результата!",
         parse_mode="HTML",
         reply_markup=get_test_selection_for_taking_keyboard(available_tests)
     )
@@ -258,10 +269,16 @@ async def process_test_selection_for_taking(callback: CallbackQuery, state: FSMC
         {"test_id": test_id}
     )
 
-@router.callback_query(TestTakingStates.waiting_for_test_start, F.data.startswith("start_test:"))
-async def process_start_test(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+async def start_test(callback: CallbackQuery, state: FSMContext, session: AsyncSession, test_id: int):
+    """Функция начала прохождения теста для траекторий"""
+    # Передаем test_id напрямую, без изменения callback.data
+    await process_start_test(callback, state, session, test_id)
+
+
+async def process_start_test(callback: CallbackQuery, state: FSMContext, session: AsyncSession, test_id: int = None):
     """Обработчик начала прохождения теста"""
-    test_id = int(callback.data.split(':')[1])
+    if test_id is None:
+        test_id = int(callback.data.split(':')[1])
     user_id = callback.from_user.id
     
     test = await get_test_by_id(session, test_id)
@@ -649,7 +666,7 @@ async def finish_test(message: Message, state: FSMContext, session: AsyncSession
         'wrong_answers': wrong_answers_data
     }
     result = await save_test_result(session, result_data)
-    
+
     if not result:
         await message.answer(
             "❌ <b>Ошибка сохранения результата</b>\n\n"
@@ -658,7 +675,13 @@ async def finish_test(message: Message, state: FSMContext, session: AsyncSession
         )
         await state.clear()
         return
-    
+
+    # Проверяем завершение этапа если тест пройден
+    stage_completion_message = ""
+    if is_passed:
+        logger.info(f"Тест {test_id} пройден пользователем {user.id}, проверяем завершение этапа")
+        stage_completion_message = await check_and_notify_stage_completion(session, user.id, test_id)
+
     status_text = "✅ <b>Тест успешно пройден!</b>" if is_passed else "❌ <b>Тест не пройден</b>"
     
     keyboard = []
@@ -670,25 +693,153 @@ async def finish_test(message: Message, state: FSMContext, session: AsyncSession
         if has_choice_questions:
             keyboard.append([InlineKeyboardButton(text="🔍 Показать мои ошибки", callback_data=f"show_errors:{result.id}")])
 
+    # Получаем прогресс траектории если тест прошел успешно
+    progress_info = ""
+    test_keyboard = keyboard.copy()
+
+    if is_passed:
+        # Получаем траекторию стажера
+        trainee_path = await get_trainee_learning_path(session, result_data['user_id'])
+        if trainee_path:
+            stages_progress = await get_trainee_stage_progress(session, trainee_path.id)
+
+            progress_info = f"\n\n🏆<b>Ваш прогресс</b>\n"
+            progress_info += f"⏺️<b>Название траектории:</b> {trainee_path.learning_path.name}\n"
+
+            for stage_progress in stages_progress:
+                stage = stage_progress.stage
+                
+                # Получаем сессии для определения статуса этапа
+                sessions_progress = await get_stage_session_progress(session, stage_progress.id)
+                
+                # Определяем статус этапа: 🟢 если все сессии пройдены, 🟡 если открыт, ⏺️ если закрыт
+                all_sessions_completed = True
+                for sp in sessions_progress:
+                    if hasattr(sp.session, 'tests') and sp.session.tests:
+                        session_tests_passed = True
+                        for test_item in sp.session.tests:
+                            test_result = await get_user_test_result(session, user.id, test_item.id)
+                            if not (test_result and test_result.is_passed):
+                                session_tests_passed = False
+                                break
+                        if not session_tests_passed:
+                            all_sessions_completed = False
+                            break
+                
+                if all_sessions_completed and sessions_progress:
+                    stage_icon = "🟢"  # Все сессии пройдены
+                elif stage_progress.is_opened:
+                    stage_icon = "🟡"  # Этап открыт
+                else:
+                    stage_icon = "⏺️"  # Этап закрыт
+                    
+                progress_info += f"{stage_icon}<b>Этап {stage.order_number}:</b> {stage.name}\n"
+
+                for session_progress in sessions_progress:
+                    # Определяем статус сессии: 🟢 если все тесты пройдены, 🟡 если этап открыт, ⏺️ если этап закрыт
+                    if hasattr(session_progress.session, 'tests') and session_progress.session.tests:
+                        all_tests_passed = True
+                        for test_item in session_progress.session.tests:
+                            test_result = await get_user_test_result(session, user.id, test_item.id)
+                            if not (test_result and test_result.is_passed):
+                                all_tests_passed = False
+                                break
+                        
+                        if all_tests_passed:
+                            session_icon = "🟢"  # Все тесты пройдены
+                        elif stage_progress.is_opened:
+                            session_icon = "🟡"  # Этап открыт, сессия доступна
+                        else:
+                            session_icon = "⏺️"  # Этап закрыт
+                    else:
+                        session_icon = "⏺️"  # Нет тестов
+                        
+                    progress_info += f"{session_icon}<b>Сессия {session_progress.session.order_number}:</b> {session_progress.session.name}\n"
+
+                    # Показываем тесты
+                    for test_item in session_progress.session.tests:
+                        # Определяем статус теста
+                        test_result = await get_user_test_result(session, user.id, test_item.id)
+                        if test_result and test_result.is_passed:
+                            test_icon = "🟢"  # Тест пройден
+                        elif stage_progress.is_opened:
+                            test_icon = "🟡"  # Этап открыт, тест доступен
+                        else:
+                            test_icon = "⏺️"  # Этап закрыт
+                        test_number = len([t for t in session_progress.session.tests if t.id <= test_item.id])
+                        # Добавляем процент для пройденных тестов
+                        percentage_text = ""
+                        if test_result and test_result.is_passed:
+                            percentage = (test_result.score / test_result.max_possible_score) * 100
+                            percentage_text = f" - {percentage:.0f}%"
+                        progress_info += f"{test_icon}<b>Тест {test_number}:</b> {test_item.name}{percentage_text}\n"
+
+            # Добавляем аттестацию с правильным статусом
+            attestation = trainee_path.learning_path.attestation
+            if attestation:
+                attestation_status = await get_trainee_attestation_status(session, user.id, attestation.id)
+                progress_info += f"🔍{attestation_status}<b>Аттестация:</b> {attestation.name}\n\n"
+            else:
+                progress_info += f"🔍⏺️<b>Аттестация:</b> Не указана\n\n"
+
+            # Уведомление о завершении этапа отправляется через check_and_notify_stage_completion
+            # Здесь только показываем прогресс без дублированного уведомления
+
+            # Добавляем кнопки для навигации согласно ТЗ
+            # Получаем текущую сессию и ее тесты
+            current_session = None
+            for stage_progress in stages_progress:
+                # Получаем ВСЕ сессии для этого этапа (не только открытые)
+                from database.db import get_all_stage_sessions_progress
+                stage_sessions_progress = await get_all_stage_sessions_progress(session, stage_progress.id)
+                for session_progress in stage_sessions_progress:
+                    if session_progress.session and hasattr(session_progress.session, 'tests'):
+                        for test_item in session_progress.session.tests:
+                            if test_item.id == test_id:
+                                current_session = session_progress.session
+                                break
+                    if current_session:
+                        break
+                if current_session:
+                    break
+
+            if current_session:
+                # Добавляем кнопки для всех тестов в сессии
+                for i, test_item in enumerate(current_session.tests, 1):
+                    test_keyboard.append([
+                        InlineKeyboardButton(
+                            text=f"Тест {i}",
+                            callback_data=f"take_test:{current_session.id}:{test_item.id}"
+                        )
+                    ])
+
+            # Добавляем кнопки траектории и главного меню
+            test_keyboard.extend([
+                [InlineKeyboardButton(text="🗺️ Траектория", callback_data="trajectory")],
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+            ])
+
     try:
         await message.edit_text(
-            f"{status_text}\n\n"
+            f"{status_text}\n"
             f"Ваш результат: <b>{score}</b> из <b>{test.max_score}</b> баллов.\n"
-            f"Проходной балл: {test.threshold_score}\n\n"
-            "Вы можете посмотреть детальную статистику в разделе 'Посмотреть баллы'.",
+            f"Проходной балл: {test.threshold_score}"
+            f"{progress_info}"
+            f"{stage_completion_message}",
             parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=test_keyboard)
         )
     except Exception:
         # Если не можем отредактировать сообщение (например, это текстовый ответ пользователя),
         # отправляем новое сообщение
         await message.answer(
-            f"{status_text}\n\n"
+            f"{status_text}\n"
             f"Ваш результат: <b>{score}</b> из <b>{test.max_score}</b> баллов.\n"
-            f"Проходной балл: {test.threshold_score}\n\n"
-            "Вы можете посмотреть детальную статистику в разделе 'Посмотреть баллы'.",
+            f"Проходной балл: {test.threshold_score}"
+            f"{progress_info}"
+            f"{stage_completion_message}",
             parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=test_keyboard)
         )
     await state.clear()
 
@@ -888,10 +1039,28 @@ async def process_info_button(callback: CallbackQuery):
         show_alert=True
     )
 
+@router.callback_query(TestTakingStates.waiting_for_test_start, F.data.startswith("start_test:"))
+async def process_start_test_button(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик кнопки 'Начать тест' для всех ролей"""
+    test_id = int(callback.data.split(':')[1])
+    await process_start_test(callback, state, session, test_id)
+
 @router.callback_query(F.data.startswith("take_test:"))
 async def process_take_test_from_notification(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Обработчик кнопки 'Перейти к тесту' из уведомления"""
-    test_id = int(callback.data.split(':')[1])
+    parts = callback.data.split(':')
+    
+    # Поддерживаем два формата:
+    # take_test:{test_id} - из уведомлений
+    # take_test:{session_id}:{test_id} - из траектории (обрабатывается в trainee_trajectory.py)
+    if len(parts) == 2:
+        test_id = int(parts[1])
+    elif len(parts) == 3:
+        # Этот формат должен обрабатываться в trainee_trajectory.py, но на всякий случай
+        test_id = int(parts[2])
+    else:
+        await callback.answer("Неверный формат данных", show_alert=True)
+        return
     
     test = await get_test_by_id(session, test_id)
     if not test:
@@ -1045,5 +1214,291 @@ async def process_available_tests_shortcut(callback: CallbackQuery, state: FSMCo
     
     await state.set_state(TestTakingStates.waiting_for_test_selection)
     await callback.answer()
-    
+
     log_user_action(callback.from_user.id, callback.from_user.username, "opened tests from notification")
+
+
+# ===== ФУНКЦИИ ДЛЯ ПРОХОЖДЕНИЯ ТРАЕКТОРИЙ =====
+
+async def check_and_notify_stage_completion(session: AsyncSession, user_id: int, test_id: int) -> str:
+    """
+    Проверяет завершение этапа траектории и отправляет уведомление наставнику
+    ТОЛЬКО для стажеров! Сотрудники не имеют траекторий.
+    """
+    try:
+        # КРИТИЧЕСКАЯ ПРОВЕРКА: Функция должна работать только для стажеров
+        user_roles = await get_user_roles(session, user_id)
+        role_names = [role.name for role in user_roles]
+        
+        if "Стажер" not in role_names:
+            # Это не стажер - пропускаем проверку траектории
+            return ""
+        
+        from database.models import LearningSession, LearningStage, session_tests, TestResult
+
+        # Получаем траекторию стажера
+        trainee_path = await get_trainee_learning_path(session, user_id)
+        if not trainee_path:
+            logger.warning(f"Стажер {user_id} не имеет назначенной траектории")
+            return ""  # Стажер не имеет назначенной траектории
+
+        # Находим сессию, содержащую данный тест
+        session_result = await session.execute(
+            select(LearningSession)
+            .join(session_tests)
+            .join(LearningStage, LearningSession.stage_id == LearningStage.id)
+            .where(
+                session_tests.c.test_id == test_id,
+                LearningStage.learning_path_id == trainee_path.learning_path_id
+            )
+        )
+        test_session = session_result.scalar_one_or_none()
+
+        if not test_session:
+            logger.warning(f"Тест {test_id} не найден в траектории стажера {user_id}")
+            return ""  # Тест не принадлежит траектории стажера
+
+        # Получаем все тесты в этой сессии
+        session_tests_result = await session.execute(
+            select(session_tests.c.test_id).where(
+                session_tests.c.session_id == test_session.id
+            )
+        )
+        session_test_ids = [row[0] for row in session_tests_result.all()]
+
+        # Проверяем, все ли тесты в сессии пройдены стажером
+        completed_tests_count = 0
+        for session_test_id in session_test_ids:
+            test_result = await get_user_test_result(session, user_id, session_test_id)
+            if test_result and test_result.is_passed:
+                completed_tests_count += 1
+
+        # Если все тесты в сессии пройдены, отмечаем сессию как завершенную
+        if completed_tests_count == len(session_test_ids):
+            session_completed = await complete_session_for_trainee(session, user_id, test_session.id)
+            if session_completed:
+                logger.info(f"Сессия {test_session.id} отмечена как завершенная для стажера {user_id}")
+
+                # Проверяем, все ли сессии в этапе завершены
+                stage_progress = await get_trainee_stage_progress(session, trainee_path.id)
+                current_stage_progress = next(
+                    (sp for sp in stage_progress if sp.stage_id == test_session.stage_id),
+                    None
+                )
+
+                if current_stage_progress:
+                    # Получаем все сессии этапа
+                    stage_sessions_progress = await get_stage_session_progress(session, current_stage_progress.id)
+
+                    # Проверяем, все ли сессии завершены (на основе прохождения тестов)
+                    all_sessions_completed = True
+                    for sp in stage_sessions_progress:
+                        if hasattr(sp.session, 'tests') and sp.session.tests:
+                            session_tests_passed = True
+                            for test_item in sp.session.tests:
+                                test_result = await get_user_test_result(session, user_id, test_item.id)
+                                if not (test_result and test_result.is_passed):
+                                    session_tests_passed = False
+                                    break
+                            if not session_tests_passed:
+                                all_sessions_completed = False
+                                break
+
+                    if all_sessions_completed:
+                        # Отмечаем этап как завершенный
+                        stage_completed = await complete_stage_for_trainee(session, user_id, current_stage_progress.stage_id)
+                        if stage_completed:
+                            logger.info(f"Этап {current_stage_progress.stage_id} отмечен как завершенный для стажера {user_id}")
+
+                            # Отправляем уведомление наставнику
+                            await send_stage_completion_notification(session, user_id, current_stage_progress.stage_id)
+                            
+                            # Возвращаем информацию о завершении этапа
+                            stage_name = current_stage_progress.stage.name if hasattr(current_stage_progress, 'stage') else f"Этап {current_stage_progress.stage_id}"
+                            return f"\n\n✅ <b>Вы завершили {stage_name}!</b>\nОбратитесь к вашему наставнику, чтобы получить доступ к следующему этапу"
+
+        return ""  # Этап не завершен
+
+    except Exception as e:
+        logger.error(f"Ошибка при проверке завершения этапа для стажера {user_id}: {e}")
+        return ""
+
+
+async def send_stage_completion_notification(session: AsyncSession, trainee_id: int, stage_id: int, bot=None) -> None:
+    """
+    Отправляет уведомление наставнику о завершении этапа стажером
+    """
+    try:
+        from database.models import User, LearningStage, Mentorship
+
+        # Получаем стажера
+        trainee = await get_user_by_id(session, trainee_id)
+        if not trainee:
+            return
+
+        # Получаем этап
+        stage_result = await session.execute(
+            select(LearningStage).where(LearningStage.id == stage_id)
+        )
+        stage = stage_result.scalar_one_or_none()
+        if not stage:
+            return
+
+        # Получаем наставника стажера
+        mentorship_result = await session.execute(
+            select(Mentorship).where(
+                Mentorship.trainee_id == trainee_id,
+                Mentorship.is_active == True
+            )
+        )
+        mentorship = mentorship_result.scalar_one_or_none()
+        if not mentorship:
+            return
+
+        mentor = await get_user_by_id(session, mentorship.mentor_id)
+        if not mentor:
+            return
+
+        # Формируем уведомление согласно ТЗ
+        notification_message = (
+            f"🧑 <b>ФИО:</b> {trainee.full_name}\n"
+            f"👑 <b>Роли:</b> {', '.join([role.name for role in trainee.roles]) if trainee.roles else 'Стажёр'}\n"
+            f"🗂️<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
+            f"📍<b>1️⃣Объект стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
+            f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n"
+            "✅<b>Ваш стажёр успешно завершил этап траектории!</b>\n\n"
+            "Откройте ему следующий этап"
+        )
+
+        # Клавиатура с быстрым доступом
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="👥 Мои стажёры", callback_data="my_trainees")
+            ],
+            [
+                InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")
+            ]
+        ])
+
+        # Отправляем уведомление наставнику
+        if not bot:
+            from aiogram import Bot
+            from config import BOT_TOKEN
+            bot = Bot(token=BOT_TOKEN)
+        try:
+            await bot.send_message(
+                mentor.tg_id,
+                notification_message,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+            logger.info(f"Отправлено уведомление наставнику {mentor.full_name} о завершении этапа {stage.name} стажером {trainee.full_name}")
+        except Exception as e:
+            logger.error(f"Не удалось отправить уведомление наставнику {mentor.tg_id}: {e}")
+
+    except Exception as e:
+        logger.error(f"Ошибка отправки уведомления о завершении этапа: {e}")
+
+
+@router.callback_query(F.data == "trajectory")
+async def callback_trajectory_from_test(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик кнопки 'Траектория' из результатов теста - перенаправляет к выбору этапа"""
+    try:
+        await callback.answer()
+
+        # Получаем пользователя
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.message.edit_text("Пользователь не найден")
+            return
+
+        # Получаем траекторию стажера
+        trainee_path = await get_trainee_learning_path(session, user.id)
+
+        if not trainee_path:
+            await callback.message.edit_text(
+                "🗺️ <b>ТРАЕКТОРИЯ ОБУЧЕНИЯ</b> 🗺️\n\n"
+                "❌ <b>Траектория не назначена</b>\n\n"
+                "Вам еще не назначена траектория обучения.\n"
+                "Обратитесь к вашему наставнику для назначения траектории.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+                ])
+            )
+            return
+
+        # Получаем этапы траектории
+        stages_progress = await get_trainee_stage_progress(session, trainee_path.id)
+
+        # Формируем информацию о траектории
+        trajectory_info = (
+            f"🗺️<b>ТРАЕКТОРИЯ</b>🗺️\n"
+            f"<b>ВЫБОР ЭТАПА</b>\n"
+            f"🧑 <b>ФИО:</b> {user.full_name}\n"
+            f"👑 <b>Роли:</b> {', '.join([role.name for role in user.roles]) if user.roles else 'Не указаны'}\n"
+            f"🗂️<b>Группа:</b> {', '.join([group.name for group in user.groups]) if user.groups else 'Не указана'}\n"
+            f"📍<b>1️⃣Объект стажировки:</b> {user.internship_object.name if user.internship_object else 'Не указан'}\n"
+            f"📍<b>2️⃣Объект работы:</b> {user.work_object.name if user.work_object else 'Не указан'}\n\n"
+            f"⏺️<b>Название траектории:</b> {trainee_path.learning_path.name if trainee_path.learning_path else 'Не найдена'}\n"
+        )
+
+        # Формируем информацию об этапах
+        stages_info = ""
+        for stage_progress in stages_progress:
+            stage = stage_progress.stage
+            status_icon = "🟢" if stage_progress.is_completed else ("🟡" if stage_progress.is_opened else "⏺️")
+            stages_info += f"{status_icon}<b>Этап {stage.order_number}:</b> {stage.name}\n"
+
+            # Получаем информацию о сессиях
+            sessions_progress = await get_stage_session_progress(session, stage_progress.id)
+            for session_progress in sessions_progress:
+                session_status_icon = "🟢" if session_progress.is_completed else ("🟡" if session_progress.is_opened else "⏺️")
+                stages_info += f"{session_status_icon}<b>Сессия {session_progress.session.order_number}:</b> {session_progress.session.name}\n"
+
+                # Показываем тесты в сессии
+                for test in session_progress.session.tests:
+                    test_result = await get_user_test_result(session, user.id, test.id)
+                    if test_result and test_result.is_passed:
+                        test_status_icon = "🟢"
+                    else:
+                        test_status_icon = "⏺️"
+                    stages_info += f"{test_status_icon}<b>Тест {len([t for t in session_progress.session.tests if t.id <= test.id])}:</b> {test.name}\n"
+
+        # Добавляем информацию об аттестации с правильным статусом
+        if trainee_path.learning_path.attestation:
+            attestation_status = await get_trainee_attestation_status(
+                session, user.id, trainee_path.learning_path.attestation.id
+            )
+            stages_info += f"🔍{attestation_status}<b>Аттестация:</b> {trainee_path.learning_path.attestation.name}\n\n"
+        else:
+            stages_info += f"🔍⏺️<b>Аттестация:</b> Не указана\n\n"
+
+        available_stages = [sp for sp in stages_progress if sp.is_opened and not sp.is_completed]
+
+        # Создаем клавиатуру с доступными этапами
+        keyboard_buttons = []
+
+        if available_stages:
+            stages_info += "Выберите этап траектории👇"
+            for stage_progress in available_stages:
+                keyboard_buttons.append([
+                    InlineKeyboardButton(
+                        text=f"Этап {stage_progress.stage.order_number}",
+                        callback_data=f"select_stage:{stage_progress.stage.id}"
+                    )
+                ])
+        else:
+            stages_info += "❌ Нет открытых этапов для прохождения"
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+
+        await callback.message.edit_text(
+            trajectory_info + stages_info,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        await callback.message.edit_text("Произошла ошибка при открытии траектории")
+        log_user_error(callback.from_user.id, "trajectory_from_test_error", str(e))

@@ -252,7 +252,7 @@ async def process_permission_selection(callback: CallbackQuery, state: FSMContex
 @router.callback_query(AdminStates.waiting_for_permission_confirmation, F.data.startswith("confirm_permission:"))
 async def process_permission_confirmation(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Обработчик подтверждения действия над правом"""
-    # КРИТИЧЕСКАЯ ПРОВЕРКА ПРАВ!
+
     current_user = await get_user_by_tg_id(session, callback.from_user.id)
     if not current_user:
         await callback.answer("❌ Пользователь не найден.", show_alert=True)

@@ -19,7 +19,9 @@ def get_role_selection_keyboard() -> InlineKeyboardMarkup:
     all_roles = [
         ("Стажёр", "Стажер"),
         ("Сотрудник", "Сотрудник"), 
-        ("Рекрутер", "Рекрутер")
+        ("Наставник", "Наставник"),
+        ("Рекрутер", "Рекрутер"),
+        ("Руководитель", "Руководитель")
     ]
     
     keyboard_buttons = []
@@ -46,6 +48,7 @@ def get_trainee_keyboard() -> ReplyKeyboardMarkup:
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="Мой профиль")],
+            [KeyboardButton(text="Траектория")],
             [KeyboardButton(text="Доступные тесты")],
             [KeyboardButton(text="Посмотреть баллы")],
             [KeyboardButton(text="Мой наставник")],
@@ -64,7 +67,27 @@ def get_recruiter_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="Назначить наставника")],
             [KeyboardButton(text="Список Наставников")],
             [KeyboardButton(text="Список Стажеров")],
+            [KeyboardButton(text="Группы пользователей")],
+            [KeyboardButton(text="Объекты")],
+            [KeyboardButton(text="Траектории")],
+            [KeyboardButton(text="База знаний")],
             [KeyboardButton(text="Список новых пользователей")],
+            [KeyboardButton(text="Все пользователи")],
+            [KeyboardButton(text="Помощь")]
+        ],
+        resize_keyboard=True
+    )
+    return keyboard
+
+
+def get_mentor_keyboard() -> ReplyKeyboardMarkup:
+    """Клавиатура для роли Наставник (бывший Employee) - Task 7 + Knowledge Base"""
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Мой профиль")],
+            [KeyboardButton(text="Мои стажеры")],
+            [KeyboardButton(text="Открыть список тестов")],
+            [KeyboardButton(text="База знаний")],
             [KeyboardButton(text="Помощь")]
         ],
         resize_keyboard=True
@@ -73,11 +96,12 @@ def get_recruiter_keyboard() -> ReplyKeyboardMarkup:
 
 
 def get_employee_keyboard() -> ReplyKeyboardMarkup:
+    """Клавиатура для роли Сотрудник (прошедшие аттестацию стажеры) - Task 7"""
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="Мой профиль")],
-            [KeyboardButton(text="Мои стажеры")],
-            [KeyboardButton(text="Открыть список тестов")],
+            [KeyboardButton(text="Мои данные")],
+            [KeyboardButton(text="Мои тесты")],
+            [KeyboardButton(text="База знаний")],
             [KeyboardButton(text="Помощь")]
         ],
         resize_keyboard=True
@@ -86,12 +110,11 @@ def get_employee_keyboard() -> ReplyKeyboardMarkup:
 
 
 def get_manager_keyboard() -> ReplyKeyboardMarkup:
+    """Меню для руководителя - проведение аттестаций стажеров (обновлено для Task 7 + Knowledge Base)"""
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="Мой профиль")],
-            [KeyboardButton(text="Управление пользователями")],
-            [KeyboardButton(text="Список Стажеров")],
-            [KeyboardButton(text="Управление правами ролей")],
+            [KeyboardButton(text="Аттестация")],
+            [KeyboardButton(text="База знаний")],
             [KeyboardButton(text="Помощь")]
         ],
         resize_keyboard=True
@@ -157,15 +180,25 @@ def get_confirmation_keyboard(user_id: int, role_name: str, action: str) -> Inli
     return keyboard
 
 
-def get_keyboard_by_role(role_name: str) -> ReplyKeyboardMarkup:
-    if role_name == "Стажер":
-        return get_trainee_keyboard()
-    elif role_name == "Рекрутер":
+def get_keyboard_by_role(roles) -> ReplyKeyboardMarkup:
+    """Получение клавиатуры по роли пользователя (обновлено для Task 7)"""
+    # Поддержка как строки, так и списка ролей
+    if isinstance(roles, str):
+        role_names = [roles]
+    else:
+        role_names = roles if isinstance(roles, list) else [role.name for role in roles]
+    
+    # Определяем клавиатуру по приоритету ролей
+    if "Рекрутер" in role_names:
         return get_recruiter_keyboard()
-    elif role_name == "Сотрудник":
-        return get_employee_keyboard()
-    elif role_name == "Управляющий":
+    elif "Руководитель" in role_names:
         return get_manager_keyboard()
+    elif "Наставник" in role_names:
+        return get_mentor_keyboard()
+    elif "Сотрудник" in role_names:
+        return get_employee_keyboard()
+    elif "Стажер" in role_names:
+        return get_trainee_keyboard()
     else:
         return ReplyKeyboardMarkup(
             keyboard=[[KeyboardButton(text="Мой профиль"), KeyboardButton(text="Помощь")]],
@@ -297,14 +330,15 @@ def get_test_filter_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="🗂️ Мои тесты", callback_data="test_filter:my"),
                 InlineKeyboardButton(text="📚 Все тесты", callback_data="test_filter:all")
             ],
+            [InlineKeyboardButton(text="✉️ Рассылка", callback_data="test_filter:broadcast")],
             [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
         ]
     )
     return keyboard
 
 
-def get_test_selection_keyboard(tests: list) -> InlineKeyboardMarkup:
-    """Создает инлайн-клавиатуру со списком тестов"""
+def get_simple_test_selection_keyboard(tests: list) -> InlineKeyboardMarkup:
+    """Создает простую инлайн-клавиатуру со списком тестов (для обычного выбора)"""
     keyboard = []
     
     for test in tests:
@@ -317,6 +351,65 @@ def get_test_selection_keyboard(tests: list) -> InlineKeyboardMarkup:
     keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_broadcast_test_selection_keyboard(tests: list) -> InlineKeyboardMarkup:
+    """Клавиатура для выбора теста для рассылки (Task 8)"""
+    keyboard = []
+    
+    for test in tests:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"{test.name}",
+                callback_data=f"broadcast_test:{test.id}"
+            )
+        ])
+    
+    keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_broadcast_groups_selection_keyboard(groups: list, selected_groups: list = None) -> InlineKeyboardMarkup:
+    """Клавиатура для выбора групп для рассылки (Task 8)"""
+    if selected_groups is None:
+        selected_groups = []
+    
+    keyboard = []
+    
+    for group in groups:
+        # Показываем выбранные группы с галочкой
+        if group.id in selected_groups:
+            text = f"✅ {group.name}"
+        else:
+            text = f"{group.name}"
+        
+        keyboard.append([
+            InlineKeyboardButton(
+                text=text,
+                callback_data=f"broadcast_group:{group.id}"
+            )
+        ])
+    
+    # Кнопка отправки доступна только если выбрана хотя бы одна группа
+    if selected_groups:
+        keyboard.append([
+            InlineKeyboardButton(text="📤 Отправить тест", callback_data="broadcast_send")
+        ])
+    
+    keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_broadcast_success_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура после успешной рассылки (Task 8)"""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+        ]
+    )
+    return keyboard
 
 
 def get_question_edit_keyboard(question_id: int) -> InlineKeyboardMarkup:
@@ -445,6 +538,7 @@ def get_trainee_actions_keyboard(trainee_id: int) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📋 Добавить тест", callback_data=f"add_test_access:{trainee_id}")],
             [InlineKeyboardButton(text="📊 Результаты тестов", callback_data=f"trainee_results:{trainee_id}")],
             [InlineKeyboardButton(text="👤 Профиль", callback_data=f"trainee_profile:{trainee_id}")],
+            [InlineKeyboardButton(text="👨‍🏫 Руководитель", callback_data=f"manager_actions:{trainee_id}")],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_trainees")]
         ]
     )
@@ -611,42 +705,110 @@ def format_help_message(role_name: str) -> str:
     
     role_specific_help = {
         "Стажер": """🎓 <b>Вы — стажер.</b>
-Ваша основная задача — проходить тесты, которые назначает ваш наставник.
+Ваша основная задача — проходить тесты и траектории обучения, назначенные наставником.
 
-<b>Доступные команды:</b>
-• <code>/my_tests</code> — посмотреть назначенные вам тесты.
-• <code>/my_results</code> — увидеть ваши баллы за пройденные тесты.
-• <code>/my_mentor</code> — получить информацию о вашем наставнике.
+<b>Основные функции:</b>
+• <b>Мой профиль</b> — посмотреть информацию о себе
+• <b>Траектория</b> — перейти к вашей траектории обучения
+• <b>Доступные тесты</b> — посмотреть назначенные вам тесты
+• <b>Посмотреть баллы</b> — увидеть ваши баллы за пройденные тесты
+• <b>Мой наставник</b> — получить информацию о вашем наставнике
+
+<b>Команды:</b>
+• <code>/start</code> — запуск/перезапуск бота
+• <code>/logout</code> — выйти из системы
 """,
-        "Сотрудник": """👨‍🏫 <b>Вы — наставник.</b>
-Ваша задача — курировать стажеров и предоставлять им доступ к тестам.
+        "Сотрудник": """👨‍💼 <b>Вы — сотрудник.</b>
+Вы прошли стажировку и теперь можете проходить тесты, назначаемые рекрутером.
 
-<b>Доступные команды:</b>
-• <code>/my_trainees</code> — посмотреть список ваших стажеров и управлять ими.
-• <code>/all_tests</code> — просмотреть все тесты в системе, чтобы назначить их стажерам.
+<b>Основные функции:</b>
+• <b>Мои данные</b> — просмотреть свой профиль
+• <b>Мои тесты</b> — посмотреть назначенные вам тесты
+• <b>База знаний</b> — получить доступ к корпоративным материалам
+
+<b>Команды:</b>
+• <code>/start</code> — запуск/перезапуск бота
+• <code>/logout</code> — выйти из системы
+""",
+        "Наставник": """👨‍🏫 <b>Вы — наставник.</b>
+Ваша задача — курировать назначенных вам стажеров и управлять их прогрессом.
+
+<b>Основные функции:</b>
+• <b>Мой профиль</b> — посмотреть информацию о себе
+• <b>Мои стажеры</b> — посмотреть список ваших стажеров и управлять ими
+• <b>Открыть список тестов</b> — посмотреть тесты, доступные для назначения стажерам
+• <b>База знаний</b> — получить доступ к корпоративным материалам
+
+<b>Возможности:</b>
+• Назначение траекторий обучения своим стажерам
+• Открытие этапов траекторий по мере прогресса стажеров
+• Мониторинг прогресса стажеров
+• Предоставление доступа к тестам стажерам
+• Назначение аттестаций стажерам через руководителей
+
+<b>Команды:</b>
+• <code>/start</code> — запуск/перезапуск бота
+• <code>/logout</code> — выйти из системы
 """,
         "Рекрутер": """👔 <b>Вы — рекрутер.</b>
-Ваша задача — создавать контент для обучения (тесты) и управлять процессом наставничества.
+Ваша задача — создавать контент для обучения и управлять процессом наставничества.
 
-<b>Доступные команды:</b>
-• <code>/create_test</code> — запустить мастер создания нового теста.
-• <code>/manage_tests</code> — управлять всеми тестами в системе (редактировать, удалять, смотреть статистику).
-• <code>/assign_mentor</code> — назначить наставника новому стажеру.
+<b>Основные функции:</b>
+• <b>Мой профиль</b> — посмотреть информацию о себе
+• <b>Создать тест</b> — запустить мастер создания нового теста
+• <b>Открыть список тестов</b> — управлять всеми тестами в системе
+• <b>Назначить наставника</b> — назначить наставника новому стажеру
+• <b>Траектории</b> — создавать и управлять траекториями обучения
+• <b>База знаний</b> — управлять корпоративными материалами
+• <b>Список новых пользователей</b> — активировать новых пользователей
+• <b>Все пользователи</b> — редактировать данные пользователей
+• <b>Группы пользователей</b> — управлять группами сотрудников
+• <b>Объекты</b> — управлять объектами работы
+
+<b>Возможности:</b>
+• Создание и управление траекториями обучения
+• Создание аттестаций для руководителей
+• Активация новых пользователей и назначение им наставников
+• Редактирование данных пользователей
+• Управление группами и объектами
+• Массовая рассылка тестов по группам
+• Полный доступ к базе знаний
+
+<b>Команды:</b>
+• <code>/start</code> — запуск/перезапуск бота
+• <code>/logout</code> — выйти из системы
 """,
-        "Управляющий": """🔧 <b>Вы — управляющий.</b>
-Вам доступен полный функционал системы, включая управление ролями и правами других пользователей.
+        "Руководитель": """🔧 <b>Вы — руководитель.</b>
+Ваша задача — проводить аттестации стажеров и управлять их переходом в сотрудники.
+
+<b>Основные функции:</b>
+• <b>Аттестация</b> — проводить аттестации стажеров
+• <b>База знаний</b> — получить доступ к корпоративным материалам
+
+<b>Возможности:</b>
+• Проведение аттестаций стажеров
+• Управление расписанием аттестаций
+• Просмотр результатов аттестаций
+• Переход стажеров в статус сотрудника
+
+<b>Команды:</b>
+• <code>/start</code> — запуск/перезапуск бота
+• <code>/logout</code> — выйти из системы
 """,
         "Неавторизованный": """👋 <b>Добро пожаловать!</b>
 Вы еще не вошли в систему.
 
 <b>Доступные команды:</b>
-• <code>/register</code> — пройти регистрацию, чтобы получить доступ к функциям бота.
-• <code>/login</code> — войти в систему, если вы уже зарегистрированы.
+• <code>/start</code> — запуск/перезапуск бота
+• <code>/register</code> — пройти регистрацию, чтобы получить доступ к функциям бота
+• <code>/login</code> — войти в систему, если вы уже зарегистрированы
 """
     }
-    
+
     base_text += role_specific_help.get(role_name, "Для вашей роли нет специальной справки.")
-    base_text += "\n\n• <code>/profile</code> — посмотреть ваш профиль.\n• <code>/help</code> — вызвать эту справку."
+
+    # Добавляем общую команду /help для всех ролей
+    base_text += "\n\n• <code>/help</code> — вызвать эту справку"
     
     return base_text 
 
@@ -663,4 +825,756 @@ def get_tests_for_access_keyboard(tests: list) -> InlineKeyboardMarkup:
     
     keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
     
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+# =================================
+# КЛАВИАТУРЫ ДЛЯ УПРАВЛЕНИЯ ГРУППАМИ
+# =================================
+
+def get_group_management_keyboard() -> InlineKeyboardMarkup:
+    """Главная клавиатура управления группами"""
+    keyboard = [
+        [InlineKeyboardButton(text="➕ Создать группу", callback_data="create_group")],
+        [InlineKeyboardButton(text="📝 Изменить группу", callback_data="manage_edit_group")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_group_selection_keyboard(groups: list, page: int = 0, per_page: int = 5) -> InlineKeyboardMarkup:
+    """Клавиатура для выбора группы для изменения с пагинацией"""
+    keyboard = []
+    
+    # Пагинация
+    start_index = page * per_page
+    end_index = start_index + per_page
+    page_groups = groups[start_index:end_index]
+    
+    # Кнопки групп
+    for group in page_groups:
+        button = InlineKeyboardButton(
+            text=f"🗂️ {group.name}",
+            callback_data=f"select_group:{group.id}"
+        )
+        keyboard.append([button])
+    
+    # Навигационные кнопки
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"groups_page:{page-1}"))
+    
+    total_pages = (len(groups) + per_page - 1) // per_page
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton(text="➡️ Далее", callback_data=f"groups_page:{page+1}"))
+    
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+    
+    # Информация о страницах
+    if total_pages > 1:
+        page_info = InlineKeyboardButton(
+            text=f"📄 {page + 1}/{total_pages}",
+            callback_data="page_info"
+        )
+        keyboard.append([page_info])
+    
+    keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_group_rename_confirmation_keyboard(group_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура подтверждения переименования группы"""
+    keyboard = [
+        [InlineKeyboardButton(text="✅ Да", callback_data=f"confirm_rename:{group_id}")],
+        [InlineKeyboardButton(text="❌ Отменить", callback_data="cancel_rename")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_main_menu_keyboard() -> InlineKeyboardMarkup:
+    """Простая клавиатура с кнопкой 'Главное меню'"""
+    keyboard = [
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+# =================================
+# КЛАВИАТУРЫ ДЛЯ УПРАВЛЕНИЯ ОБЪЕКТАМИ
+# =================================
+
+def get_object_management_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для управления объектами"""
+    keyboard = [
+        [InlineKeyboardButton(text="Создать объект", callback_data="create_object")],
+        [InlineKeyboardButton(text="Изменить объект", callback_data="edit_object")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+def get_object_selection_keyboard(objects: list, page: int = 0, per_page: int = 5, object_type: str = "") -> InlineKeyboardMarkup:
+    """Клавиатура для выбора объекта для изменения с пагинацией"""
+    keyboard = []
+    
+    # Пагинация
+    start_index = page * per_page
+    end_index = start_index + per_page
+    page_objects = objects[start_index:end_index]
+    
+    # Кнопки объектов
+    for obj in page_objects:
+        # Определяем callback_data в зависимости от типа объекта
+        if object_type == "internship":
+            callback_data = f"select_internship_object:{obj.id}"
+        elif object_type == "work":
+            callback_data = f"select_work_object:{obj.id}"
+        else:
+            callback_data = f"select_object:{obj.id}"
+            
+        keyboard.append([
+            InlineKeyboardButton(
+                text=obj.name,
+                callback_data=callback_data
+            )
+        ])
+    
+    # Навигация по страницам
+    navigation_row = []
+    total_pages = (len(objects) + per_page - 1) // per_page
+    
+    # Определяем префикс для callback_data пагинации
+    if object_type == "internship":
+        page_callback = "internship_object_page"
+    elif object_type == "work":
+        page_callback = "work_object_page"
+    else:
+        page_callback = "objects_page"
+    
+    if page > 0:
+        navigation_row.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"{page_callback}:{page-1}"))
+    
+    if total_pages > 1:
+        navigation_row.append(InlineKeyboardButton(text=f"📄 {page+1}/{total_pages}", callback_data="page_info"))
+    
+    if page < total_pages - 1:
+        navigation_row.append(InlineKeyboardButton(text="➡️ Далее", callback_data=f"{page_callback}:{page+1}"))
+    
+    if navigation_row:
+        keyboard.append(navigation_row)
+    
+    # Кнопка возврата в главное меню
+    keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+def get_object_rename_confirmation_keyboard(object_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура для подтверждения переименования объекта"""
+    keyboard = [
+        [InlineKeyboardButton(text="✅ Да", callback_data=f"confirm_object_rename:{object_id}")],
+        [InlineKeyboardButton(text="❌ Отменить", callback_data="cancel_object_rename")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_user_editor_keyboard(is_trainee: bool = False) -> InlineKeyboardMarkup:
+    """Клавиатура для редактора пользователя"""
+    keyboard = [
+        [InlineKeyboardButton(text="ФИО", callback_data="edit_full_name")],
+        [InlineKeyboardButton(text="Телефон", callback_data="edit_phone")],
+        [InlineKeyboardButton(text="Роль", callback_data="edit_role")],
+        [InlineKeyboardButton(text="Группу", callback_data="edit_group")]
+    ]
+    
+    # Добавляем объект стажировки только для стажеров
+    if is_trainee:
+        keyboard.append([InlineKeyboardButton(text="1️⃣Объект стажировки", callback_data="edit_internship_object")])
+    
+    keyboard.append([InlineKeyboardButton(text="2️⃣Объект работы", callback_data="edit_work_object")])
+    keyboard.append([InlineKeyboardButton(text="Главное меню", callback_data="edit_return_to_menu")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_edit_confirmation_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для подтверждения изменений"""
+    keyboard = [
+        [InlineKeyboardButton(text="✅ Изменить", callback_data="confirm_change")],
+        [InlineKeyboardButton(text="❌ Отменить", callback_data="cancel_change")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+# ================== ТРАЕКТОРИИ ОБУЧЕНИЯ ==================
+
+def get_learning_paths_main_keyboard() -> InlineKeyboardMarkup:
+    """Главное меню редактора траекторий"""
+    keyboard = [
+        [InlineKeyboardButton(text="➕Создать", callback_data="create_trajectory")],
+        [InlineKeyboardButton(text="✏️Изменить", callback_data="edit_trajectory")],
+        [InlineKeyboardButton(text="🔍Аттестации", callback_data="manage_attestations")],
+        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_trajectory_creation_start_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для начала создания траектории"""
+    keyboard = [
+        [InlineKeyboardButton(text="Начать", callback_data="start_trajectory_creation")],
+        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_test_selection_keyboard(tests: list, existing_tests_in_session: list = None) -> InlineKeyboardMarkup:
+    """Клавиатура выбора тестов для сессии"""
+    keyboard = []
+    
+    # Кнопка создания нового теста
+    keyboard.append([InlineKeyboardButton(text="➕Создать новый тест", callback_data="create_new_test")])
+    
+    # Если есть существующие тесты в сессии, добавляем кнопку сохранения
+    if existing_tests_in_session:
+        keyboard.append([InlineKeyboardButton(text="✅Сохранить Сессию", callback_data="save_session")])
+    
+    # Добавляем доступные тесты
+    for test in tests:
+        # Исключаем уже добавленные тесты
+        if not existing_tests_in_session or test.id not in [t['id'] for t in existing_tests_in_session]:
+            keyboard.append([InlineKeyboardButton(
+                text=test.name, 
+                callback_data=f"select_test:{test.id}"
+            )])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_test_creation_cancel_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура отмены создания теста"""
+    keyboard = [
+        [InlineKeyboardButton(text="🚫Отменить создание теста", callback_data="cancel_test_creation")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_test_materials_choice_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура выбора материалов для теста"""
+    keyboard = [
+        [InlineKeyboardButton(text="✅ Да", callback_data="add_materials")],
+        [InlineKeyboardButton(text="❌Нет", callback_data="skip_materials")],
+        [InlineKeyboardButton(text="🚫Отменить создание теста", callback_data="cancel_test_creation")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_test_materials_skip_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для пропуска материалов"""
+    keyboard = [
+        [InlineKeyboardButton(text="⏩Пропустить", callback_data="skip_materials")],
+        [InlineKeyboardButton(text="🚫Отменить создание теста", callback_data="cancel_test_creation")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_test_description_skip_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для пропуска описания теста"""
+    keyboard = [
+        [InlineKeyboardButton(text="⏩Пропустить", callback_data="skip_description")],
+        [InlineKeyboardButton(text="🚫Отменить создание теста", callback_data="cancel_test_creation")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+
+
+def get_more_questions_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для добавления дополнительных вопросов"""
+    keyboard = [
+        [InlineKeyboardButton(text="✅ Да", callback_data="add_more_questions")],
+        [InlineKeyboardButton(text="❌Нет", callback_data="finish_questions")],
+        [InlineKeyboardButton(text="🚫Отменить создание теста", callback_data="cancel_test_creation")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_session_management_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура управления сессиями после создания"""
+    keyboard = [
+        [InlineKeyboardButton(text="Добавить сессию", callback_data="add_session")],
+        [InlineKeyboardButton(text="Новый Этап", callback_data="add_stage")],
+        [InlineKeyboardButton(text="Сохранить траекторию", callback_data="save_trajectory")],
+        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_attestation_selection_keyboard(attestations: list) -> InlineKeyboardMarkup:
+    """Клавиатура выбора аттестации для траектории"""
+    keyboard = []
+    
+    # Добавляем доступные аттестации
+    for attestation in attestations:
+        keyboard.append([InlineKeyboardButton(
+            text=attestation.name,
+            callback_data=f"select_attestation:{attestation.id}"
+        )])
+    
+    keyboard.append([InlineKeyboardButton(text="🚫Отменить", callback_data="cancel_attestation_selection")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_trajectory_save_confirmation_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура подтверждения сохранения траектории"""
+    keyboard = [
+        [InlineKeyboardButton(text="✅Да", callback_data="confirm_trajectory_save")],
+        [InlineKeyboardButton(text="🚫Отменить", callback_data="cancel_trajectory_save")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_trajectory_attestation_confirmation_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура подтверждения траектории с аттестацией (пункт 49 ТЗ)"""
+    keyboard = [
+        [InlineKeyboardButton(text="✅Да", callback_data="confirm_attestation_and_proceed")],
+        [InlineKeyboardButton(text="🚫Отменить", callback_data="cancel_attestation_confirmation")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_trajectory_final_confirmation_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура финального подтверждения траектории с группой (пункт 54 ТЗ)"""
+    keyboard = [
+        [InlineKeyboardButton(text="✅Сохранить", callback_data="final_confirm_save")],
+        [InlineKeyboardButton(text="🚫Отменить", callback_data="cancel_final_confirmation")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+# ================== АТТЕСТАЦИИ ==================
+
+def get_attestations_main_keyboard(attestations: list) -> InlineKeyboardMarkup:
+    """Главное меню редактора аттестаций"""
+    keyboard = []
+    
+    # Кнопка создания новой аттестации
+    keyboard.append([InlineKeyboardButton(text="➕Создать", callback_data="create_attestation")])
+    
+    # Добавляем существующие аттестации
+    for attestation in attestations:
+        keyboard.append([InlineKeyboardButton(
+            text=attestation.name,
+            callback_data=f"view_attestation:{attestation.id}"
+        )])
+    
+    keyboard.append([InlineKeyboardButton(text="Главное меню", callback_data="main_menu")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_attestation_creation_start_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для начала создания аттестации"""
+    keyboard = [
+        [InlineKeyboardButton(text="Далее⏩", callback_data="start_attestation_creation")],
+        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_attestation_questions_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для управления вопросами аттестации"""
+    keyboard = [
+        [InlineKeyboardButton(text="Сохранить вопросы", callback_data="save_attestation_questions")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+# ================== ФИЛЬТРАЦИЯ ПОЛЬЗОВАТЕЛЕЙ ==================
+
+def get_users_filter_keyboard(groups: list, objects: list) -> InlineKeyboardMarkup:
+    """Клавиатура фильтрации пользователей по группам и объектам"""
+    keyboard = []
+    
+    # Показать всех пользователей
+    keyboard.append([InlineKeyboardButton(text="👥 Все пользователи", callback_data="filter_all_users")])
+    
+    # Фильтр по группам
+    if groups:
+        keyboard.append([InlineKeyboardButton(text="🗂️ Фильтр по группам", callback_data="filter_by_groups")])
+    
+    # Фильтр по объектам  
+    if objects:
+        keyboard.append([InlineKeyboardButton(text="📍 Фильтр по объектам", callback_data="filter_by_objects")])
+    
+    # Кнопка главного меню
+    keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_group_filter_keyboard(groups: list, page: int = 0, per_page: int = 5) -> InlineKeyboardMarkup:
+    """Клавиатура выбора группы для фильтрации с пагинацией"""
+    keyboard = []
+    total_groups = len(groups)
+    start_idx = page * per_page
+    end_idx = start_idx + per_page
+    
+    # Добавляем кнопки групп для текущей страницы
+    for group in groups[start_idx:end_idx]:
+        keyboard.append([InlineKeyboardButton(
+            text=f"🗂️ {group.name}",
+            callback_data=f"filter_group:{group.id}"
+        )])
+    
+    # Навигационные кнопки
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton(text="⬅️", callback_data=f"group_filter_page:{page - 1}"))
+    
+    if end_idx < total_groups:
+        nav_row.append(InlineKeyboardButton(text="➡️", callback_data=f"group_filter_page:{page + 1}"))
+    
+    if nav_row:
+        keyboard.append(nav_row)
+    
+    # Кнопка назад
+    keyboard.append([InlineKeyboardButton(text="↩️ Назад к фильтрам", callback_data="back_to_filters")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_object_filter_keyboard(objects: list, page: int = 0, per_page: int = 5) -> InlineKeyboardMarkup:
+    """Клавиатура выбора объекта для фильтрации с пагинацией"""
+    keyboard = []
+    total_objects = len(objects)
+    start_idx = page * per_page
+    end_idx = start_idx + per_page
+    
+    # Добавляем кнопки объектов для текущей страницы
+    for obj in objects[start_idx:end_idx]:
+        keyboard.append([InlineKeyboardButton(
+            text=f"📍 {obj.name}",
+            callback_data=f"filter_object:{obj.id}"
+        )])
+    
+    # Навигационные кнопки
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton(text="⬅️", callback_data=f"object_filter_page:{page - 1}"))
+    
+    if end_idx < total_objects:
+        nav_row.append(InlineKeyboardButton(text="➡️", callback_data=f"object_filter_page:{page + 1}"))
+    
+    if nav_row:
+        keyboard.append(nav_row)
+    
+    # Кнопка назад
+    keyboard.append([InlineKeyboardButton(text="↩️ Назад к фильтрам", callback_data="back_to_filters")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_users_list_keyboard(users: list, page: int = 0, per_page: int = 5, filter_type: str = "all") -> InlineKeyboardMarkup:
+    """Клавиатура списка пользователей с пагинацией"""
+    keyboard = []
+    total_users = len(users)
+    start_idx = page * per_page
+    end_idx = start_idx + per_page
+    
+    # Добавляем кнопки пользователей для текущей страницы
+    for user in users[start_idx:end_idx]:
+        # Роль для отображения
+        role_name = user.roles[0].name if user.roles else "Без роли"
+        
+        keyboard.append([InlineKeyboardButton(
+            text=f"👤 {user.full_name} ({role_name})",
+            callback_data=f"view_user:{user.id}"
+        )])
+    
+    # Навигационные кнопки
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton(text="⬅️", callback_data=f"users_page:{filter_type}:{page - 1}"))
+    
+    if end_idx < total_users:
+        nav_row.append(InlineKeyboardButton(text="➡️", callback_data=f"users_page:{filter_type}:{page + 1}"))
+    
+    if nav_row:
+        keyboard.append(nav_row)
+    
+    # Кнопка назад
+    keyboard.append([InlineKeyboardButton(text="↩️ Назад к фильтрам", callback_data="back_to_filters")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_user_info_keyboard(user_id: int, filter_type: str = "all") -> InlineKeyboardMarkup:
+    """Клавиатура для просмотра информации о пользователе"""
+    keyboard = [
+        [InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"edit_user:{user_id}")],
+        [InlineKeyboardButton(text="↩️ Назад к списку", callback_data=f"back_to_users:{filter_type}")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+# ===== КЛАВИАТУРЫ ДЛЯ РАБОТЫ С РУКОВОДИТЕЛЯМИ =====
+
+def get_manager_selection_keyboard(managers: list) -> InlineKeyboardMarkup:
+    """
+    Клавиатура для выбора руководителя из списка доступных
+    """
+    keyboard = []
+
+    for manager in managers:
+        keyboard.append([InlineKeyboardButton(
+            text=f"{manager.full_name}",
+            callback_data=f"select_manager:{manager.id}"
+        )])
+
+    # Кнопка отмены
+    keyboard.append([InlineKeyboardButton(text="🚫 Отменить", callback_data="cancel_manager_selection")])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_manager_assignment_confirmation_keyboard(trainee_id: int, manager_id: int) -> InlineKeyboardMarkup:
+    """
+    Клавиатура подтверждения назначения руководителя стажеру
+    """
+    keyboard = [
+        [InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"confirm_manager:{trainee_id}:{manager_id}")],
+        [InlineKeyboardButton(text="🚫 Отменить", callback_data="cancel_manager_assignment")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_manager_actions_keyboard(trainee_id: int) -> InlineKeyboardMarkup:
+    """
+    Клавиатура действий для работы с руководителем стажера
+    """
+    keyboard = [
+        [InlineKeyboardButton(text="👨‍🏫 Назначить руководителя", callback_data=f"assign_manager:{trainee_id}")],
+        [InlineKeyboardButton(text="📋 Посмотреть руководителя", callback_data=f"view_manager:{trainee_id}")],
+        [InlineKeyboardButton(text="🎯 Аттестация", callback_data=f"attestation:{trainee_id}")],
+        [InlineKeyboardButton(text="↩️ Назад", callback_data=f"back_to_trainee:{trainee_id}")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+# =================================
+# КЛАВИАТУРЫ ДЛЯ БАЗЫ ЗНАНИЙ (Task 9)
+# =================================
+
+def get_knowledge_base_main_keyboard(has_folders: bool = False) -> InlineKeyboardMarkup:
+    """Основная клавиатура базы знаний для рекрутера (ТЗ 9-1 шаг 2)"""
+    keyboard = [
+        [InlineKeyboardButton(text="Создать папку", callback_data="kb_create_folder")],
+        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+    ]
+    
+    # Если папки есть, показываем их кнопки будут добавлены динамически
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_knowledge_folders_keyboard(folders: list, show_create: bool = True) -> InlineKeyboardMarkup:
+    """Клавиатура со списком всех папок базы знаний (ТЗ 9-2 шаг 2)"""
+    keyboard = []
+    
+    # Кнопки управления
+    if show_create:
+        keyboard.append([InlineKeyboardButton(text="Создать папку", callback_data="kb_create_folder")])
+    keyboard.append([InlineKeyboardButton(text="Главное меню", callback_data="main_menu")])
+    
+    # Папки (максимум 4-5 для читабельности)
+    for folder in folders:
+        folder_name = folder.name[:25] + "..." if len(folder.name) > 25 else folder.name
+        keyboard.append([InlineKeyboardButton(
+            text=f"{{ {folder_name} }}", 
+            callback_data=f"kb_folder:{folder.id}"
+        )])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_folder_created_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура после создания папки (ТЗ 9-1 шаг 6)"""
+    keyboard = [
+        [InlineKeyboardButton(text="Добавить материал", callback_data="kb_add_material")],
+        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_material_description_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для пропуска описания материала (ТЗ 9-1 шаг 12)"""
+    keyboard = [
+        [InlineKeyboardButton(text="⏩Пропустить", callback_data="kb_skip_description")],
+        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_material_save_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для сохранения материала (ТЗ 9-1 шаг 14)"""
+    keyboard = [
+        [InlineKeyboardButton(text="✅Сохранить", callback_data="kb_save_material")],
+        [InlineKeyboardButton(text="🚫Отменить", callback_data="kb_cancel_material")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_material_saved_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура после сохранения материала (ТЗ 9-1 шаг 16)"""
+    keyboard = [
+        [InlineKeyboardButton(text="Добавить материал", callback_data="kb_add_material")],
+        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_folder_view_keyboard(folder_id: int, materials: list) -> InlineKeyboardMarkup:
+    """Клавиатура для просмотра содержимого папки (ТЗ 9-2 шаг 4)"""
+    keyboard = []
+
+    # Материалы в папке (фильтруем только активные)
+    for material in materials:
+        if material.is_active:  # Показываем только активные материалы
+            material_name = material.name[:20] + "..." if len(material.name) > 20 else material.name
+            keyboard.append([InlineKeyboardButton(
+                text=material_name,
+                callback_data=f"kb_material:{material.id}"
+            )])
+    
+    # Кнопки управления папкой
+    keyboard.extend([
+        [InlineKeyboardButton(text="Доступ", callback_data=f"kb_access:{folder_id}")],
+        [InlineKeyboardButton(text="Удалить папку", callback_data=f"kb_delete_folder:{folder_id}")],
+        [InlineKeyboardButton(text="Изменить название", callback_data=f"kb_rename_folder:{folder_id}")],
+        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+    ])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_material_view_keyboard(material_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура для просмотра материала (ТЗ 9-2 шаг 6)"""
+    keyboard = [
+        [InlineKeyboardButton(text="Удалить материал", callback_data=f"kb_delete_material:{material_id}")],
+        [InlineKeyboardButton(text="Назад", callback_data="kb_back")],
+        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_material_delete_confirmation_keyboard(material_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура подтверждения удаления материала (ТЗ 9-2 шаг 7-2)"""
+    keyboard = [
+        [InlineKeyboardButton(text="✅Да, удалить", callback_data=f"kb_confirm_delete_material:{material_id}")],
+        [InlineKeyboardButton(text="🚫Нет, отмена", callback_data="kb_cancel_delete")],
+        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_group_access_selection_keyboard(groups: list, selected_group_ids: list = None) -> InlineKeyboardMarkup:
+    """Клавиатура для выбора групп доступа к папке (ТЗ 9-3 шаг 5)"""
+    keyboard = []
+    selected_group_ids = selected_group_ids or []
+    
+    # Группы с отметками о выборе
+    for group in groups:
+        # Отмечаем выбранные группы
+        prefix = "✅ " if group.id in selected_group_ids else ""
+        group_name = group.name[:15] + "..." if len(group.name) > 15 else group.name
+        keyboard.append([InlineKeyboardButton(
+            text=f"{prefix}{{ {group_name} }}",
+            callback_data=f"kb_toggle_group:{group.id}"
+        )])
+    
+    # Кнопки управления
+    keyboard.append([InlineKeyboardButton(text="Назад", callback_data="kb_back")])
+    
+    # Показываем кнопку "Сохранить изменения" только если есть выбранные группы
+    if selected_group_ids:
+        keyboard.insert(-1, [InlineKeyboardButton(text="Сохранить изменения", callback_data="kb_save_access")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_folder_rename_confirmation_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура подтверждения переименования папки (ТЗ 9-4 шаг 7)"""
+    keyboard = [
+        [InlineKeyboardButton(text="✅Сохранить", callback_data="kb_confirm_rename")],
+        [InlineKeyboardButton(text="🚫Отменить", callback_data="kb_cancel_rename")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_folder_delete_confirmation_keyboard(folder_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура подтверждения удаления папки (ТЗ 9-5 шаг 5)"""
+    keyboard = [
+        [InlineKeyboardButton(text="✅Да, удалить", callback_data=f"kb_confirm_delete_folder:{folder_id}")],
+        [InlineKeyboardButton(text="🚫Нет, отмена", callback_data="kb_cancel_delete")],
+        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_folder_deleted_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура после удаления папки (ТЗ 9-5 шаг 7)"""
+    keyboard = [
+        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+# Клавиатуры для сотрудников (просмотр базы знаний)
+def get_employee_knowledge_folders_keyboard(folders: list) -> InlineKeyboardMarkup:
+    """Клавиатура папок базы знаний для сотрудников"""
+    keyboard = []
+
+    # Папки, доступные сотруднику (фильтруем только активные)
+    for folder in folders:
+        if folder.is_active:  # Показываем только активные папки
+            folder_name = folder.name[:25] + "..." if len(folder.name) > 25 else folder.name
+            keyboard.append([InlineKeyboardButton(
+                text=f"📁 {folder_name}",
+                callback_data=f"kb_emp_folder:{folder.id}"
+            )])
+    
+    # Кнопка возврата
+    keyboard.append([InlineKeyboardButton(text="⬅️ Назад к профилю", callback_data="back_to_employee_profile")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_employee_folder_materials_keyboard(folder_id: int, materials: list) -> InlineKeyboardMarkup:
+    """Клавиатура материалов папки для сотрудников"""
+    keyboard = []
+
+    # Материалы в папке (фильтруем только активные)
+    for material in materials:
+        if material.is_active:  # Показываем только активные материалы
+            material_name = material.name[:25] + "..." if len(material.name) > 25 else material.name
+            keyboard.append([InlineKeyboardButton(
+                text=f"📄 {material_name}",
+                callback_data=f"kb_emp_material:{material.id}"
+            )])
+    
+    # Кнопка возврата
+    keyboard.append([InlineKeyboardButton(text="⬅️ Назад к папкам", callback_data="kb_emp_back_to_folders")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_employee_material_view_keyboard(folder_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура просмотра материала для сотрудников"""
+    keyboard = [
+        [InlineKeyboardButton(text="⬅️ Назад к материалам", callback_data=f"kb_emp_folder:{folder_id}")],
+        [InlineKeyboardButton(text="📚 К папкам", callback_data="kb_emp_back_to_folders")]
+    ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard) 

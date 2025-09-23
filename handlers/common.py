@@ -28,7 +28,20 @@ async def cmd_help(message: Message, state: FSMContext, session: AsyncSession):
         user = await get_user_by_tg_id(session, message.from_user.id)
         if user:
             roles = await get_user_roles(session, user.id)
-            role = roles[0].name if roles else "Неавторизованный"
+            if roles:
+                # Определяем приоритетную роль (по иерархии)
+                role_priority = {
+                    "Руководитель": 5,
+                    "Рекрутер": 4, 
+                    "Наставник": 3,
+                    "Сотрудник": 2,
+                    "Стажер": 1
+                }
+                # Берем роль с наивысшим приоритетом
+                user_roles = [r.name for r in roles]
+                role = max(user_roles, key=lambda r: role_priority.get(r, 0))
+            else:
+                role = "Неавторизованный"
         else:
             role = "Неавторизованный"
 
@@ -70,24 +83,3 @@ async def button_profile(message: Message, state: FSMContext, session: AsyncSess
 @router.message(F.text == "Помощь")
 async def button_help(message: Message, state: FSMContext, session: AsyncSession):
     await cmd_help(message, state, session)
-
-@router.message(Command("cancel"))
-async def cmd_cancel(message: Message, state: FSMContext):
-    """Отмена текущей операции и очистка состояния"""
-    current_state = await state.get_state()
-    
-    if current_state:
-        await state.clear()
-        await message.answer(
-            "✅ <b>Операция отменена</b>\n\n"
-            "Все введенные данные сброшены. Вы можете начать заново.\n\n"
-            "Используйте <code>/start</code> для перехода в главное меню.",
-            parse_mode="HTML"
-        )
-    else:
-        await message.answer(
-            "ℹ️ <b>Нет активных операций</b>\n\n"
-            "У вас нет текущих операций для отмены.\n\n"
-            "Используйте <code>/start</code> для перехода в главное меню.",
-            parse_mode="HTML"
-        ) 

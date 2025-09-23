@@ -1,0 +1,2169 @@
+import asyncio
+from aiogram import Router, F
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.fsm.context import FSMContext
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from database.db import (
+    get_all_learning_paths, get_learning_path_by_id, save_trajectory_to_database,
+    save_trajectory_with_attestation_and_group, delete_learning_path,
+    create_attestation, add_attestation_question, get_all_attestations,
+    get_attestation_by_id, check_attestation_in_use, delete_attestation, 
+    get_all_active_tests, create_test, add_question_to_test,
+    get_all_groups, check_user_permission, get_user_by_tg_id, get_user_roles,
+    get_trajectories_using_attestation
+)
+from handlers.auth import check_auth
+from states.states import LearningPathStates, AttestationStates
+from keyboards.keyboards import (
+    get_learning_paths_main_keyboard, get_trajectory_creation_start_keyboard,
+    get_test_selection_keyboard, get_test_creation_cancel_keyboard,
+    get_test_materials_choice_keyboard, get_test_materials_skip_keyboard,
+    get_test_description_skip_keyboard, get_question_type_keyboard,
+    get_more_questions_keyboard, get_session_management_keyboard,
+    get_attestation_selection_keyboard, get_trajectory_save_confirmation_keyboard,
+    get_trajectory_attestation_confirmation_keyboard, get_trajectory_final_confirmation_keyboard, 
+    get_attestations_main_keyboard, get_attestation_creation_start_keyboard, 
+    get_attestation_questions_keyboard, get_group_selection_keyboard, 
+    get_main_menu_keyboard, get_keyboard_by_role
+)
+from utils.logger import log_user_action, log_user_error
+from utils.validators import validate_name
+
+router = Router()
+
+
+@router.message(F.text == "Траектории")
+async def cmd_learning_paths(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработчик команды 'Траектории'"""
+    try:
+        # КРИТИЧНО: Очищаем состояние и данные FSM при входе
+        await state.clear()
+        
+        # Проверка авторизации
+        is_auth = await check_auth(message, state, session)
+        if not is_auth:
+            return
+        
+        # Получение пользователя
+        user = await get_user_by_tg_id(session, message.from_user.id)
+        if not user:
+            await message.answer("Вы не зарегистрированы в системе.")
+            return
+        
+        # Проверка прав доступа
+        has_permission = await check_user_permission(session, user.id, "manage_groups")
+        if not has_permission:
+            await message.answer(
+                "❌ <b>Недостаточно прав</b>\n\n"
+                "У вас нет прав для управления траекториями.\n"
+                "Обратитесь к администратору.",
+                parse_mode="HTML"
+            )
+            log_user_error(user.tg_id, "learning_paths_access_denied", "Попытка доступа без прав")
+            return
+        
+        # Показываем главное меню траекторий
+        text = ("🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n\n"
+                "В данном меню вы можете:\n\n"
+                "1 ➕Создать траекторию обучения\n"
+                "2 ✏️Изменить траекторию обучения")
+        
+        await message.answer(
+            text,
+            reply_markup=get_learning_paths_main_keyboard(),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.main_menu)
+        log_user_action(user.tg_id, "opened_learning_paths", "Открыт редактор траекторий")
+        
+    except Exception as e:
+        await message.answer("Произошла ошибка. Попробуйте позже.")
+        log_user_error(message.from_user.id, "learning_paths_error", str(e))
+
+
+@router.callback_query(F.data == "create_trajectory", LearningPathStates.main_menu)
+async def callback_create_trajectory(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Начало создания траектории"""
+    try:
+        await callback.answer()
+        
+        instruction_text = (
+            "🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            "📈<b>ИНСТРУКЦИЯ</b>\n\n"
+            "Траектория состоит из составляющих:\n"
+            "- Этапов\n"
+            "- Сессий\n"
+            "- Тестов\n\n"
+            "Составляющие заполняются по порядку:\n\n"
+            "Сначала название для  траектории, этапы в этой траектории, потом сессии для этапа и в конце тесты для каждой сессии\n\n"
+            "Последним этапом в траектории является Аттестация - она аналогична экзамену или контрольной в школе.\n\n"
+            "Аттестация открывается стажёру в самом конце, при условии,что стажёр прошёл все этапы до аттестации.\n\n"
+            "Когда вы предоставите доступ наставнику к траектории, он может открывать этап для стажёра\n\n"
+            "Стажёр может проходить сессии внутри этапа в произвольном порядке (по договоренности с наставником)\n\n"
+            "После прохождения всех сессий, наставник может открыть стажёру следующий этап (либо сделать это раньше, если этого требует бизнес-процесс)"
+        )
+        
+        await callback.message.edit_text(
+            instruction_text,
+            reply_markup=get_trajectory_creation_start_keyboard(),
+            parse_mode="HTML"
+        )
+        
+        # Инициализируем данные траектории в state
+        await state.update_data(
+            trajectory_data={
+                'name': '',
+                'stages': [],
+                'created_by_id': None
+            },
+            current_stage_number=1,
+            current_session_number=1,
+            current_test_number=1
+        )
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "trajectory_creation_start_error", str(e))
+
+
+@router.callback_query(F.data == "start_trajectory_creation", LearningPathStates.main_menu)
+async def callback_start_trajectory_creation(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Начало ввода названия траектории"""
+    try:
+        await callback.answer()
+        
+        # Получаем пользователя для creator_id
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.message.edit_text("Ошибка: пользователь не найден")
+            return
+            
+        # Обновляем creator_id в данных
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        trajectory_data['created_by_id'] = user.id
+        await state.update_data(trajectory_data=trajectory_data)
+        
+        text = (
+            "🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            "🟡<b>Название траектории:</b> отправьте название\n\n"
+            "Введите название для траектории"
+        )
+        
+        await callback.message.edit_text(text, parse_mode="HTML")
+        await state.set_state(LearningPathStates.waiting_for_trajectory_name)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "start_trajectory_creation_error", str(e))
+
+
+@router.message(LearningPathStates.waiting_for_trajectory_name)
+async def process_trajectory_name(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработка названия траектории"""
+    try:
+        name = message.text.strip()
+        
+        # Валидация названия
+        if not validate_name(name):
+            await message.answer("❌ Некорректное название траектории. Попробуйте еще раз:")
+            return
+        
+        # Сохраняем название траектории
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        trajectory_data['name'] = name
+        await state.update_data(trajectory_data=trajectory_data)
+        
+        text = (
+            "🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"🟢<b>Название траектории:</b> {name}\n"
+            "🟡<b>Этап 1:</b> отправьте название\n\n"
+            "Введите название для Этапа 1"
+        )
+        
+        await message.answer(text, parse_mode="HTML")
+        await state.set_state(LearningPathStates.waiting_for_stage_name)
+        
+    except Exception as e:
+        await message.answer("Произошла ошибка при обработке названия")
+        log_user_error(message.from_user.id, "trajectory_name_error", str(e))
+
+
+@router.message(LearningPathStates.waiting_for_stage_name)
+async def process_stage_name(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработка названия этапа"""
+    try:
+        stage_name = message.text.strip()
+        
+        # Валидация названия этапа
+        if not validate_name(stage_name):
+            await message.answer("❌ Некорректное название этапа. Попробуйте еще раз:")
+            return
+        
+        # Получаем данные траектории
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        current_stage_number = data.get('current_stage_number', 1)
+        
+        # Создаем новый этап
+        new_stage = {
+            'name': stage_name,
+            'order': current_stage_number,
+            'sessions': []
+        }
+        
+        # Добавляем этап к траектории
+        if 'stages' not in trajectory_data:
+            trajectory_data['stages'] = []
+        trajectory_data['stages'].append(new_stage)
+        
+        # Обновляем state данные
+        await state.update_data(
+            trajectory_data=trajectory_data,
+            current_session_number=1  # Сбрасываем счетчик сессий
+        )
+        
+        # Показываем прогресс и просим название первой сессии
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            "🟡<b>Сессия 1:</b> отправьте название\n\n"
+            "Введите название для сессии 1"
+        )
+        
+        await message.answer(text, parse_mode="HTML")
+        await state.set_state(LearningPathStates.waiting_for_session_name)
+        
+    except Exception as e:
+        await message.answer("Произошла ошибка при обработке названия этапа")
+        log_user_error(message.from_user.id, "stage_name_error", str(e))
+
+
+@router.message(LearningPathStates.waiting_for_session_name)
+async def process_session_name(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработка названия сессии"""
+    try:
+        session_name = message.text.strip()
+        
+        # Валидация названия сессии
+        if not validate_name(session_name):
+            await message.answer("❌ Некорректное название сессии. Попробуйте еще раз:")
+            return
+        
+        # Получаем данные
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        current_session_number = data.get('current_session_number', 1)
+        
+        # Создаем новую сессию
+        new_session = {
+            'name': session_name,
+            'order': current_session_number,
+            'tests': []
+        }
+        
+        # Добавляем сессию к последнему этапу
+        if trajectory_data.get('stages'):
+            last_stage = trajectory_data['stages'][-1]
+            last_stage['sessions'].append(new_session)
+        
+        await state.update_data(trajectory_data=trajectory_data)
+        
+        # Получаем все доступные тесты
+        tests = await get_all_active_tests(session)
+        
+        # Показываем выбор тестов
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            f"🟡<b>Тест 1:</b> Выберите тест для сессии {current_session_number}"
+        )
+        
+        await message.answer(
+            text,
+            reply_markup=get_test_selection_keyboard(tests, []),
+            parse_mode="HTML"
+        )
+        await state.set_state(LearningPathStates.waiting_for_test_selection)
+        
+    except Exception as e:
+        await message.answer("Произошла ошибка при обработке названия сессии")
+        log_user_error(message.from_user.id, "session_name_error", str(e))
+
+
+def generate_trajectory_progress(trajectory_data: dict) -> str:
+    """Генерация текста прогресса создания траектории"""
+    progress = ""
+    
+    if trajectory_data.get('name'):
+        progress += f"🟢<b>Название траектории:</b> {trajectory_data['name']}\n"
+    
+    # Отображаем этапы
+    for stage in trajectory_data.get('stages', []):
+        progress += f"🟢<b>Этап {stage['order']}:</b> {stage['name']}\n"
+        
+        # Отображаем сессии этапа
+        for session in stage.get('sessions', []):
+            progress += f"🟢<b>Сессия {session['order']}:</b> {session['name']}\n"
+            
+            # Отображаем тесты сессии
+            for i, test in enumerate(session.get('tests', []), 1):
+                test_name = test.get('name', f'Тест {test.get("id", "?")}')
+                progress += f"🟢<b>Тест {i}:</b> {test_name}\n"
+    
+    return progress
+
+
+@router.callback_query(F.data == "create_new_test", LearningPathStates.waiting_for_test_selection)
+async def callback_create_new_test(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Начало создания нового теста в процессе создания траектории"""
+    try:
+        await callback.answer()
+        
+        # Получаем прогресс траектории
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            "🟡<b>Создание теста</b>\n\n"
+            "🔧 Создание нового теста\n"
+            "📝 Начинаем пошаговое создание теста для вашей системы стажировки.\n"
+            "1️⃣ Шаг 1: Введите название теста\n"
+            "💡 Название должно быть информативным и понятным для стажеров\n"
+            "📋 Пример: «Основы работы с клиентами» или «Техника безопасности»"
+        )
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_test_creation_cancel_keyboard(),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.creating_test_name)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "create_new_test_error", str(e))
+
+
+@router.message(LearningPathStates.creating_test_name)
+async def process_new_test_name(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработка названия нового теста"""
+    try:
+        test_name = message.text.strip()
+        
+        # Валидация названия
+        if not validate_name(test_name):
+            await message.answer("❌ Некорректное название теста. Попробуйте еще раз:")
+            return
+        
+        # Сохраняем название теста
+        await state.update_data(new_test_name=test_name)
+        
+        # Получаем прогресс траектории
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            "🟡<b>Создание теста</b>\n\n"
+            f"✅ Название принято: {test_name}\n"
+            "2️⃣ Шаг 2: Материалы для изучения\n"
+            "📚 Есть ли у вас материалы, которые стажеры должны изучить перед прохождением теста?\n"
+            "💡 Материалы могут быть:\n"
+            "• Ссылки на обучающие видео\n"
+            "• Документы и инструкции\n"
+            "• Презентации или курсы\n"
+            "• Любые другие учебные ресурсы\n"
+            "❓ Хотите добавить материалы к тесту?"
+        )
+        
+        await message.answer(
+            text,
+            reply_markup=get_test_materials_choice_keyboard(),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.creating_test_materials_choice)
+        
+    except Exception as e:
+        await message.answer("Произошла ошибка при обработке названия теста")
+        log_user_error(message.from_user.id, "new_test_name_error", str(e))
+
+
+@router.callback_query(F.data == "add_materials", LearningPathStates.creating_test_materials_choice)
+async def callback_add_materials(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Запрос материалов для теста"""
+    try:
+        await callback.answer()
+        
+        # Получаем прогресс траектории
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            "🟡<b>Создание теста</b>\n\n"
+            "📎 Отправьте ссылку на материалы для изучения, PDF документ или нажмите 'Пропустить':"
+        )
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_test_materials_skip_keyboard(),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.creating_test_materials)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "add_materials_error", str(e))
+
+
+@router.callback_query(F.data == "skip_materials", LearningPathStates.creating_test_materials_choice)
+@router.callback_query(F.data == "skip_materials", LearningPathStates.creating_test_materials)
+async def callback_skip_materials(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Пропуск материалов и переход к описанию"""
+    try:
+        await callback.answer()
+        await state.update_data(new_test_materials="")
+        await show_test_description_step(callback.message, state)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "skip_materials_error", str(e))
+
+
+@router.message(LearningPathStates.creating_test_materials)
+async def process_test_materials(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработка материалов теста"""
+    try:
+        materials = message.text.strip()
+        await state.update_data(new_test_materials=materials)
+        await show_test_description_step(message, state)
+        
+    except Exception as e:
+        await message.answer("Произошла ошибка при обработке материалов")
+        log_user_error(message.from_user.id, "test_materials_error", str(e))
+
+
+async def show_test_description_step(message, state: FSMContext):
+    """Показать шаг описания теста"""
+    try:
+        # Получаем прогресс траектории
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            "🟡<b>Создание теста</b>\n\n"
+            "3️⃣ Шаг 3: Описание теста\n"
+            "📝 Введите краткое описание теста, которое поможет стажерам понять:\n"
+            "• О чем этот тест\n"
+            "• Какие знания проверяются\n"
+            "• Что ожидается от стажера\n"
+            "💡 Пример: «Тест проверяет знание основных принципов обслуживания клиентов и умение решать конфликтные ситуации»\n"
+            "✍️ Введите описание или нажмите кнопку 'Пропустить':"
+        )
+        
+        # Всегда отправляем новое сообщение, так как это может быть message от пользователя
+        await message.answer(
+            text,
+            reply_markup=get_test_description_skip_keyboard(),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.creating_test_description)
+        
+    except Exception as e:
+        log_user_error(message.from_user.id if hasattr(message, 'from_user') else 0, "show_description_error", str(e))
+
+
+@router.callback_query(F.data == "skip_description", LearningPathStates.creating_test_description)
+async def callback_skip_description(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Пропуск описания теста"""
+    try:
+        await callback.answer()
+        await state.update_data(new_test_description="")
+        await show_question_type_step(callback.message, state)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "skip_description_error", str(e))
+
+
+@router.message(LearningPathStates.creating_test_description)
+async def process_test_description(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработка описания теста"""
+    try:
+        description = message.text.strip()
+        await state.update_data(new_test_description=description)
+        await show_question_type_step(message, state)
+        
+    except Exception as e:
+        await message.answer("Произошла ошибка при обработке описания")
+        log_user_error(message.from_user.id, "test_description_error", str(e))
+
+
+async def show_question_type_step(message, state: FSMContext):
+    """Показать шаг выбора типа вопроса"""
+    try:
+        # Получаем прогресс траектории
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            "🟡<b>Создание теста</b>\n\n"
+            "📝 Отлично! Теперь давайте добавим вопросы к тесту.\n"
+            "Выберите тип первого вопроса:"
+        )
+        
+        # Всегда отправляем новое сообщение, так как это может быть message от пользователя
+        await message.answer(
+            text,
+            reply_markup=get_question_type_keyboard(),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.creating_test_question_type)
+        
+    except Exception as e:
+        log_user_error(message.from_user.id if hasattr(message, 'from_user') else 0, "show_question_type_error", str(e))
+
+
+@router.callback_query(F.data.startswith("q_type:"), LearningPathStates.creating_test_question_type)
+async def callback_question_type(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработка выбора типа вопроса"""
+    try:
+        await callback.answer()
+        
+        question_type = callback.data.split(":")[1]
+        await state.update_data(new_test_question_type=question_type)
+        
+        # Получаем прогресс траектории
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            "🟡<b>Создание теста</b>\n\n"
+            "Введите текст вопроса:"
+        )
+        
+        await callback.message.edit_text(text, parse_mode="HTML")
+        await state.set_state(LearningPathStates.creating_test_question_text)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "question_type_error", str(e))
+
+
+@router.message(LearningPathStates.creating_test_question_text)
+async def process_question_text(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработка текста вопроса"""
+    try:
+        question_text = message.text.strip()
+        
+        if not question_text:
+            await message.answer("❌ Текст вопроса не может быть пустым. Попробуйте еще раз:")
+            return
+        
+        await state.update_data(new_test_question_text=question_text)
+        
+        # Получаем прогресс траектории
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            "🟡<b>Создание теста</b>\n\n"
+            "✅ Текст вопроса принят. Теперь введите единственный правильный ответ (точную фразу):"
+        )
+        
+        await message.answer(text, parse_mode="HTML")
+        await state.set_state(LearningPathStates.creating_test_question_answer)
+        
+    except Exception as e:
+        await message.answer("Произошла ошибка при обработке текста вопроса")
+        log_user_error(message.from_user.id, "question_text_error", str(e))
+
+
+@router.message(LearningPathStates.creating_test_question_answer)
+async def process_question_answer(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработка ответа на вопрос"""
+    try:
+        answer = message.text.strip()
+        
+        if not answer:
+            await message.answer("❌ Ответ не может быть пустым. Попробуйте еще раз:")
+            return
+        
+        await state.update_data(new_test_question_answer=answer)
+        
+        # Получаем прогресс траектории
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            "🟡<b>Создание теста</b>\n\n"
+            "🔢 Теперь укажите, сколько баллов можно получить за правильный ответ на этот вопрос.\n"
+            "Вы можете использовать дробные числа, например, 0.5 или 1.5."
+        )
+        
+        await message.answer(text, parse_mode="HTML")
+        await state.set_state(LearningPathStates.creating_test_question_points)
+        
+    except Exception as e:
+        await message.answer("Произошла ошибка при обработке ответа")
+        log_user_error(message.from_user.id, "question_answer_error", str(e))
+
+
+@router.message(LearningPathStates.creating_test_question_points)
+async def process_question_points(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработка баллов за вопрос"""
+    try:
+        try:
+            points = float(message.text.strip())
+            if points <= 0:
+                raise ValueError("Баллы должны быть положительным числом")
+        except ValueError:
+            await message.answer("❌ Введите корректное число баллов (например: 1 или 1.5)")
+            return
+        
+        # Сохраняем вопрос
+        data = await state.get_data()
+        existing_questions = data.get('new_test_questions', [])
+
+        # Создаем новый вопрос
+        new_question = {
+            'question_number': len(existing_questions) + 1,
+            'question_type': data.get('new_test_question_type'),
+            'question_text': data.get('new_test_question_text'),
+            'correct_answer': data.get('new_test_question_answer'),
+            'points': points,
+            'options': {}
+        }
+
+        # Добавляем к существующим вопросам
+        existing_questions.append(new_question)
+
+        # Пересчитываем общий балл
+        total_score = sum(q['points'] for q in existing_questions)
+
+        await state.update_data(
+            new_test_question_points=points,
+            new_test_questions=existing_questions,
+            new_test_total_score=total_score
+        )
+        
+        # Получаем прогресс траектории
+        trajectory_data = data.get('trajectory_data', {})
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            "🟡<b>Создание теста</b>\n\n"
+            f"✅ Вопрос №{len(existing_questions)} добавлен!\n"
+            "Текущая статистика теста:\n"
+            f" • Количество вопросов: {len(existing_questions)}\n"
+            f" • Максимальный балл: {total_score}\n"
+            "❓ Хотите добавить еще один вопрос?"
+        )
+        
+        await message.answer(
+            text,
+            reply_markup=get_more_questions_keyboard(),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.creating_test_more_questions)
+        
+    except Exception as e:
+        await message.answer("Произошла ошибка при обработке баллов")
+        log_user_error(message.from_user.id, "question_points_error", str(e))
+
+
+@router.callback_query(F.data == "add_more_questions", LearningPathStates.creating_test_more_questions)
+async def callback_add_more_questions(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Добавление еще одного вопроса к тесту в траектории"""
+    try:
+        await callback.answer()
+
+        # Показываем выбор типа вопроса для следующего вопроса
+        await show_question_type_step(callback.message, state)
+
+        log_user_action(callback.from_user.id, "trajectory_test_add_more_questions", "Добавление еще одного вопроса к тесту в траектории")
+
+    except Exception as e:
+        await callback.message.edit_text("❌ Произошла ошибка при добавлении вопроса")
+        log_user_error(callback.from_user.id, "trajectory_add_more_questions_error", str(e))
+
+
+@router.callback_query(F.data == "finish_questions", LearningPathStates.creating_test_more_questions)
+async def callback_finish_questions(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Завершение добавления вопросов и переход к проходному баллу"""
+    try:
+        await callback.answer()
+        
+        data = await state.get_data()
+        total_score = data.get('new_test_total_score', 0)
+        
+        # Получаем прогресс траектории
+        trajectory_data = data.get('trajectory_data', {})
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            "🟡<b>Создание теста</b>\n\n"
+            "✅ Добавление вопросов завершено.\n"
+            f"Максимальный балл за тест: {total_score}\n"
+            f"Теперь введите проходной балл для этого теста (число от 0.5 до {total_score}):"
+        )
+        
+        await callback.message.edit_text(text, parse_mode="HTML")
+        await state.set_state(LearningPathStates.creating_test_threshold)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "finish_questions_error", str(e))
+
+
+@router.message(LearningPathStates.creating_test_threshold)
+async def process_test_threshold(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработка проходного балла и создание теста"""
+    try:
+        try:
+            threshold = float(message.text.strip())
+            data = await state.get_data()
+            total_score = data.get('new_test_total_score', 0)
+            
+            if threshold < 0.5 or threshold > total_score:
+                raise ValueError(f"Проходной балл должен быть от 0.5 до {total_score}")
+        except ValueError as e:
+            await message.answer(f"❌ {str(e)}")
+            return
+        
+        # Создаем тест в базе данных
+        test_data = {
+            'name': data.get('new_test_name'),
+            'description': data.get('new_test_description', ''),
+            'threshold_score': threshold,
+            'max_score': data.get('new_test_total_score'),
+            'material_link': data.get('new_test_materials', ''),
+            'creator_id': data.get('trajectory_data', {}).get('created_by_id'),
+            'stage_id': None
+        }
+        
+        test = await create_test(session, test_data)
+        if not test:
+            await message.answer("❌ Ошибка создания теста")
+            return
+        
+        # Добавляем вопросы к тесту
+        questions = data.get('new_test_questions', [])
+        for question_data in questions:
+            question_data['test_id'] = test.id
+            await add_question_to_test(session, question_data)
+        
+        # Добавляем тест к текущей сессии
+        trajectory_data = data.get('trajectory_data', {})
+        if trajectory_data.get('stages'):
+            last_stage = trajectory_data['stages'][-1]
+            if last_stage.get('sessions'):
+                last_session = last_stage['sessions'][-1]
+                last_session['tests'].append({
+                    'id': test.id,
+                    'name': test.name,
+                    'order': len(last_session['tests']) + 1
+                })
+        
+        await state.update_data(trajectory_data=trajectory_data)
+        
+        # Показываем успешное создание и выбор следующих действий
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        percentage = (threshold / data.get('new_test_total_score', 1)) * 100
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            "🟡<b>Добавить тест к Сессии?</b>\n\n"
+            f"✅ Тест «{test.name}» успешно создан и добавлен к Сессии!\n"
+            f"📝 Вопросов добавлено: {len(questions)}\n"
+            f"📊 Максимальный балл: {data.get('new_test_total_score')}\n"
+            f"🎯 Проходной балл: {threshold} ({percentage:.1f}%)"
+        )
+        
+        # Получаем обновленный список тестов
+        tests = await get_all_active_tests(session)
+        current_session_tests = []
+        if trajectory_data.get('stages'):
+            last_stage = trajectory_data['stages'][-1]
+            if last_stage.get('sessions'):
+                last_session = last_stage['sessions'][-1]
+                current_session_tests = last_session.get('tests', [])
+        
+        await message.answer(
+            text,
+            reply_markup=get_test_selection_keyboard(tests, current_session_tests),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.waiting_for_test_selection)
+        
+        # Очищаем временные данные теста
+        await state.update_data(
+            new_test_name=None,
+            new_test_description=None,
+            new_test_materials=None,
+            new_test_question_type=None,
+            new_test_question_text=None,
+            new_test_question_answer=None,
+            new_test_question_points=None,
+            new_test_questions=None,
+            new_test_total_score=None
+        )
+        
+    except Exception as e:
+        await message.answer("Произошла ошибка при создании теста")
+        log_user_error(message.from_user.id, "test_threshold_error", str(e))
+
+
+@router.callback_query(F.data.startswith("select_test:"), LearningPathStates.waiting_for_test_selection)
+async def callback_select_existing_test(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Выбор существующего теста для сессии"""
+    try:
+        await callback.answer()
+        
+        test_id = int(callback.data.split(":")[1])
+        
+        # Получаем информацию о тесте
+        tests = await get_all_active_tests(session)
+        selected_test = next((t for t in tests if t.id == test_id), None)
+        
+        if not selected_test:
+            await callback.answer("Тест не найден", show_alert=True)
+            return
+        
+        # Добавляем тест к текущей сессии
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        
+        if trajectory_data.get('stages'):
+            last_stage = trajectory_data['stages'][-1]
+            if last_stage.get('sessions'):
+                last_session = last_stage['sessions'][-1]
+                last_session['tests'].append({
+                    'id': test_id,
+                    'name': selected_test.name,
+                    'order': len(last_session['tests']) + 1
+                })
+        
+        await state.update_data(trajectory_data=trajectory_data)
+        
+        # Показываем обновленную информацию
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            "🟡<b>Добавить тест к Сессии?</b>"
+        )
+        
+        # Получаем текущие тесты в сессии
+        current_session_tests = []
+        if trajectory_data.get('stages'):
+            last_stage = trajectory_data['stages'][-1]
+            if last_stage.get('sessions'):
+                last_session = last_stage['sessions'][-1]
+                current_session_tests = last_session.get('tests', [])
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_test_selection_keyboard(tests, current_session_tests),
+            parse_mode="HTML"
+        )
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "select_test_error", str(e))
+
+
+@router.callback_query(F.data == "save_session", LearningPathStates.waiting_for_test_selection)
+async def callback_save_session(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Сохранение сессии и переход к управлению этапами"""
+    try:
+        await callback.answer()
+        
+        # Получаем данные траектории
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        current_stage_number = data.get('current_stage_number', 1)
+        current_session_number = data.get('current_session_number', 1)
+        
+        # Подсчитываем количество созданных сессий
+        sessions_count = 0
+        if trajectory_data.get('stages'):
+            last_stage = trajectory_data['stages'][-1]
+            sessions_count = len(last_stage.get('sessions', []))
+        
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}\n"
+            f"✅Вы Создали {sessions_count} Сессию для {current_stage_number} Этапа!\n\n"
+            "🟡Хотите добавить ещё сессию?"
+        )
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_session_management_keyboard(),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.adding_session_to_stage)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "save_session_error", str(e))
+
+
+@router.callback_query(F.data == "add_session", LearningPathStates.adding_session_to_stage)
+async def callback_add_session(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Добавление новой сессии к текущему этапу"""
+    try:
+        await callback.answer()
+        
+        # Увеличиваем номер сессии
+        data = await state.get_data()
+        current_session_number = data.get('current_session_number', 1) + 1
+        await state.update_data(current_session_number=current_session_number)
+        
+        # Получаем прогресс траектории
+        trajectory_data = data.get('trajectory_data', {})
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            f"🟡<b>Сессия {current_session_number}:</b> отправьте название\n\n"
+            f"Введите название для сессии {current_session_number}"
+        )
+        
+        await callback.message.edit_text(text, parse_mode="HTML")
+        await state.set_state(LearningPathStates.waiting_for_session_name)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "add_session_error", str(e))
+
+
+@router.callback_query(F.data == "add_stage", LearningPathStates.adding_session_to_stage)
+async def callback_add_stage(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Добавление нового этапа к траектории"""
+    try:
+        await callback.answer()
+        
+        # Увеличиваем номер этапа
+        data = await state.get_data()
+        current_stage_number = data.get('current_stage_number', 1) + 1
+        await state.update_data(
+            current_stage_number=current_stage_number,
+            current_session_number=1  # Сбрасываем счетчик сессий
+        )
+        
+        # Получаем прогресс траектории
+        trajectory_data = data.get('trajectory_data', {})
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            f"🟡<b>Этап {current_stage_number}:</b> отправьте название\n\n"
+            f"Введите название для Этапа {current_stage_number}"
+        )
+        
+        await callback.message.edit_text(text, parse_mode="HTML")
+        await state.set_state(LearningPathStates.waiting_for_stage_name)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "add_stage_error", str(e))
+
+
+@router.callback_query(F.data == "save_trajectory", LearningPathStates.adding_session_to_stage)
+async def callback_save_trajectory(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Сохранение траектории и переход к выбору аттестации"""
+    try:
+        await callback.answer()
+        
+        # Получаем данные траектории
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}\n"
+            "Сохранить созданную траекторию?"
+        )
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_trajectory_save_confirmation_keyboard(),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.waiting_for_trajectory_save_confirmation)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "save_trajectory_error", str(e))
+
+
+@router.callback_query(F.data == "confirm_trajectory_save", LearningPathStates.waiting_for_trajectory_save_confirmation)
+async def callback_confirm_trajectory_save(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Подтверждение сохранения траектории и переход к выбору аттестации"""
+    try:
+        await callback.answer()
+        
+        # Получаем аттестации
+        attestations = await get_all_attestations(session)
+        
+        if not attestations:
+            await callback.message.edit_text(
+                "❌ <b>Нет доступных аттестаций</b>\n\n"
+                "Сначала создайте хотя бы одну аттестацию.",
+                parse_mode="HTML",
+                reply_markup=get_main_menu_keyboard()
+            )
+            return
+        
+        # Получаем прогресс траектории
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            "🔍🟡<b>Аттестация:</b> выберите тест для аттестации\n\n"
+            "Подсказка: Аттестация - последний обязательный этап траектории (как экзамен или контрольная в школе), выберите один из вариантов аттестации, которые подготовили ранее, чтобы добавить его к текущей траектории"
+        )
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_attestation_selection_keyboard(attestations),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.waiting_for_attestation_selection)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "confirm_trajectory_save_error", str(e))
+
+
+@router.callback_query(F.data.startswith("select_attestation:"), LearningPathStates.waiting_for_attestation_selection)
+async def callback_select_attestation(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Выбор аттестации для траектории"""
+    try:
+        await callback.answer()
+        
+        attestation_id = int(callback.data.split(":")[1])
+        
+        # Получаем аттестацию
+        attestation = await get_attestation_by_id(session, attestation_id)
+        if not attestation:
+            await callback.answer("Аттестация не найдена", show_alert=True)
+            return
+        
+        await state.update_data(selected_attestation_id=attestation_id)
+        
+        # Получаем прогресс траектории
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            f"🔍🟢<b>Аттестация:</b> {attestation.name}\n\n"
+            "🟡Сохранить траекторию с Аттестацией?"
+        )
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_trajectory_attestation_confirmation_keyboard(),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.waiting_for_attestation_confirmation)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "select_attestation_error", str(e))
+
+
+@router.callback_query(F.data == "confirm_attestation_and_proceed", LearningPathStates.waiting_for_attestation_confirmation)
+async def callback_confirm_attestation_and_proceed(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """ПУНКТ 50 ТЗ: Подтверждение аттестации кнопкой 'Да' и переход к выбору группы"""
+    try:
+        await callback.answer()
+        
+        # Получаем группы
+        groups = await get_all_groups(session)
+        if not groups:
+            await callback.answer("Нет доступных групп. Создайте группу сначала.", show_alert=True)
+            return
+        
+        # ПУНКТ 52 ТЗ: Точное сообщение
+        text = "Выберите группу наставников, которым будет доступна траектория"
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_group_selection_keyboard(groups, page=0),
+            parse_mode="HTML"
+        )
+        
+        # Сохраняем что мы в процессе финального сохранения
+        await state.update_data(finalizing_trajectory=True)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "confirm_attestation_and_proceed_error", str(e))
+
+
+@router.callback_query(F.data.startswith("select_group:"))
+async def callback_select_group_for_trajectory(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Выбор группы для траектории (только если мы в процессе финализации)"""
+    try:
+        # Проверяем что мы в процессе финализации траектории
+        data = await state.get_data()
+        if not data.get('finalizing_trajectory'):
+            return  # Игнорируем, если это не наш callback
+        
+        await callback.answer()
+        
+        group_id = int(callback.data.split(":")[1])
+        attestation_id = data.get('selected_attestation_id')
+        trajectory_data = data.get('trajectory_data', {})
+        
+        # Получаем название группы и аттестации
+        groups = await get_all_groups(session)
+        selected_group = next((g for g in groups if g.id == group_id), None)
+        group_name = selected_group.name if selected_group else "Неизвестная группа"
+        
+        attestations = await get_all_attestations(session)
+        selected_attestation = next((a for a in attestations if a.id == attestation_id), None)
+        attestation_name = selected_attestation.name if selected_attestation else "Неизвестная аттестация"
+        
+        # Сохраняем данные группы и аттестации
+        await state.update_data(
+            selected_group_id=group_id,
+            selected_group_name=group_name,
+            selected_attestation_name=attestation_name
+        )
+        
+        # ПО ТЗ ПУНКТ 54: Показываем ВСЮ информацию с группой + подтверждение
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            f"🔍🟢<b>Аттестация:</b> {attestation_name}\n"
+            f"🗂️<b>Группа:</b> {group_name}\n\n"
+            "🟡Сохранить траекторию?"
+        )
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_trajectory_final_confirmation_keyboard(),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.waiting_for_final_save_confirmation)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "select_group_trajectory_error", str(e))
+
+
+@router.callback_query(F.data == "final_confirm_save", LearningPathStates.waiting_for_final_save_confirmation)
+async def callback_final_confirm_save(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """ПУНКТ 55 ТЗ: Финальное сохранение траектории"""
+    try:
+        await callback.answer()
+        
+        # Получаем все данные
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        attestation_id = data.get('selected_attestation_id')
+        group_id = data.get('selected_group_id')
+        
+        # Финально сохраняем траекторию
+        success = await save_trajectory_with_attestation_and_group(
+            session, trajectory_data, attestation_id, group_id
+        )
+        
+        if not success:
+            await callback.answer("Ошибка сохранения траектории", show_alert=True)
+            return
+        
+        # ПУНКТ 56 ТЗ: Точное сообщение согласно ТЗ
+        text = (
+            "✅Вы успешно создали новую траекторию обучения\n"
+            f"🟢<b>Название траектории:</b> {trajectory_data['name']}\n\n"
+            "\nТеперь вы можете передать её наставникам"
+        )
+        
+        await callback.message.edit_text(text, parse_mode="HTML")
+        
+        # Очищаем состояние
+        await state.clear()
+        
+        log_user_action(callback.from_user.id, "trajectory_created_final", f"Финально создана траектория: {trajectory_data['name']}")
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "final_confirm_save_error", str(e))
+
+
+@router.callback_query(F.data == "cancel_final_confirmation", LearningPathStates.waiting_for_final_save_confirmation)
+async def callback_cancel_final_confirmation(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Отмена финального подтверждения (пункт 54 ТЗ)"""
+    try:
+        await callback.answer()
+        
+        # Возвращаемся к выбору группы
+        groups = await get_all_groups(session)
+        if not groups:
+            await callback.answer("Нет доступных групп", show_alert=True)
+            return
+        
+        text = "Выберите группу наставников, которым будет доступна траектория"
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_group_selection_keyboard(groups, page=0),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.waiting_for_group_selection)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "cancel_final_confirmation_error", str(e))
+
+
+@router.callback_query(F.data == "cancel_trajectory_save", LearningPathStates.waiting_for_trajectory_save_confirmation)
+async def callback_cancel_trajectory_save(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Отмена сохранения траектории"""
+    try:
+        await callback.answer()
+        
+        # Возвращаемся к управлению сессиями
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        current_stage_number = data.get('current_stage_number', 1)
+        
+        # Подсчитываем количество созданных сессий
+        sessions_count = 0
+        if trajectory_data.get('stages'):
+            last_stage = trajectory_data['stages'][-1]
+            sessions_count = len(last_stage.get('sessions', []))
+        
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}\n"
+            f"✅Вы Создали {sessions_count} Сессию для {current_stage_number} Этапа!\n\n"
+            "🟡Хотите добавить ещё сессию?"
+        )
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_session_management_keyboard(),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.adding_session_to_stage)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "cancel_trajectory_save_error", str(e))
+
+
+@router.callback_query(F.data == "cancel_attestation_selection", LearningPathStates.waiting_for_attestation_selection)
+async def callback_cancel_attestation_selection(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Отмена выбора аттестации"""
+    try:
+        await callback.answer()
+        
+        # Возвращаемся к подтверждению сохранения траектории
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}\n"
+            "Сохранить созданную траекторию?"
+        )
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_trajectory_save_confirmation_keyboard(),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.waiting_for_trajectory_save_confirmation)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "cancel_attestation_selection_error", str(e))
+
+
+@router.callback_query(F.data == "cancel_attestation_confirmation", LearningPathStates.waiting_for_attestation_confirmation)
+async def callback_cancel_attestation_confirmation(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """ПУНКТ 49 ТЗ: Отмена подтверждения аттестации"""
+    try:
+        await callback.answer()
+        
+        # Возвращаемся к выбору аттестации  
+        attestations = await get_all_attestations(session)
+        
+        # У нас теперь всегда есть mock аттестации
+        
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            "🔍🟡<b>Аттестация:</b> выберите тест для аттестации\n\n"
+            "Подсказка: Аттестация - последний обязательный этап траектории (как экзамен или контрольная в школе), выберите один из вариантов аттестации, которые подготовили ранее, чтобы добавить его к текущей траектории"
+        )
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_attestation_selection_keyboard(attestations),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.waiting_for_attestation_selection)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "cancel_attestation_confirmation_error", str(e))
+
+
+@router.callback_query(F.data == "edit_trajectory", LearningPathStates.main_menu)
+async def callback_edit_trajectory(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Редактирование существующих траекторий"""
+    try:
+        await callback.answer()
+        
+        # Получаем все траектории
+        learning_paths = await get_all_learning_paths(session)
+        
+        if not learning_paths:
+            await callback.answer("Нет созданных траекторий для редактирования", show_alert=True)
+            return
+        
+        text = (
+            "🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "✏️Редактирование траектории\n\n"
+            "Выберите траекторию для редактирования:"
+        )
+        
+        # Создаем клавиатуру с траекториями
+        keyboard = []
+        for path in learning_paths:
+            keyboard.append([InlineKeyboardButton(
+                text=f"{path.name} (Группа: {path.group.name if path.group else 'Не указана'})",
+                callback_data=f"edit_path:{path.id}"
+            )])
+        
+        keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.waiting_for_trajectory_selection)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "edit_trajectory_error", str(e))
+
+
+# Дублирующий обработчик для кнопки "Назад к траекториям" из состояния просмотра траектории
+@router.callback_query(F.data == "edit_trajectory", LearningPathStates.editing_trajectory)
+async def callback_back_to_trajectories(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Возврат к списку траекторий из просмотра конкретной траектории"""
+    # Переиспользуем логику основного обработчика
+    await callback_edit_trajectory(callback, state, session)
+
+
+@router.callback_query(F.data.startswith("edit_path:"), LearningPathStates.waiting_for_trajectory_selection)
+async def callback_edit_specific_trajectory(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Редактирование конкретной траектории"""
+    try:
+        await callback.answer()
+        
+        path_id = int(callback.data.split(":")[1])
+        
+        # Получаем траекторию
+        learning_path = await get_learning_path_by_id(session, path_id)
+        if not learning_path:
+            await callback.answer("Траектория не найдена", show_alert=True)
+            return
+        
+        # Генерируем полную структуру траектории  
+        trajectory_structure = ""
+        if hasattr(learning_path, 'stages'):
+            for stage in learning_path.stages:
+                trajectory_structure += f"🟢<b>Этап {stage.order_number}:</b> {stage.name}\n"
+                if hasattr(stage, 'sessions'):
+                    for session in stage.sessions:
+                        trajectory_structure += f"🟢<b>Сессия {session.order_number}:</b> {session.name}\n"
+                        if hasattr(session, 'tests'):
+                            for i, test in enumerate(session.tests, 1):
+                                trajectory_structure += f"🟢<b>Тест {i}:</b> {test.name}\n"
+        
+        attestation_info = ""
+        if hasattr(learning_path, 'attestation') and learning_path.attestation:
+            attestation_info = f"🔍🟢<b>Аттестация:</b> {learning_path.attestation.name}\n"
+        
+        group_info = ""
+        if hasattr(learning_path, 'group') and learning_path.group:
+            group_info = f"🗂️<b>Группа:</b> {learning_path.group.name}\n"
+        
+        text = (
+            "🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "✏️Просмотр траектории\n\n"
+            f"🟢<b>Название траектории:</b> {learning_path.name}\n"
+            f"{trajectory_structure}"
+            f"{attestation_info}"
+            f"{group_info}\n"
+            "📋 <b>Полная структура траектории</b>\n\n"
+            "💡 <i>Траектория создана и готова к использованию наставниками</i>"
+        )
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="↩️ Назад к траекториям", callback_data="edit_trajectory")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+        ])
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.editing_trajectory)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "edit_specific_trajectory_error", str(e))
+
+
+# ================== АТТЕСТАЦИИ ==================
+
+@router.callback_query(F.data == "manage_attestations", LearningPathStates.main_menu)
+async def callback_manage_attestations(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Управление аттестациями"""
+    try:
+        await callback.answer()
+        
+        # Получаем все аттестации
+        attestations = await get_all_attestations(session)
+        
+        text = (
+            "🔍<b>РЕДАКТОР АТТЕСТАЦИЙ</b>🔍\n"
+            "Выберите нужную вам аттестацию или создайте новую"
+        )
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_attestations_main_keyboard(attestations),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(AttestationStates.main_menu)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "manage_attestations_error", str(e))
+
+
+@router.callback_query(F.data == "create_attestation", AttestationStates.main_menu)
+async def callback_create_attestation(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """ПУНКТ 5-6 ТЗ: Создание аттестации"""
+    try:
+        await callback.answer()
+        
+        # ПУНКТ 6 ТЗ: Точное сообщение с инструкциями
+        text = (
+            "🔍<b>РЕДАКТОР АТТЕСТАЦИЙ</b>🔍\n"
+            "➕Создание аттестации\n"
+            "📈<b>ИНСТРУКЦИЯ</b>\n\n"
+            "Подсказка: Аттестация - последний обязательный этап траектории (как экзамен или контрольная в школе)\n\n"
+            "Аттестацию проводит будущий руководитель лично со стажером\n\n"
+            "Связывает будущего руководителя и стажёра - наставник\n\n"
+            "Именно наставник после прохождения стажёром всех этапов на проходной балл связывает в Аттестации будущего руководителя и стажёра\n\n"
+            "Аттестация проходит в формате опросного теста, который заполняет руководитель\n"
+            "Опросный тест - это тест, в котором руководитель читает вопрос у себя на телефоне, затем слушает вживую ответ стажёра и далее вводит балл, на который ответил стажер. После идёт переход к следующему вопросу\n\n"
+            "Стажёру в его ЛК приходит только результат аттестации"
+        )
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_attestation_creation_start_keyboard(),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(AttestationStates.waiting_for_attestation_creation_start)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "create_attestation_error", str(e))
+
+
+# ================== СОЗДАНИЕ АТТЕСТАЦИЙ ПО ТЗ ==================
+
+@router.callback_query(F.data == "start_attestation_creation", AttestationStates.waiting_for_attestation_creation_start)
+async def callback_start_attestation_creation(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """ПУНКТ 7 ТЗ: Кнопка 'Далее⏩'"""
+    try:
+        await callback.answer()
+        
+        # ПУНКТ 8 ТЗ: Запрос названия
+        text = (
+            "🔍<b>РЕДАКТОР АТТЕСТАЦИЙ</b>🔍\n"
+            "➕Создание аттестации\n"
+            "🟡<b>Название:</b> отправьте название"
+        )
+        
+        await callback.message.edit_text(
+            text,
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(AttestationStates.waiting_for_attestation_name)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "start_attestation_creation_error", str(e))
+
+
+@router.message(AttestationStates.waiting_for_attestation_name)
+async def process_attestation_name(message: Message, state: FSMContext, session: AsyncSession):
+    """ПУНКТ 9 ТЗ: Обработка названия аттестации"""
+    try:
+        name = message.text.strip()
+        
+        # Валидация названия
+        if not validate_name(name):
+            await message.answer("❌ Некорректное название. Попробуйте еще раз:")
+            return
+        
+        # Сохраняем название
+        await state.update_data(attestation_name=name, questions=[])
+        
+        # ПУНКТ 10 ТЗ: Запрос первого вопроса с примером
+        text = (
+            "🔍<b>РЕДАКТОР АТТЕСТАЦИЙ</b>🔍\n"
+            "➕Создание аттестации\n"
+            f"🟢<b>Название:</b> {name}\n"
+            "🟡<b>Вопрос 1:</b> введите текст вопроса и описание возможных критериев ответа, например:\n\n"
+            "Первый вопрос 👇\n\n"
+            "\"Что ты должен проверять в зале на предмет чистоты?\"\n\n"
+            "Правильный ответ: Стажер должен в свободной форме перечислить основные точки контроля в течение дня:, столы, подстолья, урны (мусор везде выкинут), десертный холодильник, чистота помещения, чистота зоны самообслуживания.\n\n"
+            "Назвал все критерии - 10\n"
+            "Назвал половину - 5\n"
+            "Ничего/плохо назвал - 0\n\n"
+            "💡 <b>Введите ВЕСЬ БЛОК</b> (вопрос + правильный ответ + критерии оценки) как показано в примере"
+        )
+        
+        await message.answer(text, parse_mode="HTML")
+        await state.set_state(AttestationStates.waiting_for_attestation_question)
+        
+        log_user_action(message.from_user.id, "attestation_name_set", f"Название аттестации: {name}")
+        
+    except Exception as e:
+        await message.answer("Произошла ошибка при обработке названия")
+        log_user_error(message.from_user.id, "process_attestation_name_error", str(e))
+
+
+@router.message(AttestationStates.waiting_for_attestation_question)
+async def process_attestation_question(message: Message, state: FSMContext, session: AsyncSession):
+    """ПУНКТ 11-12-14 ТЗ: Обработка вопросов аттестации"""
+    try:
+        question_text = message.text.strip()
+        
+        # Получаем текущие данные
+        data = await state.get_data()
+        questions = data.get('questions', [])
+        attestation_name = data.get('attestation_name', 'Неизвестно')
+        
+        # Добавляем новый вопрос
+        question_number = len(questions) + 1
+        questions.append({
+            'number': question_number,
+            'text': question_text,
+            'max_points': 10  # По умолчанию
+        })
+        
+        await state.update_data(questions=questions)
+        
+        # ПУНКТ 12/14 ТЗ: Показываем прогресс и запрашиваем следующий вопрос
+        questions_text = ""
+        for q in questions:
+            questions_text += f"🟢<b>Вопрос {q['number']}:</b>\n{q['text']}\n\n"
+        
+        text = (
+            "🔍<b>РЕДАКТОР АТТЕСТАЦИЙ</b>🔍\n"
+            "➕Создание аттестации\n"
+            f"🟢<b>Название:</b> {attestation_name}\n"
+            f"{questions_text}"
+            f"🟡<b>Вопрос {question_number + 1}:</b> введите текст вопроса для руководителя\n\n"
+            "Для продолжения отправьте текст вопроса или сохраните текущие вопросы"
+        )
+        
+        await message.answer(
+            text,
+            reply_markup=get_attestation_questions_keyboard(),
+            parse_mode="HTML"
+        )
+        
+        log_user_action(message.from_user.id, "attestation_question_added", f"Вопрос {question_number}")
+        
+    except Exception as e:
+        await message.answer("Произошла ошибка при обработке вопроса")
+        log_user_error(message.from_user.id, "process_attestation_question_error", str(e))
+
+
+@router.callback_query(F.data == "save_attestation_questions", AttestationStates.waiting_for_attestation_question)
+async def callback_save_attestation_questions(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """ПУНКТ 15 ТЗ: Сохранение вопросов аттестации"""
+    try:
+        await callback.answer()
+        
+        # Получаем данные
+        data = await state.get_data()
+        attestation_name = data.get('attestation_name', 'Неизвестно')
+        questions = data.get('questions', [])
+        
+        if not questions:
+            await callback.answer("Нет вопросов для сохранения", show_alert=True)
+            return
+        
+        # ПУНКТ 16 ТЗ: Запрос проходного балла  
+        text = (
+            "🔍<b>РЕДАКТОР АТТЕСТАЦИЙ</b>🔍\n"
+            "➕Создание аттестации\n"
+            f"🟢<b>Название:</b> {attestation_name}\n\n"
+            "✅ Добавление вопросов завершено.\n"
+            "Теперь введите проходной балл для аттестации"
+        )
+        
+        await callback.message.edit_text(text, parse_mode="HTML")
+        await state.set_state(AttestationStates.waiting_for_passing_score)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "save_attestation_questions_error", str(e))
+
+
+@router.message(AttestationStates.waiting_for_passing_score)
+async def process_attestation_passing_score(message: Message, state: FSMContext, session: AsyncSession):
+    """ПУНКТ 17-18 ТЗ: Обработка проходного балла и финализация"""
+    try:
+        passing_score_text = message.text.strip()
+        
+        # Валидация числа (ПО ТЗ: может быть любое число, например 10)
+        try:
+            passing_score = float(passing_score_text)
+            if passing_score <= 0:
+                await message.answer("❌ Проходной балл должен быть положительным числом")
+                return
+        except ValueError:
+            await message.answer("❌ Введите корректное число (например: 10 или 15)")
+            return
+        
+        # Получаем данные
+        data = await state.get_data()
+        attestation_name = data.get('attestation_name')
+        questions = data.get('questions', [])
+        user = await get_user_by_tg_id(session, message.from_user.id)
+        
+        # Сохраняем вопросы перед созданием аттестации
+        if not hasattr(create_attestation, '_pending_questions'):
+            create_attestation._pending_questions = {}
+        create_attestation._pending_questions['current'] = questions
+        
+        # Создаем аттестацию в БД
+        attestation = await create_attestation(
+            session=session,
+            name=attestation_name,
+            passing_score=passing_score,
+            creator_id=user.id
+        )
+        
+        # Добавляем вопросы
+        if attestation:
+            for question in questions:
+                await add_attestation_question(
+                    session=session,
+                    attestation_id=attestation.id if hasattr(attestation, 'id') else 1,
+                    question_text=question['text'],
+                    max_points=question['max_points'],
+                    question_number=question['number']
+                )
+        
+        # ПУНКТ 18 ТЗ: Точное сообщение об успехе
+        text = (
+            "🔍<b>РЕДАКТОР АТТЕСТАЦИЙ</b>🔍\n"
+            "➕Создание аттестации\n"
+            f"🟢<b>Название:</b> {attestation_name}\n\n"
+            f"✅ Аттестация «{attestation_name}» успешно создана!\n"
+            f"📝 Вопросов добавлено: {len(questions)}\n"
+            f"🎯 Проходной балл: {passing_score}\n\n"
+            "Теперь вы можете добавить данную аттестацию к любой траектории"
+        )
+        
+        await message.answer(text, parse_mode="HTML")
+        
+        # КРИТИЧНО: После создания показываем обновленный список аттестаций
+        updated_attestations = await get_all_attestations(session)
+        
+        menu_text = (
+            "🔍<b>РЕДАКТОР АТТЕСТАЦИЙ</b>🔍\n"
+            "Выберите нужную вам аттестацию или создайте новую\n\n"
+            f"✅ <b>Аттестация «{attestation_name}» добавлена в список!</b>"
+        )
+        
+        await message.answer(
+            menu_text,
+            reply_markup=get_attestations_main_keyboard(updated_attestations),
+            parse_mode="HTML"
+        )
+        
+        # Переходим в главное меню аттестаций
+        await state.set_state(AttestationStates.main_menu)
+        
+        log_user_action(message.from_user.id, "attestation_created", f"Аттестация: {attestation_name}")
+        
+    except Exception as e:
+        await message.answer("Произошла ошибка при создании аттестации")
+        log_user_error(message.from_user.id, "process_attestation_passing_score_error", str(e))
+
+
+@router.callback_query(F.data.startswith("view_attestation:"), AttestationStates.main_menu)
+async def callback_view_attestation(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Просмотр существующей аттестации"""
+    try:
+        await callback.answer()
+        
+        attestation_id = int(callback.data.split(":")[1])
+        
+        # Получаем аттестацию
+        attestation = await get_attestation_by_id(session, attestation_id)
+        if not attestation:
+            await callback.answer("Аттестация не найдена", show_alert=True)
+            return
+        
+        # Генерируем информацию об аттестации
+        questions_text = ""
+        if hasattr(attestation, 'questions') and attestation.questions:
+            # Показываем реальные вопросы из БД
+            for i, question in enumerate(attestation.questions, 1):
+                questions_text += f"🟢<b>Вопрос {i}:</b>\n{question.question_text}\n\n"
+        else:
+            # Для созданных пользователем аттестаций показываем структуру
+                # Созданные пользователем - показываем структуру
+                questions_text = (
+                    "🟢<b>Структура аттестации:</b>\n"
+                    "Содержит вопросы с критериями оценки для руководителя\n\n"
+                    "💡 <i>Вопросы создаются в формате:</i>\n"
+                    "• Текст вопроса\n"
+                    "• Правильный ответ\n"
+                    "• Критерии оценки (баллы)\n\n"
+                )
+        
+        # ПРАВКА 1: Добавляем список траекторий, к которым привязана аттестация
+        using_trajectories = await get_trajectories_using_attestation(session, attestation_id)
+        trajectories_info = ""
+        if using_trajectories:
+            if len(using_trajectories) == 1:
+                trajectories_info = f"🗺️ <b>Используется в траектории:</b> {using_trajectories[0]}\n\n"
+            else:
+                trajectories_list = "\n".join([f"• {name}" for name in using_trajectories])
+                trajectories_info = f"🗺️ <b>Используется в траекториях:</b>\n{trajectories_list}\n\n"
+        else:
+            trajectories_info = "🗺️ <b>Траектории:</b> Не привязана к траекториям\n\n"
+
+        text = (
+            "🔍<b>РЕДАКТОР АТТЕСТАЦИЙ</b>🔍\n"
+            f"📋 <b>Аттестация:</b> {attestation.name}\n\n"
+            f"{questions_text}"
+            f"🎯 <b>Проходной балл:</b> {attestation.passing_score}\n"
+            f"📊 <b>Максимальный балл:</b> {getattr(attestation, 'max_score', 20)}\n\n"
+            f"{trajectories_info}"
+        )
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"delete_attestation:{attestation_id}")],
+            [InlineKeyboardButton(text="↩️ Назад к аттестациям", callback_data="back_to_attestations_list")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+        ])
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "view_attestation_error", str(e))
+
+
+@router.callback_query(F.data == "back_to_attestations_list")  
+async def callback_back_to_attestations_list(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Возврат к списку аттестаций"""
+    try:
+        await callback.answer()
+        
+        # Получаем все аттестации
+        attestations = await get_all_attestations(session)
+        
+        text = (
+            "🔍<b>РЕДАКТОР АТТЕСТАЦИЙ</b>🔍\n"
+            "Выберите нужную вам аттестацию или создайте новую"
+        )
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_attestations_main_keyboard(attestations),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(AttestationStates.main_menu)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "back_to_attestations_error", str(e))
+
+
+@router.callback_query(F.data.startswith("delete_attestation:"), AttestationStates.main_menu)
+async def callback_delete_attestation_confirm(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Подтверждение удаления аттестации"""
+    try:
+        await callback.answer()
+        
+        attestation_id = int(callback.data.split(":")[1])
+        
+        # Получаем информацию об аттестации
+        attestation = await get_attestation_by_id(session, attestation_id)
+        if not attestation:
+            await callback.answer("Аттестация не найдена", show_alert=True)
+            return
+        
+        # Проверяем, используется ли аттестация в траекториях
+        is_in_use = await check_attestation_in_use(session, attestation_id)
+        
+        if is_in_use:
+            # Получаем названия траекторий, использующих эту аттестацию
+            trajectory_names = await get_trajectories_using_attestation(session, attestation_id)
+            
+            # Формируем список траекторий для отображения
+            if len(trajectory_names) == 1:
+                trajectories_text = f"траектории «{trajectory_names[0]}»"
+            else:
+                trajectories_list = "\n".join([f"• {name}" for name in trajectory_names])
+                trajectories_text = f"следующим траекториям:\n{trajectories_list}"
+            
+            # Аттестация используется - показываем предупреждение с названиями траекторий
+            text = (
+                "⚠️ <b>УДАЛЕНИЕ НЕВОЗМОЖНО</b> ⚠️\n\n"
+                f"📋 <b>Аттестация:</b> {attestation.name}\n\n"
+                f"❌ <b>Данную аттестацию нельзя удалить, поскольку она привязана к {trajectories_text}</b>\n\n"
+                "💡 <i>Сначала удалите все траектории, использующие эту аттестацию, а затем попробуйте снова.</i>"
+            )
+            
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="↩️ Назад к аттестации", callback_data=f"view_attestation:{attestation_id}")],
+                [InlineKeyboardButton(text="🔍 К списку аттестаций", callback_data="back_to_attestations_list")]
+            ])
+            
+        else:
+            # Аттестацию можно удалить - показываем подтверждение
+            questions_count = len(attestation.questions) if hasattr(attestation, 'questions') and attestation.questions else 0
+            
+            text = (
+                "⚠️ <b>ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ</b> ⚠️\n\n"
+                f"📋 <b>Аттестация:</b> {attestation.name}\n"
+                f"📝 <b>Количество вопросов:</b> {questions_count}\n"
+                f"🎯 <b>Проходной балл:</b> {attestation.passing_score}\n\n"
+                "❗ <b>Вы уверены, что хотите удалить эту аттестацию?</b>\n\n"
+                "⚠️ <i>Это действие нельзя будет отменить!</i>"
+            )
+            
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🗑️ Да, удалить", callback_data=f"confirm_delete_attestation:{attestation_id}")],
+                [InlineKeyboardButton(text="❌ Отменить", callback_data=f"view_attestation:{attestation_id}")]
+            ])
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        
+        if not is_in_use:
+            await state.set_state(AttestationStates.waiting_for_delete_confirmation)
+            await state.update_data(attestation_id=attestation_id, attestation_name=attestation.name)
+        
+        log_user_action(callback.from_user.id, "delete_attestation_requested", 
+                       f"ID: {attestation_id}, В использовании: {is_in_use}")
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "delete_attestation_confirm_error", str(e))
+
+
+@router.callback_query(F.data.startswith("view_attestation:"), AttestationStates.waiting_for_delete_confirmation)
+async def callback_cancel_delete_attestation(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Отмена удаления аттестации - возврат к просмотру"""
+    try:
+        await callback.answer()
+        
+        # Возвращаемся в основное состояние
+        await state.set_state(AttestationStates.main_menu)
+        
+        # Перенаправляем к обычному просмотру аттестации
+        await callback_view_attestation(callback, state, session)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "cancel_delete_attestation_error", str(e))
+
+
+@router.callback_query(F.data.startswith("confirm_delete_attestation:"), AttestationStates.waiting_for_delete_confirmation)
+async def callback_confirm_delete_attestation(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Окончательное удаление аттестации"""
+    try:
+        await callback.answer()
+        
+        attestation_id = int(callback.data.split(":")[1])
+        data = await state.get_data()
+        attestation_name = data.get('attestation_name', 'Неизвестная аттестация')
+        
+        # Выполняем удаление
+        success = await delete_attestation(session, attestation_id)
+        
+        if success:
+            # Удаление успешно
+            text = (
+                "✅ <b>АТТЕСТАЦИЯ УДАЛЕНА</b> ✅\n\n"
+                f"📋 <b>Аттестация «{attestation_name}» успешно удалена!</b>\n\n"
+                "💡 <i>Все вопросы и данные аттестации были удалены из системы.</i>"
+            )
+            
+            await callback.message.edit_text(text, parse_mode="HTML")
+            
+            # Показываем обновленный список аттестаций
+            await asyncio.sleep(2)  # Небольшая пауза для чтения сообщения
+            
+            attestations = await get_all_attestations(session)
+            
+            menu_text = (
+                "🔍<b>РЕДАКТОР АТТЕСТАЦИЙ</b>🔍\n"
+                "Выберите нужную вам аттестацию или создайте новую\n\n"
+                f"🗑️ <b>Аттестация «{attestation_name}» удалена из списка</b>"
+            )
+            
+            await callback.message.answer(
+                menu_text,
+                reply_markup=get_attestations_main_keyboard(attestations),
+                parse_mode="HTML"
+            )
+            
+            await state.set_state(AttestationStates.main_menu)
+            
+            log_user_action(callback.from_user.id, "attestation_deleted", f"'{attestation_name}' (ID: {attestation_id})")
+            
+        else:
+            # Ошибка при удалении
+            text = (
+                "❌ <b>ОШИБКА УДАЛЕНИЯ</b> ❌\n\n"
+                f"📋 <b>Не удалось удалить аттестацию «{attestation_name}»</b>\n\n"
+                "Возможные причины:\n"
+                "• Аттестация используется в траекториях\n"
+                "• Ошибка базы данных\n\n"
+                "💡 <i>Попробуйте еще раз или обратитесь к администратору</i>"
+            )
+            
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="↩️ Назад к списку", callback_data="back_to_attestations_list")]
+            ])
+            
+            await callback.message.edit_text(
+                text,
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
+            
+            log_user_error(callback.from_user.id, "attestation_deletion_failed", f"'{attestation_name}' (ID: {attestation_id})")
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "confirm_delete_attestation_error", str(e))
+
+
+# ================== ОБЩИЕ CALLBACKS ==================
+
+@router.callback_query(F.data == "cancel_test_creation")
+async def callback_cancel_test_creation(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Отмена создания теста и возврат к выбору тестов"""
+    try:
+        await callback.answer()
+        
+        # Получаем все доступные тесты
+        tests = await get_all_active_tests(session)
+        
+        # Получаем текущие тесты в сессии
+        data = await state.get_data()
+        trajectory_data = data.get('trajectory_data', {})
+        current_session_tests = []
+        
+        if trajectory_data.get('stages'):
+            last_stage = trajectory_data['stages'][-1]
+            if last_stage.get('sessions'):
+                last_session = last_stage['sessions'][-1]
+                current_session_tests = last_session.get('tests', [])
+        
+        trajectory_progress = generate_trajectory_progress(trajectory_data)
+        current_session_number = data.get('current_session_number', 1)
+        
+        text = (
+            f"🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n"
+            "➕Создание траектории\n"
+            f"{trajectory_progress}"
+            f"🟡<b>Тест {len(current_session_tests) + 1}:</b> Выберите тест для сессии {current_session_number}"
+        )
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_test_selection_keyboard(tests, current_session_tests),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.waiting_for_test_selection)
+        
+        # Очищаем временные данные теста
+        await state.update_data(
+            new_test_name=None,
+            new_test_description=None,
+            new_test_materials=None,
+            new_test_question_type=None,
+            new_test_question_text=None,
+            new_test_question_answer=None,
+            new_test_question_points=None,
+            new_test_questions=None,
+            new_test_total_score=None
+        )
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "cancel_test_creation_error", str(e))
+
+
+@router.callback_query(F.data == "main_menu")
+async def callback_main_menu(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Возврат в главное меню"""
+    try:
+        await callback.answer()
+        
+        # Получаем пользователя
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.message.edit_text("Ошибка: пользователь не найден")
+            return
+        
+        # Получаем роли пользователя для определения клавиатуры
+        user_roles = await get_user_roles(session, user.id)
+        keyboard = get_keyboard_by_role(user_roles)
+        
+        await callback.message.edit_text(
+            "🏠 Главное меню",
+            reply_markup=keyboard
+        )
+        
+        await state.clear()
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "main_menu_error", str(e))

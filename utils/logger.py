@@ -18,7 +18,8 @@ log_format = logging.Formatter(
 file_handler = RotatingFileHandler(
     log_file,
     maxBytes=10*1024*1024,
-    backupCount=5
+    backupCount=5,
+    encoding='utf-8'
 )
 file_handler.setFormatter(log_format)
 file_handler.setLevel(logging.INFO)
@@ -26,6 +27,11 @@ file_handler.setLevel(logging.INFO)
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(log_format)
 console_handler.setLevel(logging.INFO)
+
+# Настройка кодировки для консоли Windows
+if sys.platform == "win32":
+    import codecs
+    sys.stdout.reconfigure(encoding='utf-8')
 
 logger = logging.getLogger('telegram_bot')
 logger.setLevel(logging.INFO)
