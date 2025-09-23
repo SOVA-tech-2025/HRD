@@ -51,15 +51,16 @@ async def cmd_login(message: Message, state: FSMContext, session: AsyncSession, 
             is_authenticated=True,
             auth_time=message.date.timestamp()
         )
-        
+
         log_user_action(
-            message.from_user.id, 
-            message.from_user.username, 
-            "successful login", 
+            message.from_user.id,
+            message.from_user.username,
+            "successful login",
             {"role": primary_role, "user_id": user.id}
         )
-        
-        await state.clear()
+
+        # не очищаем состояние после успешного логина
+        # await state.clear()
     except Exception as e:
         log_user_error(message.from_user.id, message.from_user.username, "login error", e)
         await message.answer("Произошла ошибка при входе в систему. Пожалуйста, попробуйте позже.")
@@ -182,7 +183,8 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession, 
         await state.update_data(
             user_id=user.id,
             role=primary_role,
-            is_authenticated=True
+            is_authenticated=True,
+            auth_time=message.date.timestamp()
         )
         
         log_user_action(
