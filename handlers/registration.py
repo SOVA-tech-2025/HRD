@@ -5,13 +5,48 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from sqlalchemy.ext.asyncio import AsyncSession
 import os
 
-from database.db import get_user_by_tg_id, create_user, create_user_without_role, check_phone_exists, create_initial_admin_with_token, get_users_by_role
+from database.db import get_user_by_tg_id, create_user, create_user_without_role, check_phone_exists, create_initial_admin_with_token, get_users_by_role, validate_admin_token
 from keyboards.keyboards import get_contact_keyboard, get_role_selection_keyboard
 from states.states import RegistrationStates
 from utils.validators import validate_full_name, validate_phone_number
 from utils.logger import log_user_action, log_user_error
 
 router = Router()
+
+async def get_admin_settings() -> tuple[int, str]:
+    """Получает настройки администраторов из переменных окружения"""
+    max_admins = int(os.getenv("MAX_ADMINS", "5"))
+    admin_tokens_str = os.getenv("ADMIN_INIT_TOKENS", os.getenv("ADMIN_INIT_TOKEN", ""))
+    return max_admins, admin_tokens_str
+
+async def show_admin_token_prompt(message: Message, state: FSMContext, max_admins: int, existing_managers: list):
+    """Показывает сообщение о возможности ввода токена администратора"""
+    if len(existing_managers) == 0:
+        # Если нет ни одного админа - это первый
+        await message.answer(
+            "🔐 <b>Регистрация администратора</b>\n\n"
+            "Для получения прав администратора введите токен инициализации. "
+            "Если у вас нет токена, нажмите кнопку 'Пропустить'.\n\n"
+            "Введите токен инициализации:",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="admin_token:skip")]
+            ])
+        )
+    else:
+        # Есть админы, но можно добавить еще
+        await message.answer(
+            "🔐 <b>Регистрация администратора</b>\n\n"
+            f"В системе уже есть {len(existing_managers)} администратор(ов).\n\n"
+            "Если у вас есть токен администратора, введите его. "
+            "Если нет - нажмите кнопку 'Пропустить'.\n\n"
+            "Введите токен инициализации:",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="admin_token:skip")]
+            ])
+        )
+    await state.set_state(RegistrationStates.waiting_for_admin_token)
 
 @router.message(Command("register"))
 async def cmd_register(message: Message, state: FSMContext, session: AsyncSession):
@@ -72,42 +107,15 @@ async def process_contact(message: Message, state: FSMContext, session: AsyncSes
     
     await state.update_data(phone_number=normalized_phone)
     log_user_action(message.from_user.id, message.from_user.username, "provided phone via contact", {"phone": normalized_phone})
-    
+
     # Проверяем настройки для показа опции токена администратора
-    import os
-    max_admins = int(os.getenv("MAX_ADMINS", "5"))
+    max_admins, admin_tokens_str = await get_admin_settings()
     existing_managers = await get_users_by_role(session, "Руководитель")
-    admin_tokens_str = os.getenv("ADMIN_INIT_TOKENS", os.getenv("ADMIN_INIT_TOKEN", ""))
     allow_auto_role = os.getenv("ALLOW_AUTO_ROLE_ASSIGNMENT", "false").lower() == "true"
-    
+
     # ПРИОРИТЕТ 1: Если есть токены админов и не достигнут лимит - ВСЕГДА показываем возможность стать админом
     if admin_tokens_str and len(existing_managers) < max_admins:
-        if len(existing_managers) == 0:
-            # Если нет ни одного админа - это первый
-            await message.answer(
-                "🔐 <b>Инициализация системы</b>\n\n"
-                "В системе еще нет администраторов. Если вы хотите стать первым администратором, "
-                "введите токен инициализации. Если у вас нет токена, нажмите кнопку 'Пропустить'.\n\n"
-                "Введите токен инициализации:",
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="admin_token:skip")]
-                ])
-            )
-        else:
-            # Есть админы, но можно добавить еще
-            await message.answer(
-                "🔐 <b>Регистрация администратора</b>\n\n"
-                f"В системе уже есть {len(existing_managers)} администратор(ов), можно создать еще {max_admins - len(existing_managers)}.\n\n"
-                "Если у вас есть токен администратора, введите его. "
-                "Если нет - нажмите кнопку 'Пропустить'.\n\n"
-                "Введите токен инициализации:",
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="admin_token:skip")]
-                ])
-            )
-        await state.set_state(RegistrationStates.waiting_for_admin_token)
+        await show_admin_token_prompt(message, state, max_admins, existing_managers)
         return
     
     # ПРИОРИТЕТ 2: Автоматическое назначение роли (если включено)
@@ -205,42 +213,15 @@ async def process_phone_manually(message: Message, state: FSMContext, session: A
     
     await state.update_data(phone_number=normalized_phone)
     log_user_action(message.from_user.id, message.from_user.username, "provided phone manually", {"phone": normalized_phone})
-    
+
     # Проверяем настройки для показа опции токена администратора
-    import os
-    max_admins = int(os.getenv("MAX_ADMINS", "5"))
+    max_admins, admin_tokens_str = await get_admin_settings()
     existing_managers = await get_users_by_role(session, "Руководитель")
-    admin_tokens_str = os.getenv("ADMIN_INIT_TOKENS", os.getenv("ADMIN_INIT_TOKEN", ""))
     allow_auto_role = os.getenv("ALLOW_AUTO_ROLE_ASSIGNMENT", "false").lower() == "true"
-    
+
     # ПРИОРИТЕТ 1: Если есть токены админов и не достигнут лимит - ВСЕГДА показываем возможность стать админом
     if admin_tokens_str and len(existing_managers) < max_admins:
-        if len(existing_managers) == 0:
-            # Если нет ни одного админа - это первый
-            await message.answer(
-                "🔐 <b>Инициализация системы</b>\n\n"
-                "В системе еще нет администраторов. Если вы хотите стать первым администратором, "
-                "введите токен инициализации. Если у вас нет токена, нажмите кнопку 'Пропустить'.\n\n"
-                "Введите токен инициализации:",
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="admin_token:skip")]
-                ])
-            )
-        else:
-            # Есть админы, но можно добавить еще
-            await message.answer(
-                "🔐 <b>Регистрация администратора</b>\n\n"
-                f"В системе уже есть {len(existing_managers)} администратор(ов), можно создать еще {max_admins - len(existing_managers)}.\n\n"
-                "Если у вас есть токен администратора, введите его. "
-                "Если нет - нажмите кнопку 'Пропустить'.\n\n"
-                "Введите токен инициализации:",
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="admin_token:skip")]
-                ])
-            )
-        await state.set_state(RegistrationStates.waiting_for_admin_token)
+        await show_admin_token_prompt(message, state, max_admins, existing_managers)
         return
     
     # ПРИОРИТЕТ 2: Автоматическое назначение роли (если включено)
@@ -504,9 +485,7 @@ async def cmd_cancel(message: Message, state: FSMContext):
 @router.message(RegistrationStates.waiting_for_role)
 async def role_selection_error(message: Message, state: FSMContext, session: AsyncSession):
     # Проверяем, может быть пользователь пытается ввести токен администратора
-    import os
-    admin_tokens_str = os.getenv("ADMIN_INIT_TOKENS", os.getenv("ADMIN_INIT_TOKEN", ""))
-    max_admins = int(os.getenv("MAX_ADMINS", "5"))
+    max_admins, admin_tokens_str = await get_admin_settings()
     existing_managers = await get_users_by_role(session, "Руководитель")
     
     # Если есть токены, проверяем введенный текст как потенциальный токен
