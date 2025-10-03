@@ -91,7 +91,7 @@ async def cmd_create_test(message: Message, state: FSMContext, session: AsyncSes
     
     log_user_action(message.from_user.id, message.from_user.username, "started test creation")
 
-@router.message(F.text == "Открыть список тестов")
+@router.message(F.text.in_(["Открыть список тестов", "Тесты стажеров 📝"]))
 async def cmd_list_tests(message: Message, state: FSMContext, session: AsyncSession):
     """Обработчик команды просмотра списка тестов"""
     is_auth = await check_auth(message, state, session)
@@ -584,11 +584,23 @@ async def process_test_selection(callback: CallbackQuery, state: FSMContext, ses
     user_roles = await get_user_roles(session, user.id)
     role_names = [role.name for role in user_roles]
     
+    # КРИТИЧЕСКАЯ ПРОВЕРКА: Определяем контекст - откуда пришел пользователь
+    # Получаем данные состояния для определения контекста
+    state_data = await state.get_data()
+    context = state_data.get('test_context', 'management')  # По умолчанию - управление
+    
+    # Если у пользователя есть доступ (через рассылку или индивидуально), показываем интерфейс прохождения
+    # Но ТОЛЬКО если контекст = 'taking' (из "Мои тесты")
+    has_access = await check_test_access(session, user.id, test_id)
+    is_mentor = "Наставник" in role_names
+    is_recruiter = "Рекрутер" in role_names
+    is_trainee = "Стажер" in role_names
+    is_employee = "Сотрудник" in role_names
+    
     # Проверяем роль пользователя для определения интерфейса
-    if "Стажер" in role_names or "Сотрудник" in role_names:
-        # Для стажёров и сотрудников - интерфейс прохождения теста
+    if (is_trainee or is_employee or (is_mentor and has_access and context == 'taking')):
+        # Для стажёров, сотрудников и наставников с доступом - интерфейс прохождения теста
         # Проверяем доступ к конкретному тесту
-        has_access = await check_test_access(session, user.id, test_id)
         
         if not has_access:
             await callback.message.edit_text(

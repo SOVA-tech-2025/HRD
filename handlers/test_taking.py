@@ -13,11 +13,11 @@ from database.db import (
     get_test_questions, save_test_result, get_user_test_attempts_count, can_user_take_test,
     get_trainee_learning_path, get_trainee_stage_progress, get_stage_session_progress,
     complete_session_for_trainee, complete_stage_for_trainee, get_user_by_id,
-    get_trainee_attestation_status, get_user_roles
+    get_trainee_attestation_status, get_user_roles, get_employee_tests_from_recruiter
 )
 from database.models import InternshipStage, TestResult
 from sqlalchemy import select
-from keyboards.keyboards import get_simple_test_selection_keyboard, get_test_start_keyboard, get_test_selection_for_taking_keyboard
+from keyboards.keyboards import get_simple_test_selection_keyboard, get_test_start_keyboard, get_test_selection_for_taking_keyboard, get_mentor_contact_keyboard
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from states.states import TestTakingStates
 from utils.logger import log_user_action, log_user_error, logger
@@ -28,7 +28,7 @@ router = Router()
 @router.message(Command("my_tests"))
 async def cmd_my_tests_command(message: Message, state: FSMContext, session: AsyncSession):
     """Обработчик команды /my_tests"""
-    await cmd_take_test(message, state, session)
+    await cmd_trajectory_tests(message, state, session)
 
 @router.message(Command("all_tests"))
 async def cmd_all_tests_command(message: Message, state: FSMContext, session: AsyncSession):
@@ -38,9 +38,9 @@ async def cmd_all_tests_command(message: Message, state: FSMContext, session: As
     from handlers.tests import cmd_list_tests
     await cmd_list_tests(message, state, session)
 
-@router.message(F.text == "Доступные тесты")
-async def cmd_take_test(message: Message, state: FSMContext, session: AsyncSession):
-    """Обработчик команды прохождения теста"""
+@router.message(F.text.in_(["Доступные тесты", "Тесты траектории 🗺️"]))
+async def cmd_trajectory_tests(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработчик команды тестов траектории для стажеров"""
     is_auth = await check_auth(message, state, session)
     if not is_auth:
         return
@@ -55,12 +55,12 @@ async def cmd_take_test(message: Message, state: FSMContext, session: AsyncSessi
         await message.answer("У вас нет прав для прохождения тестов.")
         return
     
-    # Получаем доступные тесты, включая пройденные для пересдачи (бесконечные попытки)
-    available_tests = await get_user_available_tests(session, user.id, exclude_completed=False)
+    # Получаем ТОЛЬКО тесты траектории (от наставника), исключая тесты рассылки от рекрутера
+    available_tests = await get_trainee_available_tests(session, user.id)
     
     if not available_tests:
         await message.answer(
-            "📋 <b>Доступные тесты</b>\n\n"
+            "🗺️ <b>Тесты траектории</b>\n\n"
             "У вас пока нет доступных тестов для прохождения.\n"
             "Обратитесь к наставнику для получения доступа к тестам.",
             parse_mode="HTML"
@@ -94,7 +94,7 @@ async def cmd_take_test(message: Message, state: FSMContext, session: AsyncSessi
     tests_display = "\n\n".join(tests_list)
     
     await message.answer(
-        f"📋 <b>Доступные тесты</b>\n\n"
+        f"🗺️ <b>Тесты траектории</b>\n\n"
         f"У вас есть доступ к <b>{len(available_tests)}</b> тестам:\n\n"
         f"{tests_display}\n\n"
         "💡 <b>Рекомендация:</b> Пройденные тесты можно пересдать для улучшения результата!",
@@ -102,11 +102,140 @@ async def cmd_take_test(message: Message, state: FSMContext, session: AsyncSessi
         reply_markup=get_test_selection_for_taking_keyboard(available_tests)
     )
     
+    # КРИТИЧЕСКИ ВАЖНО: Устанавливаем контекст "taking" для стажера
+    await state.update_data(test_context='taking')
     await state.set_state(TestTakingStates.waiting_for_test_selection)
     
-    log_user_action(message.from_user.id, message.from_user.username, "opened test taking")
+    log_user_action(message.from_user.id, message.from_user.username, "opened trajectory tests")
 
-@router.message(F.text == "Посмотреть баллы")
+@router.message(F.text.in_(["Мои тесты 📋"]))
+async def cmd_trainee_broadcast_tests(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработчик команды 'Мои тесты 📋' для стажеров и наставников - тесты от рекрутера + индивидуальные от наставника"""
+    try:
+        # Проверка авторизации
+        is_auth = await check_auth(message, state, session)
+        if not is_auth:
+            return
+
+        # Получение пользователя
+        user = await get_user_by_tg_id(session, message.from_user.id)
+        if not user:
+            await message.answer("Вы не зарегистрированы в системе.")
+            return
+
+        # Проверяем что пользователь имеет право проходить тесты
+        has_permission = await check_user_permission(session, user.id, "take_tests")
+        if not has_permission:
+            await message.answer("❌ У вас нет прав для прохождения тестов.")
+            return
+        
+        # Определяем роль пользователя для адаптации сообщений
+        user_roles = await get_user_roles(session, user.id)
+        role_names = [role.name for role in user_roles]
+        is_trainee = "Стажер" in role_names
+        is_mentor = "Наставник" in role_names
+        is_employee = "Сотрудник" in role_names
+            
+        # Получаем тесты ВМЕСТЕ: от рекрутера через рассылку + индивидуальные от наставника (исключая тесты траектории)
+        available_tests = await get_employee_tests_from_recruiter(session, user.id, exclude_completed=False)
+        
+        if not available_tests:
+            # Адаптируем сообщение в зависимости от роли
+            if is_trainee:
+                no_tests_message = (
+                    "📋 <b>Мои тесты</b>\n\n"
+                    "❌ У тебя пока нет индивидуальных тестов.\n\n"
+                    "📝 <b>Откуда берутся тесты:</b>\n"
+                    "• Рекрутер назначает тесты через массовую рассылку\n"
+                    "• Наставник может дать индивидуальный тест вне траектории\n"
+                    "• Тесты траектории находятся в отдельной кнопке 'Тесты траектории 🗺️'\n\n"
+                    "Ожидай назначения новых тестов от рекрутера или наставника."
+                )
+            elif is_mentor:
+                no_tests_message = (
+                    "📋 <b>Мои тесты</b>\n\n"
+                    "❌ У тебя пока нет тестов от рекрутера.\n\n"
+                    "📝 <b>Откуда берутся тесты:</b>\n"
+                    "• Рекрутер назначает тесты через массовую рассылку по группам\n\n"
+                    "Ожидай назначения новых тестов от рекрутера."
+                )
+            elif is_employee:
+                no_tests_message = (
+                    "📋 <b>Мои тесты</b>\n\n"
+                    "❌ У тебя пока нет тестов от рекрутера.\n\n"
+                    "📝 <b>Откуда берутся тесты:</b>\n"
+                    "• Рекрутер назначает тесты через массовую рассылку по группам\n\n"
+                    "Ожидай назначения новых тестов от рекрутера."
+                )
+            else:
+                no_tests_message = (
+                    "📋 <b>Мои тесты</b>\n\n"
+                    "❌ У тебя пока нет тестов.\n\n"
+                    "Ожидай назначения новых тестов от рекрутера."
+                )
+            
+            await message.answer(no_tests_message, parse_mode="HTML")
+            return
+            
+        # Формируем список доступных тестов (включая пройденные для пересдачи)
+        tests_list = []
+        for i, test in enumerate(available_tests, 1):
+            # Получаем результат последнего прохождения
+            test_result = await get_user_test_result(session, user.id, test.id)
+            if test_result and test_result.is_passed:
+                status = f"✅ Пройден ({test_result.score}/{test_result.max_possible_score} баллов)"
+                action_text = "Пересдать для улучшения результата"
+            else:
+                status = "📋 Доступен для прохождения"
+                action_text = "Пройти тест"
+            
+            tests_list.append(
+                f"<b>{i}. {test.name}</b>\n"
+                f"   📊 Статус: {status}\n"
+                f"   📝 {test.description or 'Описание не указано'}\n"
+                f"   🎯 Действие: {action_text}"
+            )
+        
+        tests_display = "\n\n".join(tests_list)
+        
+        # Адаптируем заголовок в зависимости от роли
+        if is_trainee:
+            role_title = "👤 <b>Стажер:</b>"
+        elif is_mentor:
+            role_title = "👨‍🏫 <b>Наставник:</b>"
+        elif is_employee:
+            role_title = "👨‍💼 <b>Сотрудник:</b>"
+        else:
+            role_title = "👤 <b>Пользователь:</b>"
+        
+        await message.answer(
+            f"📋 <b>Мои тесты</b>\n\n"
+            f"{role_title} {user.full_name}\n"
+            f"📊 <b>Всего тестов:</b> {len(available_tests)}\n\n"
+            f"{tests_display}\n\n"
+            "Выбери тест для прохождения:",
+            reply_markup=get_test_selection_for_taking_keyboard(available_tests),
+            parse_mode="HTML"
+        )
+        
+        # КРИТИЧЕСКИ ВАЖНО: Устанавливаем контекст "taking" для наставника и сотрудника
+        await state.update_data(test_context='taking')
+        
+        # Логирование в зависимости от роли
+        if is_trainee:
+            log_user_action(user.tg_id, "my_tests_viewed", f"Стажер просмотрел индивидуальные тесты: {len(available_tests)}")
+        elif is_mentor:
+            log_user_action(user.tg_id, "my_tests_viewed", f"Наставник просмотрел тесты от рекрутера: {len(available_tests)}")
+        elif is_employee:
+            log_user_action(user.tg_id, "my_tests_viewed", f"Сотрудник просмотрел тесты от рекрутера: {len(available_tests)}")
+        else:
+            log_user_action(user.tg_id, "my_tests_viewed", f"Пользователь просмотрел тесты: {len(available_tests)}")
+
+    except Exception as e:
+        await message.answer("Произошла ошибка при получении списка тестов")
+        log_user_error(message.from_user.id, "my_tests_error", str(e))
+
+@router.message(F.text.in_(["Посмотреть баллы", "📊 Посмотреть баллы", "Посмотреть баллы 📊"]))
 async def cmd_view_scores(message: Message, state: FSMContext, session: AsyncSession):
     """Обработчик команды просмотра баллов стажера"""
     is_auth = await check_auth(message, state, session)
@@ -129,7 +258,7 @@ async def cmd_view_scores(message: Message, state: FSMContext, session: AsyncSes
         await message.answer(
             "📊 <b>Ваши результаты</b>\n\n"
             "Вы пока не проходили тестов.\n"
-            "Используйте кнопку 'Доступные тесты' для прохождения доступных тестов.",
+            "Используйте кнопку 'Мои тесты 📋' для прохождения доступных тестов.",
             parse_mode="HTML"
         )
         return
@@ -676,11 +805,16 @@ async def finish_test(message: Message, state: FSMContext, session: AsyncSession
         await state.clear()
         return
 
-    # Проверяем завершение этапа если тест пройден
+    # ВАЖНО: Проверяем завершение этапа ТОЛЬКО для тестов траектории (не для рассылки)
     stage_completion_message = ""
     if is_passed:
-        logger.info(f"Тест {test_id} пройден пользователем {user.id}, проверяем завершение этапа")
-        stage_completion_message = await check_and_notify_stage_completion(session, user.id, test_id)
+        # Проверяем, является ли тест частью траектории (granted_by НЕ рекрутер)
+        is_trajectory_test = await is_test_from_trajectory(session, user.id, test_id)
+        if is_trajectory_test:
+            logger.info(f"Тест {test_id} - это тест ТРАЕКТОРИИ, проверяем завершение этапа")
+            stage_completion_message = await check_and_notify_stage_completion(session, user.id, test_id)
+        else:
+            logger.info(f"Тест {test_id} - это тест РАССЫЛКИ, пропускаем проверку траектории")
 
     status_text = "✅ <b>Тест успешно пройден!</b>" if is_passed else "❌ <b>Тест не пройден</b>"
     
@@ -693,13 +827,21 @@ async def finish_test(message: Message, state: FSMContext, session: AsyncSession
         if has_choice_questions:
             keyboard.append([InlineKeyboardButton(text="🔍 Показать мои ошибки", callback_data=f"show_errors:{result.id}")])
 
-    # Получаем прогресс траектории если тест прошел успешно
+    # ВАЖНО: Показываем прогресс траектории ТОЛЬКО для тестов траектории (не для рассылки)
     progress_info = ""
     test_keyboard = keyboard.copy()
 
     if is_passed:
-        # Получаем траекторию стажера
-        trainee_path = await get_trainee_learning_path(session, result_data['user_id'])
+        # Проверяем, является ли тест частью траектории
+        is_trajectory_test = await is_test_from_trajectory(session, user.id, test_id)
+        if not is_trajectory_test:
+            logger.info(f"Тест {test_id} - рассылка, НЕ показываем прогресс траектории")
+            # Для тестов рассылки НЕ показываем прогресс траектории
+            trainee_path = None
+        else:
+            # Получаем траекторию стажера только для тестов траектории
+            trainee_path = await get_trainee_learning_path(session, result_data['user_id'])
+        
         if trainee_path:
             stages_progress = await get_trainee_stage_progress(session, trainee_path.id)
 
@@ -940,47 +1082,149 @@ async def process_view_materials(callback: CallbackQuery, state: FSMContext, ses
 
 @router.callback_query(F.data == "back_to_test_list")
 async def process_back_to_test_list(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
-    """Возврат к списку тестов"""
+    """Умный возврат к списку тестов (определяет откуда пришёл тест)"""
     user = await get_user_by_tg_id(session, callback.from_user.id)
-    available_tests = await get_trainee_available_tests(session, user.id)
     
-    if not available_tests:
+    # Получаем данные состояния, чтобы узнать test_id
+    state_data = await state.get_data()
+    test_id = state_data.get('test_id')
+    
+    # Определяем, из какого списка был тест
+    is_from_trajectory = False
+    if test_id:
+        is_from_trajectory = await is_test_from_trajectory(session, user.id, test_id)
+    
+    if is_from_trajectory:
+        # ТЕСТЫ ТРАЕКТОРИИ
+        available_tests = await get_trainee_available_tests(session, user.id)
+        
+        if not available_tests:
+            await callback.message.edit_text(
+                "🗺️ <b>Тесты траектории</b>\n\n"
+                "У тебя пока нет доступных тестов для прохождения.\n"
+                "Обратись к наставнику для получения доступа к тестам.",
+                parse_mode="HTML"
+            )
+            await callback.answer()
+            return
+        
+        tests_list = []
+        for i, test in enumerate(available_tests, 1):
+            stage_info = ""
+            if test.stage_id:
+                stage = await session.execute(select(InternshipStage).where(InternshipStage.id == test.stage_id))
+                stage_obj = stage.scalar_one_or_none()
+                if stage_obj:
+                    stage_info = f" | Этап: {stage_obj.name}"
+            
+            materials_info = " | 📚 Есть материалы" if test.material_link else ""
+            
+            tests_list.append(
+                f"<b>{i}. {test.name}</b>\n"
+                f"   🎯 Порог: {test.threshold_score}/{test.max_score} баллов{stage_info}{materials_info}\n"
+                f"   📝 {test.description or 'Описание не указано'}"
+            )
+        
+        tests_display = "\n\n".join(tests_list)
+        
         await callback.message.edit_text(
-            "📋 <b>Доступные тесты</b>\n\n"
-            "У вас пока нет доступных тестов.\n"
-            "Обратитесь к наставнику для получения доступа.",
-            parse_mode="HTML"
+            f"🗺️ <b>Тесты траектории</b>\n\n"
+            f"У тебя есть доступ к <b>{len(available_tests)}</b> тестам:\n\n"
+            f"{tests_display}\n\n"
+            "💡 <b>Рекомендация:</b> Изучи материалы перед прохождением теста!",
+            parse_mode="HTML",
+            reply_markup=get_test_selection_for_taking_keyboard(available_tests)
         )
-        await callback.answer()
-        return
-    
-    tests_list = []
-    for i, test in enumerate(available_tests, 1):
-        stage_info = ""
-        if test.stage_id:
-            stage = await session.execute(select(InternshipStage).where(InternshipStage.id == test.stage_id))
-            stage_obj = stage.scalar_one_or_none()
-            if stage_obj:
-                stage_info = f" | Этап: {stage_obj.name}"
         
-        materials_info = " | 📚 Есть материалы" if test.material_link else ""
+        # КРИТИЧЕСКИ ВАЖНО: Устанавливаем контекст "taking" для возврата к траектории
+        await state.update_data(test_context='taking')
+    else:
+        # МОИ ТЕСТЫ (индивидуальные) - для стажеров, сотрудников и наставников
+        available_tests = await get_employee_tests_from_recruiter(session, user.id, exclude_completed=False)
         
-        tests_list.append(
-            f"<b>{i}. {test.name}</b>\n"
-            f"   🎯 Порог: {test.threshold_score}/{test.max_score} баллов{stage_info}{materials_info}\n"
-            f"   📝 {test.description or 'Описание не указано'}"
+        # Определяем роль пользователя для адаптации сообщений
+        user_roles = await get_user_roles(session, user.id)
+        role_names = [role.name for role in user_roles]
+        is_trainee = "Стажер" in role_names
+        is_mentor = "Наставник" in role_names
+        is_employee = "Сотрудник" in role_names
+        
+        if not available_tests:
+            if is_trainee:
+                no_tests_message = (
+                    "📋 <b>Мои тесты</b>\n\n"
+                    "❌ У тебя пока нет индивидуальных тестов.\n\n"
+                    "📝 <b>Откуда берутся тесты:</b>\n"
+                    "• Рекрутер назначает тесты через массовую рассылку\n"
+                    "• Наставник может дать индивидуальный тест вне траектории\n"
+                    "• Тесты траектории находятся в отдельной кнопке 'Тесты траектории 🗺️'\n\n"
+                    "Ожидай назначения новых тестов от рекрутера или наставника."
+                )
+            elif is_mentor:
+                no_tests_message = (
+                    "📋 <b>Мои тесты</b>\n\n"
+                    "❌ У тебя пока нет тестов от рекрутера.\n\n"
+                    "📝 <b>Откуда берутся тесты:</b>\n"
+                    "• Рекрутер назначает тесты через массовую рассылку по группам\n\n"
+                    "Ожидай назначения новых тестов от рекрутера."
+                )
+            elif is_employee:
+                no_tests_message = (
+                    "📋 <b>Мои тесты</b>\n\n"
+                    "❌ У тебя пока нет тестов от рекрутера.\n\n"
+                    "📝 <b>Откуда берутся тесты:</b>\n"
+                    "• Рекрутер назначает тесты через массовую рассылку по группам\n\n"
+                    "Ожидай назначения новых тестов от рекрутера."
+                )
+            else:
+                no_tests_message = (
+                    "📋 <b>Мои тесты</b>\n\n"
+                    "❌ У тебя пока нет тестов.\n\n"
+                    "Ожидай назначения новых тестов от рекрутера."
+                )
+            
+            await callback.message.edit_text(no_tests_message, parse_mode="HTML")
+            await callback.answer()
+            return
+        
+        tests_list = []
+        for i, test in enumerate(available_tests, 1):
+            test_result = await get_user_test_result(session, user.id, test.id)
+            if test_result and test_result.is_passed:
+                status = f"✅ Пройден ({test_result.score}/{test_result.max_possible_score} баллов)"
+            else:
+                status = "📋 Доступен"
+            
+            tests_list.append(
+                f"<b>{i}. {test.name}</b>\n"
+                f"   📊 {status}\n"
+                f"   📝 {test.description or 'Описание не указано'}"
+            )
+        
+        tests_display = "\n\n".join(tests_list)
+        
+        # Адаптируем заголовок под роль
+        if is_employee:
+            role_title = "👨‍💼 <b>Сотрудник:</b>"
+        elif is_mentor:
+            role_title = "👨‍🏫 <b>Наставник:</b>"
+        elif is_trainee:
+            role_title = "👤 <b>Стажер:</b>"
+        else:
+            role_title = "👤 <b>Пользователь:</b>"
+        
+        await callback.message.edit_text(
+            f"📋 <b>Мои тесты</b>\n\n"
+            f"{role_title} {user.full_name}\n"
+            f"📊 <b>Всего тестов:</b> {len(available_tests)}\n\n"
+            f"{tests_display}\n\n"
+            "Выбери тест для прохождения:",
+            parse_mode="HTML",
+            reply_markup=get_test_selection_for_taking_keyboard(available_tests)
         )
-    
-    tests_display = "\n\n".join(tests_list)
-    
-    await callback.message.edit_text(
-        f"📋 <b>Доступные тесты</b>\n\n"
-        f"У вас есть доступ к <b>{len(available_tests)}</b> тестам:\n\n"
-        f"{tests_display}\n\n"
-        "💡 <b>Рекомендация:</b> Изучите материалы перед прохождением теста!",
-        parse_mode="HTML",
-        reply_markup=get_test_selection_for_taking_keyboard(available_tests)
-    )
+        
+        # КРИТИЧЕСКИ ВАЖНО: Устанавливаем контекст "taking" для возврата
+        await state.update_data(test_context='taking')
     
     await state.set_state(TestTakingStates.waiting_for_test_selection)
     await callback.answer()
@@ -1156,9 +1400,9 @@ async def process_take_test_from_notification(callback: CallbackQuery, state: FS
         {"test_id": test_id}
     )
 
-@router.callback_query(F.data == "available_tests")
-async def process_available_tests_shortcut(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
-    """Обработчик быстрого перехода к доступным тестам из уведомления"""
+@router.callback_query(F.data == "trajectory_tests_shortcut")
+async def process_trajectory_tests_shortcut(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик быстрого перехода к тестам траектории из уведомления"""
     user = await get_user_by_tg_id(session, callback.from_user.id)
     if not user:
         await callback.message.edit_text("❌ Пользователь не найден.")
@@ -1176,7 +1420,7 @@ async def process_available_tests_shortcut(callback: CallbackQuery, state: FSMCo
     
     if not available_tests:
         await callback.message.edit_text(
-            "📋 <b>Доступные тесты</b>\n\n"
+            "🗺️ <b>Тесты траектории</b>\n\n"
             "У вас пока нет доступных тестов для прохождения.\n"
             "Обратитесь к наставнику для получения доступа к тестам.",
             parse_mode="HTML"
@@ -1204,7 +1448,7 @@ async def process_available_tests_shortcut(callback: CallbackQuery, state: FSMCo
     tests_display = "\n\n".join(tests_list)
     
     await callback.message.edit_text(
-        f"📋 <b>Доступные тесты</b>\n\n"
+        f"🗺️ <b>Тесты траектории</b>\n\n"
         f"У вас есть доступ к <b>{len(available_tests)}</b> тестам:\n\n"
         f"{tests_display}\n\n"
         "💡 <b>Рекомендация:</b> Изучите материалы перед прохождением теста!",
@@ -1215,10 +1459,139 @@ async def process_available_tests_shortcut(callback: CallbackQuery, state: FSMCo
     await state.set_state(TestTakingStates.waiting_for_test_selection)
     await callback.answer()
 
-    log_user_action(callback.from_user.id, callback.from_user.username, "opened tests from notification")
+    log_user_action(callback.from_user.id, callback.from_user.username, "opened trajectory tests from notification")
+
+@router.callback_query(F.data == "my_broadcast_tests_shortcut")
+async def process_my_broadcast_tests_shortcut(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик быстрого перехода к индивидуальным тестам из уведомления"""
+    user = await get_user_by_tg_id(session, callback.from_user.id)
+    if not user:
+        await callback.message.edit_text("❌ Пользователь не найден.")
+        await callback.answer()
+        return
+    
+    # Получаем тесты от рекрутера через рассылку + индивидуальные от наставника (исключая тесты траектории)
+    available_tests = await get_employee_tests_from_recruiter(session, user.id, exclude_completed=False)
+    
+    if not available_tests:
+        await callback.message.edit_text(
+            "📋 <b>Мои тесты</b>\n\n"
+            "❌ У вас пока нет индивидуальных тестов.\n\n"
+            "📝 <b>Откуда берутся тесты:</b>\n"
+            "• Рекрутер назначает тесты через массовую рассылку\n"
+            "• Наставник может дать индивидуальный тест вне траектории\n"
+            "• Тесты траектории находятся в отдельной кнопке 'Тесты траектории 🗺️'\n\n"
+            "Ожидайте назначения новых тестов от рекрутера или наставника.",
+            parse_mode="HTML"
+        )
+        await callback.answer()
+        return
+    
+    tests_list = []
+    for i, test in enumerate(available_tests, 1):
+        test_result = await get_user_test_result(session, user.id, test.id)
+        if test_result and test_result.is_passed:
+            status = f"✅ Пройден ({test_result.score}/{test_result.max_possible_score} баллов)"
+        else:
+            status = "📋 Доступен"
+        
+        tests_list.append(
+            f"<b>{i}. {test.name}</b>\n"
+            f"   📊 {status}\n"
+            f"   📝 {test.description or 'Описание не указано'}"
+        )
+    
+    tests_display = "\n\n".join(tests_list)
+    
+    await callback.message.edit_text(
+        f"📋 <b>Мои тесты</b>\n\n"
+        f"У тебя есть <b>{len(available_tests)}</b> индивидуальных тестов:\n\n"
+        f"{tests_display}\n\n"
+        "Выбери тест для прохождения:",
+        parse_mode="HTML",
+        reply_markup=get_test_selection_for_taking_keyboard(available_tests)
+    )
+    
+    await callback.answer()
+    log_user_action(callback.from_user.id, callback.from_user.username, "opened broadcast tests from notification")
 
 
 # ===== ФУНКЦИИ ДЛЯ ПРОХОЖДЕНИЯ ТРАЕКТОРИЙ =====
+
+async def is_test_from_trajectory(session: AsyncSession, user_id: int, test_id: int) -> bool:
+    """
+    Проверяет, является ли тест частью траектории или это тест вне траектории
+    
+    Returns:
+        True - тест из траектории (открыт через этапы)
+        False - тест вне траектории (рассылка от рекрутера ИЛИ индивидуальный от наставника)
+    """
+    try:
+        from database.models import Role, user_roles, TraineeTestAccess
+        
+        # Получаем роль рекрутера
+        recruiter_role_result = await session.execute(
+            select(Role).where(Role.name == "Рекрутер")
+        )
+        recruiter_role = recruiter_role_result.scalar_one_or_none()
+        if not recruiter_role:
+            logger.error("Роль 'Рекрутер' не найдена")
+            return False
+        
+        # Получаем запись доступа к тесту
+        access_result = await session.execute(
+            select(TraineeTestAccess).outerjoin(
+                user_roles, TraineeTestAccess.granted_by_id == user_roles.c.user_id
+            ).where(
+                TraineeTestAccess.trainee_id == user_id,
+                TraineeTestAccess.test_id == test_id,
+                TraineeTestAccess.is_active == True
+            )
+        )
+        access = access_result.scalar_one_or_none()
+        
+        if not access:
+            logger.warning(f"Доступ к тесту {test_id} для пользователя {user_id} не найден")
+            return False
+        
+        # НОВАЯ ЛОГИКА: Проверяем, входит ли тест в траекторию (через этапы/сессии)
+        from database.models import LearningSession, TraineeSessionProgress, TraineeStageProgress, TraineeLearningPath, session_tests
+        
+        # Получаем траекторию стажера
+        trainee_path_result = await session.execute(
+            select(TraineeLearningPath)
+            .where(
+                TraineeLearningPath.trainee_id == user_id,
+                TraineeLearningPath.is_active == True
+            )
+        )
+        trainee_path = trainee_path_result.scalar_one_or_none()
+        
+        if not trainee_path:
+            return False
+        
+        # Проверяем, входит ли тест в сессии траектории
+        trajectory_test_result = await session.execute(
+            select(session_tests.c.test_id).join(
+                LearningSession, LearningSession.id == session_tests.c.session_id
+            ).join(
+                TraineeSessionProgress, TraineeSessionProgress.session_id == LearningSession.id
+            ).join(
+                TraineeStageProgress, TraineeSessionProgress.stage_progress_id == TraineeStageProgress.id
+            ).where(
+                TraineeStageProgress.trainee_path_id == trainee_path.id,
+                session_tests.c.test_id == test_id
+            )
+        )
+        trajectory_test = trajectory_test_result.first()
+        
+        # Если тест найден в траектории - возвращаем True
+        return trajectory_test is not None
+        
+    except Exception as e:
+        logger.error(f"Ошибка проверки типа теста {test_id} для пользователя {user_id}: {e}")
+        return False
+
 
 async def check_and_notify_stage_completion(session: AsyncSession, user_id: int, test_id: int) -> str:
     """
@@ -1419,12 +1792,9 @@ async def callback_trajectory_from_test(callback: CallbackQuery, state: FSMConte
             await callback.message.edit_text(
                 "🗺️ <b>ТРАЕКТОРИЯ ОБУЧЕНИЯ</b> 🗺️\n\n"
                 "❌ <b>Траектория не назначена</b>\n\n"
-                "Вам еще не назначена траектория обучения.\n"
-                "Обратитесь к вашему наставнику для назначения траектории.",
+                "Обратись к своему наставнику для назначения траектории, пока курс не выбран",
                 parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
-                ])
+                reply_markup=get_mentor_contact_keyboard()
             )
             return
 

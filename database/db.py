@@ -121,22 +121,22 @@ async def create_initial_data():
                             )
                             await session.execute(stmt)
             
-            # Наставник (2) - ведет стажеров, открывает этапы, предоставляет доступ к тестам
+            # Наставник (2) - ведет стажеров, открывает этапы, предоставляет доступ к тестам, проходит тесты от рекрутера
             for role in roles:
                 if role.name == "Наставник":
                     for perm in permissions:
-                        if perm.name in ["view_test_results", "grant_test_access", "view_mentorship", "view_knowledge_base"]:
+                        if perm.name in ["take_tests", "view_test_results", "grant_test_access", "view_mentorship", "view_knowledge_base"]:
                             stmt = insert(role_permissions).values(
                                 role_id=role.id,
                                 permission_id=perm.id
                             )
                             await session.execute(stmt)
             
-            # Стажер (3) - проходит тесты, смотрит результаты, общается с наставником
+            # Стажер (3) - проходит тесты, смотрит результаты, общается с наставником, просматривает базу знаний
             for role in roles:
                 if role.name == "Стажер":
                     for perm in permissions:
-                        if perm.name in ["take_tests", "view_test_results", "view_mentorship"]:
+                        if perm.name in ["take_tests", "view_test_results", "view_mentorship", "view_knowledge_base"]:
                             stmt = insert(role_permissions).values(
                                 role_id=role.id,
                                 permission_id=perm.id
@@ -977,6 +977,57 @@ async def get_employees_in_group(session: AsyncSession, group_id: int) -> List[U
         return []
 
 
+async def get_trainees_in_group(session: AsyncSession, group_id: int) -> List[User]:
+    """Получение только стажеров из группы (для массовой рассылки)"""
+    try:
+        # Получаем роль стажера
+        trainee_role = await get_role_by_name(session, "Стажер")
+        if not trainee_role:
+            return []
+        
+        stmt = select(User).join(
+            user_groups, User.id == user_groups.c.user_id
+        ).join(
+            user_roles, User.id == user_roles.c.user_id
+        ).where(
+            user_groups.c.group_id == group_id,
+            user_roles.c.role_id == trainee_role.id,
+            User.is_activated == True,
+            User.is_active == True
+        ).order_by(User.full_name)
+        
+        result = await session.execute(stmt)
+        return result.scalars().all()
+    except Exception as e:
+        logger.error(f"Error getting trainees in group {group_id}: {e}")
+        return []
+
+async def get_mentors_in_group(session: AsyncSession, group_id: int) -> List[User]:
+    """Получение только наставников из группы (для массовой рассылки)"""
+    try:
+        # Получаем роль наставника
+        mentor_role = await get_role_by_name(session, "Наставник")
+        if not mentor_role:
+            return []
+        
+        stmt = select(User).join(
+            user_groups, User.id == user_groups.c.user_id
+        ).join(
+            user_roles, User.id == user_roles.c.user_id
+        ).where(
+            user_groups.c.group_id == group_id,
+            user_roles.c.role_id == mentor_role.id,
+            User.is_activated == True,
+            User.is_active == True
+        ).order_by(User.full_name)
+        
+        result = await session.execute(stmt)
+        return result.scalars().all()
+    except Exception as e:
+        logger.error(f"Ошибка получения стажеров группы {group_id}: {e}")
+        return []
+
+
 async def get_user_groups(session: AsyncSession, user_id: int) -> List[Group]:
     """Получение всех групп пользователя"""
     try:
@@ -1614,6 +1665,11 @@ async def get_trainee_mentor(session: AsyncSession, trainee_id: int) -> Optional
         logger.error(f"Ошибка получения наставника стажера {trainee_id}: {e}")
         return None
 
+
+async def get_user_mentor(session: AsyncSession, user_id: int) -> Optional[User]:
+    """Алиас для get_trainee_mentor - получение наставника пользователя"""
+    return await get_trainee_mentor(session, user_id)
+
 async def get_unassigned_trainees(session: AsyncSession) -> List[User]:
     """Получение списка активированных стажеров без наставника"""
     try:
@@ -1698,20 +1754,48 @@ async def grant_test_access(session: AsyncSession, trainee_id: int, test_id: int
         return False
 
 async def get_trainee_available_tests(session: AsyncSession, trainee_id: int) -> List[Test]:
-    """Получение доступных тестов для стажера"""
+    """
+    Получение доступных тестов ТРАЕКТОРИИ для стажера
+    
+    ВАЖНО: Возвращает ТОЛЬКО тесты, которые входят в траекторию (через этапы/сессии).
+    Тесты от наставника ВНЕ траектории идут в get_trainee_additional_tests_from_mentor()
+    Тесты от рекрутера через рассылку - используй get_employee_tests_from_recruiter()
+    """
     try:
+        from database.models import LearningSession, TraineeSessionProgress, TraineeStageProgress, TraineeLearningPath
+        
+        # Получаем траекторию стажера
+        trainee_path_result = await session.execute(
+            select(TraineeLearningPath)
+            .options(selectinload(TraineeLearningPath.learning_path))
+            .where(
+                TraineeLearningPath.trainee_id == trainee_id,
+                TraineeLearningPath.is_active == True
+            )
+        )
+        trainee_path = trainee_path_result.scalar_one_or_none()
+        
+        if not trainee_path:
+            return []
+        
+        # Получаем все тесты из сессий траектории
         result = await session.execute(
             select(Test).join(
-                TraineeTestAccess, Test.id == TraineeTestAccess.test_id
+                session_tests, Test.id == session_tests.c.test_id
+            ).join(
+                LearningSession, LearningSession.id == session_tests.c.session_id
+            ).join(
+                TraineeSessionProgress, TraineeSessionProgress.session_id == LearningSession.id
+            ).join(
+                TraineeStageProgress, TraineeSessionProgress.stage_progress_id == TraineeStageProgress.id
             ).where(
-                TraineeTestAccess.trainee_id == trainee_id,
-                TraineeTestAccess.is_active == True,
+                TraineeStageProgress.trainee_path_id == trainee_path.id,
                 Test.is_active == True
             ).order_by(Test.created_date)
         )
         return result.scalars().all()
     except Exception as e:
-        logger.error(f"Ошибка получения доступных тестов для стажера {trainee_id}: {e}")
+        logger.error(f"Ошибка получения тестов траектории для стажера {trainee_id}: {e}")
         return []
 
 
@@ -1758,37 +1842,63 @@ async def get_user_available_tests(session: AsyncSession, user_id: int, exclude_
 
 async def get_employee_tests_from_recruiter(session: AsyncSession, user_id: int, exclude_completed: bool = True) -> List[Test]:
     """
-    Получение тестов для сотрудников, назначенных ТОЛЬКО рекрутером (без стажерских тестов от наставников)
+    Получение тестов для сотрудников/стажеров, назначенных рекрутером ИЛИ наставником ВНЕ траектории
     
     Args:
-        user_id: ID пользователя (сотрудника)
+        user_id: ID пользователя (сотрудника/стажера)
         exclude_completed: Исключать ли пройденные тесты
     
     Returns:
-        List[Test]: Список тестов от рекрутера
+        List[Test]: Список тестов от рекрутера через рассылку + тесты от наставника вне траектории
     """
     try:
+        from database.models import user_roles, LearningSession, TraineeSessionProgress, TraineeStageProgress, TraineeLearningPath
+        
         # Получаем роль рекрутера
         recruiter_role = await get_role_by_name(session, "Рекрутер")
         if not recruiter_role:
             return []
         
-        # Получаем тесты, к которым у пользователя есть доступ И которые созданы рекрутерами
-        result = await session.execute(
+        # Получаем все тесты, доступные пользователю
+        all_tests_result = await session.execute(
             select(Test).join(
                 TraineeTestAccess, Test.id == TraineeTestAccess.test_id
-            ).join(
-                User, Test.creator_id == User.id  # Присоединяем создателя теста
-            ).join(
-                user_roles, User.id == user_roles.c.user_id  # Присоединяем роли создателя
             ).where(
                 TraineeTestAccess.trainee_id == user_id,
                 TraineeTestAccess.is_active == True,
-                Test.is_active == True,
-                user_roles.c.role_id == recruiter_role.id  # Только тесты от рекрутеров
+                Test.is_active == True
             ).order_by(Test.created_date)
         )
-        available_tests = result.scalars().all()
+        all_tests = all_tests_result.scalars().all()
+        
+        # Получаем ID тестов из траектории (если есть)
+        trajectory_test_ids = set()
+        trainee_path_result = await session.execute(
+            select(TraineeLearningPath)
+            .where(
+                TraineeLearningPath.trainee_id == user_id,
+                TraineeLearningPath.is_active == True
+            )
+        )
+        trainee_path = trainee_path_result.scalar_one_or_none()
+        
+        if trainee_path:
+            # Получаем ID всех тестов из сессий траектории
+            trajectory_tests_result = await session.execute(
+                select(session_tests.c.test_id).join(
+                    LearningSession, LearningSession.id == session_tests.c.session_id
+                ).join(
+                    TraineeSessionProgress, TraineeSessionProgress.session_id == LearningSession.id
+                ).join(
+                    TraineeStageProgress, TraineeSessionProgress.stage_progress_id == TraineeStageProgress.id
+                ).where(
+                    TraineeStageProgress.trainee_path_id == trainee_path.id
+                )
+            )
+            trajectory_test_ids = set(row[0] for row in trajectory_tests_result.all())
+        
+        # Фильтруем тесты: исключаем тесты из траектории
+        available_tests = [test for test in all_tests if test.id not in trajectory_test_ids]
         
         # Если нужно исключить пройденные тесты
         if exclude_completed:
@@ -1802,7 +1912,7 @@ async def get_employee_tests_from_recruiter(session: AsyncSession, user_id: int,
         return available_tests
         
     except Exception as e:
-        logger.error(f"Ошибка получения тестов от рекрутера для пользователя {user_id}: {e}")
+        logger.error(f"Ошибка получения тестов от рекрутера/наставника для пользователя {user_id}: {e}")
         return []
 
 async def revoke_test_access(session: AsyncSession, trainee_id: int, test_id: int) -> bool:
@@ -2181,16 +2291,16 @@ async def send_test_notification(bot, trainee_tg_id: int, test_name: str, mentor
         stage_info = f"\n🎯 <b>Этап:</b> {stage_name}" if stage_name else ""
         description_info = f"\n📝 <b>Описание:</b> {test_description}" if test_description else ""
         
-        notification_text = f"""🔔 <b>Тест для прохождения!</b>
+        notification_text = f"""🔔 <b>Назначен новый тест!</b>
 
 📋 <b>Название:</b> {test_name}{stage_info}{description_info}
 
-👨‍🏫 <b>Наставник:</b> {mentor_name}
+👨‍🏫 <b>От кого:</b> {mentor_name}
 
 💡 <b>Что дальше?</b>
-• Изучите материалы к тесту (если есть)
-• Нажмите кнопку ниже для быстрого перехода
-• Или откройте меню "Доступные тесты"
+• Изучи материалы к тесту (если есть)
+• Нажми кнопку ниже для быстрого перехода к тесту
+• Или открой раздел "Мои тесты 📋" в главном меню
 
 🎯 <b>Удачи в прохождении!</b>"""
 
@@ -2199,7 +2309,7 @@ async def send_test_notification(bot, trainee_tg_id: int, test_name: str, mentor
         # Создаем клавиатуру с кнопкой быстрого перехода к тесту
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🚀 Перейти к тесту", callback_data=f"take_test:{test_id}")],
-            [InlineKeyboardButton(text="📋 Все доступные тесты", callback_data="available_tests")]
+            [InlineKeyboardButton(text="📋 Мои тесты", callback_data="my_broadcast_tests_shortcut")]
         ]) if test_id else None
         
         await bot.send_message(
@@ -2264,7 +2374,7 @@ async def send_mentor_assignment_notification(bot, trainee_tg_id: int, mentor_tg
         ])
         
         keyboard_buttons.extend([
-            [InlineKeyboardButton(text="📋 Мои доступные тесты", callback_data="available_tests")],
+            [InlineKeyboardButton(text="🗺️ Тесты траектории", callback_data="trajectory_tests_shortcut")],
             [InlineKeyboardButton(text="👨‍🏫 Информация о наставнике", callback_data="my_mentor_info")]
         ])
         
@@ -2897,7 +3007,8 @@ async def update_user_role(session: AsyncSession, user_id: int, new_role_name: s
                 ).values(is_active=False)
             )
             
-            # Деактивируем доступ к тестам стажера
+            # Деактивируем доступ к тестам стажера (ТОЛЬКО при смене роли рекрутером)
+            # ВАЖНО: При переходе через аттестацию (change_trainee_to_employee) тесты НЕ деактивируются
             await session.execute(
                 update(TraineeTestAccess).where(
                     TraineeTestAccess.trainee_id == user_id,
@@ -4520,9 +4631,15 @@ async def send_stage_opened_notification(session: AsyncSession, trainee_id: int,
 
         # Уведомление стажеру согласно ТЗ
         message = (
-            "🗺️<b>Вам открыли новый этап обучения!</b>\n"
-            "Чтобы ознакомиться с ней нажмите кнопку \"Траектория\" в меню или используйте команду /trajectory"
+            "🚨<b>Тебе открыли новый этап обучения!</b>\n"
+            "Нажми кнопку ниже, чтобы открыть траекторию"
         )
+
+        # Создаем клавиатуру с кнопкой траектории
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Траектория обучения ⬜", callback_data="trajectory_command")]
+        ])
 
         # Отправляем уведомление стажеру
         if not bot:
@@ -4531,7 +4648,8 @@ async def send_stage_opened_notification(session: AsyncSession, trainee_id: int,
             await bot.send_message(
                 trainee.tg_id,
                 message,
-                parse_mode="HTML"
+                parse_mode="HTML",
+                reply_markup=keyboard
             )
             logger.info(f"Отправлено уведомление стажеру {trainee_id} об открытии этапа {stage_id}")
         except Exception as e:
@@ -5102,6 +5220,10 @@ async def get_user_attestation_result(session: AsyncSession, trainee_id: int, at
 async def change_trainee_to_employee(session: AsyncSession, trainee_id: int, attestation_result_id: int) -> bool:
     """
     Изменение роли стажера на сотрудника после успешной аттестации
+    
+    ВАЖНО: При переходе через аттестацию TraineeTestAccess НЕ деактивируется,
+    чтобы стажер мог продолжать видеть свои тесты из рассылки в "Мои тесты 📋"
+    после перехода в сотрудника.
     """
     try:
         from database.models import Mentorship
@@ -5595,23 +5717,34 @@ async def broadcast_test_to_groups(session: AsyncSession, test_id: int, group_id
             logger.error(f"Отправитель {sent_by_id} не найден")
             return {"success": False, "error": "Отправитель не найден"}
         
-        # Собираем всех СОТРУДНИКОВ из выбранных групп (согласно глоссарию Task 8)
+        # Собираем всех СОТРУДНИКОВ, СТАЖЕРОВ и НАСТАВНИКОВ из выбранных групп
         all_users = []
         group_names = []
         
-        # Получаем роль сотрудника
+        # Получаем роли сотрудника, стажера и наставника
         employee_role = await get_role_by_name(session, "Сотрудник")
-        if not employee_role:
-            logger.error("Роль 'Сотрудник' не найдена")
-            return {"success": False, "error": "Роль 'Сотрудник' не найдена"}
+        trainee_role = await get_role_by_name(session, "Стажер")
+        mentor_role = await get_role_by_name(session, "Наставник")
+        
+        if not employee_role or not trainee_role or not mentor_role:
+            logger.error("Роли 'Сотрудник', 'Стажер' или 'Наставник' не найдены")
+            return {"success": False, "error": "Необходимые роли не найдены"}
         
         for group_id in group_ids:
             group = await get_group_by_id(session, group_id)
             if group:
                 group_names.append(group.name)
-                # Получаем только сотрудников из группы
+                # Получаем сотрудников из группы
                 employees_in_group = await get_employees_in_group(session, group_id)
                 all_users.extend(employees_in_group)
+                
+                # Получаем стажеров из группы
+                trainees_in_group = await get_trainees_in_group(session, group_id)
+                all_users.extend(trainees_in_group)
+                
+                # Получаем наставников из группы
+                mentors_in_group = await get_mentors_in_group(session, group_id)
+                all_users.extend(mentors_in_group)
         
         # Убираем дубликаты пользователей (если они в нескольких группах)
         unique_users = {}
@@ -6051,8 +6184,8 @@ async def fix_knowledge_base_permissions(session: AsyncSession) -> bool:
             await session.flush()
             logger.info("Создано право view_knowledge_base")
 
-        # Назначаем право просмотра базы знаний ролям: Сотрудник, Наставник, Руководитель
-        roles_to_update = ["Сотрудник", "Наставник", "Руководитель"]
+        # Назначаем право просмотра базы знаний ролям: Стажер, Сотрудник, Наставник, Руководитель
+        roles_to_update = ["Стажер", "Сотрудник", "Наставник", "Руководитель"]
         updated_any = False
 
         for role_name in roles_to_update:

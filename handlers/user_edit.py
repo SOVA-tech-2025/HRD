@@ -1192,7 +1192,7 @@ async def callback_main_menu(callback: CallbackQuery, state: FSMContext, session
         user_roles = await get_user_roles(session, user.id)
         
         if not user_roles:
-            await callback.message.edit_text("У вас нет назначенных ролей. Обратитесь к администратору.")
+            await callback.message.edit_text("У тебя нет назначенных ролей. Обратись к рекрутеру.")
             await callback.answer()
             await state.clear()
             return

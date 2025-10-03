@@ -95,7 +95,7 @@ async def cmd_assign_mentor(message: Message, state: FSMContext, session: AsyncS
     
     log_user_action(message.from_user.id, message.from_user.username, "opened mentor assignment")
 
-@router.message(F.text == "Мой наставник")
+@router.message(F.text.in_(["Мой наставник", "🎓 Мой наставник", "Мой наставник 🎓"]))
 async def cmd_my_mentor(message: Message, state: FSMContext, session: AsyncSession):
     """Обработчик команды просмотра информации о наставнике"""
     is_auth = await check_auth(message, state, session)
@@ -129,7 +129,7 @@ async def cmd_my_mentor(message: Message, state: FSMContext, session: AsyncSessi
     
     log_user_action(message.from_user.id, message.from_user.username, "viewed mentor info")
 
-@router.message(F.text == "Мои стажеры")
+@router.message(F.text.in_(["Мои стажеры", "Мои стажеры 👥"]))
 async def cmd_mentor_trainees(message: Message, state: FSMContext, session: AsyncSession):
     """Обработчик команды просмотра стажеров наставника"""
     is_auth = await check_auth(message, state, session)
@@ -1207,7 +1207,7 @@ async def process_my_mentor_info(callback: CallbackQuery, session: AsyncSession)
         ])
     
     keyboard_buttons.append([
-        InlineKeyboardButton(text="📋 Мои доступные тесты", callback_data="available_tests")
+        InlineKeyboardButton(text="🗺️ Тесты траектории", callback_data="trajectory_tests_shortcut")
     ])
     
     await callback.message.edit_text(

@@ -17,7 +17,7 @@ from database.db import (
     get_trainee_attestation_status
 )
 from handlers.auth import check_auth
-from keyboards.keyboards import get_main_menu_keyboard
+from keyboards.keyboards import get_main_menu_keyboard, get_mentor_contact_keyboard
 from utils.logger import log_user_action, log_user_error
 
 router = Router()
@@ -29,7 +29,7 @@ async def cmd_trajectory_slash(message: Message, state: FSMContext, session: Asy
     await cmd_trajectory(message, state, session)
 
 
-@router.message(F.text == "Траектория")
+@router.message(F.text.in_(["Траектория", "📖 Траектория обучения", "Траектория обучения 📖"]))
 async def cmd_trajectory(message: Message, state: FSMContext, session: AsyncSession):
     """Обработчик команды 'Траектория' для стажеров"""
     try:
@@ -64,10 +64,9 @@ async def cmd_trajectory(message: Message, state: FSMContext, session: AsyncSess
             await message.answer(
                 "🗺️ <b>ТРАЕКТОРИЯ ОБУЧЕНИЯ</b> 🗺️\n\n"
                 "❌ <b>Траектория не назначена</b>\n\n"
-                "Вам еще не назначена траектория обучения.\n"
-                "Обратитесь к вашему наставнику для назначения траектории.",
+                "Обратись к своему наставнику для назначения траектории, пока курс не выбран",
                 parse_mode="HTML",
-                reply_markup=get_main_menu_keyboard()
+                reply_markup=get_mentor_contact_keyboard()
             )
             log_user_action(user.tg_id, "trajectory_not_assigned", "Стажер попытался открыть траекторию, но она не назначена")
             return
@@ -215,10 +214,9 @@ async def callback_trajectory_command(callback: CallbackQuery, state: FSMContext
             await callback.message.edit_text(
                 "🗺️ <b>ТРАЕКТОРИЯ ОБУЧЕНИЯ</b> 🗺️\n\n"
                 "❌ <b>Траектория не назначена</b>\n\n"
-                "Вам еще не назначена траектория обучения.\n"
-                "Обратитесь к вашему наставнику для назначения траектории.",
+                "Обратись к своему наставнику для назначения траектории, пока курс не выбран",
                 parse_mode="HTML",
-                reply_markup=get_main_menu_keyboard()
+                reply_markup=get_mentor_contact_keyboard()
             )
             log_user_action(user.tg_id, "trajectory_not_assigned", "Стажер попытался открыть траектории, но она не назначена")
             return
@@ -1013,3 +1011,52 @@ async def format_attestation_status_simple(session, user_id, attestation):
     except Exception as e:
         log_user_error(user_id, "format_attestation_status_simple_error", str(e))
         return f"🔍⏺️<b>Аттестация:</b> Ошибка загрузки\n\n"
+
+
+@router.callback_query(F.data == "contact_mentor")
+async def callback_contact_mentor(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик кнопки 'Связь с наставником'"""
+    try:
+        await callback.answer()
+        
+        # Получаем пользователя
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.message.edit_text("❌ Вы не зарегистрированы в системе.")
+            return
+        
+        # Получаем наставника стажера
+        from database.db import get_user_mentor
+        mentor = await get_user_mentor(session, user.id)
+        
+        if not mentor:
+            await callback.message.edit_text(
+                "❌ <b>Наставник не назначен</b>\n\n"
+                "Вам еще не назначен наставник.\n"
+                "Обратитесь к рекрутеру для назначения наставника.",
+                parse_mode="HTML"
+            )
+            return
+        
+        # Формируем сообщение с контактами наставника
+        mentor_info = f"""👨‍🏫 <b>Ваш наставник</b>
+
+🧑 <b>Имя:</b> {mentor.full_name}
+📞 <b>Телефон:</b> {mentor.phone_number}
+👤 <b>Username:</b> @{mentor.username or 'не указан'}
+
+💬 <b>Свяжитесь с наставником для назначения траектории обучения</b>"""
+        
+        await callback.message.edit_text(
+            mentor_info,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+            ])
+        )
+        
+        log_user_action(user.tg_id, "mentor_contact_viewed", f"Стажер просмотрел контакты наставника: {mentor.full_name}")
+        
+    except Exception as e:
+        log_user_error(callback.from_user.id, "contact_mentor_error", str(e))
+        await callback.message.edit_text("❌ Произошла ошибка при получении контактов наставника.")

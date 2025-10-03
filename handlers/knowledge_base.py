@@ -114,9 +114,9 @@ async def download_and_save_file(bot, file_id: str, filename: str, max_file_size
 # Обработчики для рекрутера и сотрудника (база знаний)
 # ===============================
 
-@router.message(F.text == "База знаний")
+@router.message(F.text.in_(["База знаний", "База знаний 📁"]))
 async def cmd_knowledge_base_universal(message: Message, state: FSMContext, session: AsyncSession):
-    """Универсальный обработчик кнопки 'База знаний' для рекрутера и сотрудника (ТЗ 9-1 шаг 1)"""
+    """Универсальный обработчик кнопки 'База знаний' для рекрутера, сотрудника и стажера (ТЗ 9-1 шаг 1)"""
     try:
         # Проверка авторизации
         is_auth = await check_auth(message, state, session)
@@ -163,8 +163,8 @@ async def cmd_knowledge_base_universal(message: Message, state: FSMContext, sess
             await state.set_state(KnowledgeBaseStates.main_menu)
             log_user_action(message.from_user.id, "knowledge_base_opened", "Открыта база знаний (рекрутер)")
             
-        # ПРОСМОТР БАЗЫ ЗНАНИЙ - для Сотрудников, Наставников и Руководителей
-        elif "Сотрудник" in user_roles or "Наставник" in user_roles or "Руководитель" in user_roles:
+        # ПРОСМОТР БАЗЫ ЗНАНИЙ - для Стажеров, Сотрудников, Наставников и Руководителей
+        elif "Стажер" in user_roles or "Сотрудник" in user_roles or "Наставник" in user_roles or "Руководитель" in user_roles:
             has_permission = await check_user_permission(session, user.id, "view_knowledge_base")
             if not has_permission:
                 await message.answer("❌ У вас нет прав для просмотра базы знаний.")
@@ -191,8 +191,10 @@ async def cmd_knowledge_base_universal(message: Message, state: FSMContext, sess
             await state.set_state(KnowledgeBaseStates.employee_browsing)
 
             # Определяем роль для логирования
-            role_name = "сотрудник"
-            if "Наставник" in user_roles:
+            role_name = "стажер"
+            if "Сотрудник" in user_roles:
+                role_name = "сотрудник"
+            elif "Наставник" in user_roles:
                 role_name = "наставник"
             elif "Руководитель" in user_roles:
                 role_name = "руководитель"
