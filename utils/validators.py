@@ -133,4 +133,26 @@ def validate_name(name: str) -> bool:
     if not re.search(r'[а-яА-ЯёЁa-zA-Z0-9]', cleaned_name):
         return False
     
+    return True
+
+def validate_object_name(name: str) -> bool:
+    """Валидация названия объекта (разрешает слеш для адресов)"""
+    if not name or not isinstance(name, str):
+        return False
+    
+    # Убираем лишние пробелы
+    cleaned_name = name.strip()
+    
+    # Проверка длины
+    if len(cleaned_name) < 2 or len(cleaned_name) > 100:
+        return False
+    
+    # Проверка на разрешенные символы: буквы, цифры, пробелы, знаки препинания + слеш для адресов
+    if not re.match(r'^[а-яА-ЯёЁa-zA-Z0-9\s\-_.,!?()\[\]{}":;/]+$', cleaned_name):
+        return False
+    
+    # Проверка что не состоит только из пробелов и знаков препинания
+    if not re.search(r'[а-яА-ЯёЁa-zA-Z0-9]', cleaned_name):
+        return False
+    
     return True 

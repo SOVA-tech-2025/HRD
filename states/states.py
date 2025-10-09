@@ -106,6 +106,10 @@ class GroupManagementStates(StatesGroup):
     waiting_for_group_selection = State()
     waiting_for_new_group_name = State()
     waiting_for_rename_confirmation = State()
+    
+    # Удаление группы
+    waiting_for_delete_group_selection = State()
+    waiting_for_delete_confirmation = State()
 
 
 class ObjectManagementStates(StatesGroup):
@@ -117,6 +121,10 @@ class ObjectManagementStates(StatesGroup):
     waiting_for_object_selection = State()
     waiting_for_new_object_name = State()
     waiting_for_object_rename_confirmation = State()
+    
+    # Удаление объекта
+    waiting_for_delete_object_selection = State()
+    waiting_for_delete_confirmation = State()
 
 
 class UserActivationStates(StatesGroup):
@@ -174,6 +182,7 @@ class LearningPathStates(StatesGroup):
     creating_test_description = State()
     creating_test_question_type = State()
     creating_test_question_text = State()
+    creating_test_question_options = State()
     creating_test_question_answer = State()
     creating_test_question_points = State()
     creating_test_more_questions = State()

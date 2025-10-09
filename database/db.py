@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, selectinload
-from sqlalchemy import select, insert, delete, func, update, or_, and_
+from sqlalchemy import select, insert, delete, func, update, or_, and_, text
 from typing import AsyncGenerator, Optional, List
 import asyncio
 from datetime import datetime
@@ -53,6 +53,7 @@ async def init_db():
 
     await update_role_permissions_for_existing_db()
     await migrate_new_tables()
+    await update_existing_users_role_date()
     # Только диагностика дубликатов, НЕ автоматическая очистка
     await cleanup_all_duplicate_attestations_on_startup()
 
@@ -279,6 +280,25 @@ async def migrate_employee_to_mentor_roles():
             
         except Exception as e:
             logger.error(f"Ошибка миграции ролей: {e}")
+            await session.rollback()
+
+
+async def update_existing_users_role_date():
+    """Обновление даты назначения роли для существующих пользователей"""
+    async with async_session() as session:
+        try:
+            # Обновляем пользователей, у которых role_assigned_date равен NULL
+            result = await session.execute(
+                update(User)
+                .where(User.role_assigned_date.is_(None))
+                .values(role_assigned_date=User.registration_date)
+            )
+            updated_count = result.rowcount
+            if updated_count > 0:
+                await session.commit()
+                logger.info(f"Обновлена дата назначения роли для {updated_count} пользователей")
+        except Exception as e:
+            logger.error(f"Ошибка обновления даты назначения роли: {e}")
             await session.rollback()
 
 
@@ -655,10 +675,12 @@ async def activate_user(session: AsyncSession, user_id: int, role_name: str,
         await session.execute(stmt)
         
         # Обновляем объекты и статус активации
+        from datetime import datetime
         update_stmt = update(User).where(User.id == user_id).values(
             is_activated=True,
             internship_object_id=internship_object_id,
-            work_object_id=work_object_id
+            work_object_id=work_object_id,
+            role_assigned_date=datetime.now()
         )
         await session.execute(update_stmt)
         
@@ -931,6 +953,66 @@ async def update_group_name(session: AsyncSession, group_id: int, new_name: str)
         return True
     except Exception as e:
         logger.error(f"Ошибка изменения названия группы {group_id}: {e}")
+        await session.rollback()
+        return False
+
+
+async def delete_group(session: AsyncSession, group_id: int, deleted_by_id: int) -> bool:
+    """Физическое удаление группы"""
+    try:
+        # Проверяем существование группы
+        group = await get_group_by_id(session, group_id)
+        if not group:
+            logger.error(f"Группа {group_id} не найдена")
+            return False
+        
+        # Проверяем, есть ли пользователи в группе
+        users_in_group = await get_group_users(session, group_id)
+        if users_in_group:
+            logger.warning(f"Нельзя удалить группу {group_id}: в ней есть пользователи ({len(users_in_group)} чел.)")
+            return False
+        
+        # Проверяем, используется ли группа в траекториях
+        learning_paths = await get_learning_paths_by_group(session, group_id)
+        if learning_paths:
+            logger.warning(f"Нельзя удалить группу {group_id}: она используется в траекториях ({len(learning_paths)} шт.)")
+            return False
+        
+        # Проверяем, используется ли группа в базе знаний
+        folders_result = await session.execute(
+            select(KnowledgeFolder).join(
+                folder_group_access, KnowledgeFolder.id == folder_group_access.c.folder_id
+            ).where(
+                folder_group_access.c.group_id == group_id,
+                KnowledgeFolder.is_active == True
+            )
+        )
+        folders = folders_result.scalars().all()
+        if folders:
+            logger.warning(f"Нельзя удалить группу {group_id}: она используется в базе знаний ({len(folders)} папок)")
+            return False
+        
+        # Удаляем связи пользователей с группой
+        await session.execute(
+            delete(user_groups).where(user_groups.c.group_id == group_id)
+        )
+        
+        # Удаляем связи группы с папками базы знаний
+        await session.execute(
+            delete(folder_group_access).where(folder_group_access.c.group_id == group_id)
+        )
+        
+        # Физическое удаление группы
+        await session.execute(
+            delete(Group).where(Group.id == group_id)
+        )
+        await session.commit()
+        
+        logger.info(f"Группа {group_id} '{group.name}' физически удалена пользователем {deleted_by_id}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Ошибка удаления группы {group_id}: {e}")
         await session.rollback()
         return False
 
@@ -1263,6 +1345,41 @@ async def remove_user_from_object(session: AsyncSession, user_id: int, object_id
         return True
     except Exception as e:
         logger.error(f"Ошибка удаления пользователя {user_id} из объекта {object_id}: {e}")
+        await session.rollback()
+        return False
+
+
+async def delete_object(session: AsyncSession, object_id: int, deleted_by_id: int) -> bool:
+    """Физическое удаление объекта"""
+    try:
+        # Проверяем существование объекта
+        object_obj = await get_object_by_id(session, object_id)
+        if not object_obj:
+            logger.error(f"Объект {object_id} не найден")
+            return False
+        
+        # Проверяем, есть ли пользователи в объекте (включая user_objects, internship_object_id, work_object_id)
+        users_in_object = await get_object_users(session, object_id)
+        if users_in_object:
+            logger.warning(f"Нельзя удалить объект {object_id}: в нем есть пользователи ({len(users_in_object)} чел.)")
+            return False
+        
+        # Удаляем связи пользователей с объектом
+        await session.execute(
+            delete(user_objects).where(user_objects.c.object_id == object_id)
+        )
+        
+        # Физическое удаление объекта
+        await session.execute(
+            delete(Object).where(Object.id == object_id)
+        )
+        await session.commit()
+        
+        logger.info(f"Объект {object_id} '{object_obj.name}' физически удален пользователем {deleted_by_id}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Ошибка удаления объекта {object_id}: {e}")
         await session.rollback()
         return False
 
@@ -1778,7 +1895,7 @@ async def get_trainee_available_tests(session: AsyncSession, trainee_id: int) ->
         if not trainee_path:
             return []
         
-        # Получаем все тесты из сессий траектории
+        # Получаем все тесты из сессий траектории ТОЛЬКО из ОТКРЫТЫХ этапов
         result = await session.execute(
             select(Test).join(
                 session_tests, Test.id == session_tests.c.test_id
@@ -1790,6 +1907,7 @@ async def get_trainee_available_tests(session: AsyncSession, trainee_id: int) ->
                 TraineeStageProgress, TraineeSessionProgress.stage_progress_id == TraineeStageProgress.id
             ).where(
                 TraineeStageProgress.trainee_path_id == trainee_path.id,
+                TraineeStageProgress.is_opened == True,  # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: только открытые этапы
                 Test.is_active == True
             ).order_by(Test.created_date)
         )
@@ -1883,7 +2001,7 @@ async def get_employee_tests_from_recruiter(session: AsyncSession, user_id: int,
         trainee_path = trainee_path_result.scalar_one_or_none()
         
         if trainee_path:
-            # Получаем ID всех тестов из сессий траектории
+            # Получаем ID всех тестов из сессий траектории ТОЛЬКО из ОТКРЫТЫХ этапов
             trajectory_tests_result = await session.execute(
                 select(session_tests.c.test_id).join(
                     LearningSession, LearningSession.id == session_tests.c.session_id
@@ -1892,7 +2010,8 @@ async def get_employee_tests_from_recruiter(session: AsyncSession, user_id: int,
                 ).join(
                     TraineeStageProgress, TraineeSessionProgress.stage_progress_id == TraineeStageProgress.id
                 ).where(
-                    TraineeStageProgress.trainee_path_id == trainee_path.id
+                    TraineeStageProgress.trainee_path_id == trainee_path.id,
+                    TraineeStageProgress.is_opened == True  # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: только открытые этапы
                 )
             )
             trajectory_test_ids = set(row[0] for row in trajectory_tests_result.all())
@@ -1982,6 +2101,47 @@ async def get_test_results_summary(session: AsyncSession, test_id: int) -> List[
         logger.error(f"Ошибка получения сводки результатов теста {test_id}: {e}")
         return []
 
+
+async def delete_trajectory_test_results(session: AsyncSession, trainee_id: int, learning_path_id: int) -> bool:
+    """Удаление результатов тестов при повторном назначении траектории"""
+    try:
+        from database.models import LearningPath, LearningStage, LearningSession, session_tests
+        
+        # Получаем все тесты из траектории
+        tests_query = await session.execute(
+            select(Test)
+            .join(session_tests, Test.id == session_tests.c.test_id)
+            .join(LearningSession, session_tests.c.session_id == LearningSession.id)
+            .join(LearningStage, LearningSession.stage_id == LearningStage.id)
+            .join(LearningPath, LearningStage.learning_path_id == LearningPath.id)
+            .where(LearningPath.id == learning_path_id)
+        )
+        trajectory_tests = tests_query.scalars().all()
+        
+        if not trajectory_tests:
+            logger.info(f"В траектории {learning_path_id} нет тестов для удаления результатов")
+            return True
+        
+        # Получаем ID тестов
+        test_ids = [test.id for test in trajectory_tests]
+        
+        # Удаляем результаты тестов стажера по этим тестам
+        deleted_count = await session.execute(
+            delete(TestResult).where(
+                TestResult.user_id == trainee_id,
+                TestResult.test_id.in_(test_ids)
+            )
+        )
+        
+        await session.commit()
+        logger.info(f"Удалено {deleted_count.rowcount} результатов тестов для стажера {trainee_id} в траектории {learning_path_id}")
+        return True
+        
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Ошибка удаления результатов тестов для стажера {trainee_id} в траектории {learning_path_id}: {e}")
+        return False
+
 async def check_test_already_passed(session: AsyncSession, user_id: int, test_id: int) -> bool:
     """Проверка, проходил ли пользователь тест"""
     try:
@@ -2004,8 +2164,9 @@ async def check_test_access(session: AsyncSession, user_id: int, test_id: int) -
         user_roles = await get_user_roles(session, user_id)
         role_names = [role.name for role in user_roles]
         
-        # Для стажеров - проверяем доступ через TraineeTestAccess
+        # Для стажеров - проверяем доступ через TraineeTestAccess И открытость этапов
         if "Стажер" in role_names:
+            # Сначала проверяем базовый доступ через TraineeTestAccess
             result = await session.execute(
                 select(TraineeTestAccess).where(
                     TraineeTestAccess.trainee_id == user_id,
@@ -2014,7 +2175,68 @@ async def check_test_access(session: AsyncSession, user_id: int, test_id: int) -
                 )
             )
             access = result.scalar_one_or_none()
-            return access is not None
+            if not access:
+                return False
+            
+            # ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: Если тест из траектории, проверяем открытость этапа
+            from database.models import LearningSession, TraineeSessionProgress, TraineeStageProgress, TraineeLearningPath, session_tests
+            
+            # Проверяем, входит ли тест в траекторию
+            trainee_path_result = await session.execute(
+                select(TraineeLearningPath)
+                .where(
+                    TraineeLearningPath.trainee_id == user_id,
+                    TraineeLearningPath.is_active == True
+                )
+            )
+            trainee_path = trainee_path_result.scalar_one_or_none()
+            
+            if trainee_path:
+                # Проверяем, входит ли тест в сессии траектории И этап открыт
+                trajectory_test_result = await session.execute(
+                    select(session_tests.c.test_id).join(
+                        LearningSession, LearningSession.id == session_tests.c.session_id
+                    ).join(
+                        TraineeSessionProgress, TraineeSessionProgress.session_id == LearningSession.id
+                    ).join(
+                        TraineeStageProgress, TraineeSessionProgress.stage_progress_id == TraineeStageProgress.id
+                    ).where(
+                        TraineeStageProgress.trainee_path_id == trainee_path.id,
+                        TraineeStageProgress.is_opened == True,  # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: только открытые этапы
+                        session_tests.c.test_id == test_id
+                    )
+                )
+                trajectory_test = trajectory_test_result.first()
+                
+                # Если тест из траектории, но этап закрыт - проверяем источник доступа
+                if trajectory_test is None:
+                    # Проверяем, входит ли тест в траекторию вообще (для диагностики)
+                    all_trajectory_test_result = await session.execute(
+                        select(session_tests.c.test_id).join(
+                            LearningSession, LearningSession.id == session_tests.c.session_id
+                        ).join(
+                            TraineeSessionProgress, TraineeSessionProgress.session_id == LearningSession.id
+                        ).join(
+                            TraineeStageProgress, TraineeSessionProgress.stage_progress_id == TraineeStageProgress.id
+                        ).where(
+                            TraineeStageProgress.trainee_path_id == trainee_path.id,
+                            session_tests.c.test_id == test_id
+                        )
+                    )
+                    all_trajectory_test = all_trajectory_test_result.first()
+                    
+                    if all_trajectory_test is not None:
+                        # Тест из траектории, но этап закрыт
+                        # Проверяем источник доступа: если доступ через рассылку - разрешаем
+                        if access.granted_by_id:  # Доступ через рассылку от рекрутера
+                            logger.info(f"Доступ к траекторному тесту {test_id} разрешен через рассылку для стажера {user_id}")
+                            return True
+                        else:
+                            # Доступ через наставника, но этап закрыт - запрещаем
+                            logger.warning(f"Доступ к тесту {test_id} запрещен: этап закрыт для стажера {user_id}")
+                            return False
+            
+            return True
         
         # Для сотрудников - проверяем доступ через тесты от рекрутера
         elif "Сотрудник" in role_names:
@@ -2288,28 +2510,16 @@ async def send_notification_about_mentor_assignment(session: AsyncSession, bot, 
 async def send_test_notification(bot, trainee_tg_id: int, test_name: str, mentor_name: str, test_description: str = None, stage_name: str = None, test_id: int = None):
     """Отправка уведомления стажеру о назначении нового теста"""
     try:
-        stage_info = f"\n🎯 <b>Этап:</b> {stage_name}" if stage_name else ""
-        description_info = f"\n📝 <b>Описание:</b> {test_description}" if test_description else ""
-        
-        notification_text = f"""🔔 <b>Назначен новый тест!</b>
-
-📋 <b>Название:</b> {test_name}{stage_info}{description_info}
-
-👨‍🏫 <b>От кого:</b> {mentor_name}
-
-💡 <b>Что дальше?</b>
-• Изучи материалы к тесту (если есть)
-• Нажми кнопку ниже для быстрого перехода к тесту
-• Или открой раздел "Мои тесты 📋" в главном меню
-
-🎯 <b>Удачи в прохождении!</b>"""
+        notification_text = """🚨Появился новый тест для прохождения!
+Можно открыть его из раздела «Мои тесты» и начать, когда тебе будет удобно."""
 
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         
-        # Создаем клавиатуру с кнопкой быстрого перехода к тесту
+        # Создаем клавиатуру с кнопками
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🚀 Перейти к тесту", callback_data=f"take_test:{test_id}")],
-            [InlineKeyboardButton(text="📋 Мои тесты", callback_data="my_broadcast_tests_shortcut")]
+            [InlineKeyboardButton(text="📋 Мои тесты", callback_data="my_broadcast_tests_shortcut")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
         ]) if test_id else None
         
         await bot.send_message(
@@ -2413,6 +2623,18 @@ async def send_notification_about_new_trainee(session: AsyncSession, bot, mentor
             logger.error(f"Пользователь назначивший с ID {assigned_by_id} не найден")
             return False
         
+        # Получаем дополнительные данные о стажере
+        trainee_roles = await get_user_roles(session, trainee_id)
+        trainee_groups = await get_user_groups(session, trainee_id)
+        
+        # Получаем номер стажера (порядковый номер среди стажеров)
+        all_trainees = await get_all_trainees(session)
+        trainee_number = None
+        for i, t in enumerate(all_trainees, 1):
+            if t.id == trainee_id:
+                trainee_number = i
+                break
+        
         await send_trainee_assignment_notification(
             bot=bot,
             mentor_tg_id=mentor.tg_id,
@@ -2420,44 +2642,66 @@ async def send_notification_about_new_trainee(session: AsyncSession, bot, mentor
             trainee_phone=trainee.phone_number,
             trainee_tg_id=trainee.tg_id,
             trainee_username=trainee.username,
-            trainee_registration_date=trainee.registration_date.strftime('%d.%m.%Y'),
-            assigned_by_name=assigned_by.full_name
+            trainee_registration_date=trainee.registration_date.strftime('%d.%m.%Y %H:%M'),
+            assigned_by_name=assigned_by.full_name,
+            trainee_roles=trainee_roles,
+            trainee_groups=trainee_groups,
+            trainee_number=trainee_number,
+            trainee_internship_object=trainee.internship_object.name if trainee.internship_object else None,
+            trainee_work_object=trainee.work_object.name if trainee.work_object else None
         )
         return True
     except Exception as e:
         logger.error(f"Ошибка при отправке уведомления о назначении стажёра: {e}")
         return False
 
-async def send_trainee_assignment_notification(bot, mentor_tg_id: int, trainee_name: str, trainee_phone: str, trainee_tg_id: int = None, trainee_username: str = None, trainee_registration_date: str = None, assigned_by_name: str = None):
+async def send_trainee_assignment_notification(bot, mentor_tg_id: int, trainee_name: str, trainee_phone: str, trainee_tg_id: int = None, trainee_username: str = None, trainee_registration_date: str = None, assigned_by_name: str = None, trainee_roles: list = None, trainee_groups: list = None, trainee_number: int = None, trainee_internship_object: str = None, trainee_work_object: str = None):
     """Отправка уведомления наставнику о назначении ему нового стажёра"""
     try:
-        # Формируем контактную информацию стажёра
-        contact_info = f"📞 <b>Телефон:</b> {trainee_phone}"
-        if trainee_username:
-            contact_info += f"\n📧 <b>Telegram:</b> @{trainee_username}"
-        else:
-            contact_info += f"\n📧 <b>Telegram:</b> не указан"
+        # Формируем основную информацию
+        role_name = trainee_roles[0].name if trainee_roles else "Стажёр"
+        group_name = trainee_groups[0].name if trainee_groups else "Не назначена"
         
-        if trainee_registration_date:
-            contact_info += f"\n📅 <b>Дата регистрации:</b> {trainee_registration_date}"
+        # Формируем username с экранированием
+        username_text = f"@{trainee_username}" if trainee_username else "не указан"
+        if trainee_username and "_" in trainee_username:
+            username_text = f"@{trainee_username.replace('_', '_')}"
         
-        assigned_info = f"\n👤 <b>Назначил:</b> {assigned_by_name}" if assigned_by_name else ""
+        # Формируем информацию об объектах
+        objects_info = ""
+        if trainee_internship_object:
+            objects_info += f"<b>Стажировки:</b> {trainee_internship_object}\n"
+        if trainee_work_object:
+            objects_info += f"<b>Работы:</b> {trainee_work_object}"
         
-        notification_text = f"""👨‍🏫 <b>Вам назначен новый стажёр!</b>
+        notification_text = f"""‼️<b>Тебе назначен новый стажёр!</b>
 
-👤 <b>Стажёр:</b> {trainee_name}
 
-📋 <b>Контактная информация:</b>
-{contact_info}{assigned_info}
+<b>{trainee_name}</b>
 
-💡 <b>Что делать дальше?</b>
-• Свяжитесь со стажёром для знакомства
-• Обсудите план обучения и цели стажировки
-• Предоставьте доступ к необходимым тестам
-• Помогайте с вопросами и заданиями
-• Отслеживайте прогресс обучения
 
-🎯 <b>Успехов в наставничестве!</b>"""
+<b>Телефон:</b> {trainee_phone}
+<b>Username:</b> {username_text}
+<b>Номер:</b> #{trainee_number or 'N/A'}
+<b>Дата регистрации:</b> {trainee_registration_date or 'Не указана'}
+
+
+━━━━━━━━━━━━
+
+
+🗂️ <b>Статус:</b>
+<b>Группа:</b> {group_name}
+<b>Роль:</b> {role_name}
+
+
+━━━━━━━━━━━━
+
+
+📍 <b>Объект:</b>
+{objects_info}
+
+
+Теперь свяжись со стажером, согласуй план обучение, выдай доступ к тестам, помогай и отслеживай прогресс. Успехов в наставничестве!"""
 
         # Создаем клавиатуру с полезными кнопками
         keyboard_buttons = []
@@ -2639,58 +2883,6 @@ async def create_user_without_role(session: AsyncSession, user_data: dict, bot=N
         raise
 
 
-async def activate_user(session: AsyncSession, user_id: int, role_name: str, 
-                       group_id: int, internship_object_id: int, 
-                       work_object_id: int, bot=None) -> bool:
-    """Активация пользователя с назначением роли, группы и объектов"""
-    try:
-        # Получаем пользователя
-        user = await get_user_by_id(session, user_id)
-        if not user:
-            logger.error(f"Пользователь {user_id} не найден")
-            return False
-        
-        # Назначаем роль
-        role_result = await session.execute(
-            select(Role).where(Role.name == role_name)
-        )
-        role = role_result.scalar_one_or_none()
-        if not role:
-            logger.error(f"Роль {role_name} не найдена")
-            return False
-        
-        # Добавляем роль пользователю
-        stmt = insert(user_roles).values(user_id=user.id, role_id=role.id)
-        await session.execute(stmt)
-        
-        # Добавляем в группу
-        stmt = insert(user_groups).values(user_id=user.id, group_id=group_id)
-        await session.execute(stmt)
-        
-        # Обновляем объекты и статус активации
-        update_stmt = update(User).where(User.id == user_id).values(
-            is_activated=True,
-            internship_object_id=internship_object_id,
-            work_object_id=work_object_id
-        )
-        await session.execute(update_stmt)
-        
-        await session.commit()
-        
-        # Отправляем уведомление пользователю
-        if bot:
-            await send_notification_about_activation(session, bot, user_id, role_name, 
-                                                   group_id, internship_object_id, work_object_id)
-        
-        logger.info(f"Пользователь {user_id} успешно активирован")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Ошибка активации пользователя {user_id}: {e}")
-        await session.rollback()
-        return False
-
-
 async def send_notification_about_activation(session: AsyncSession, bot, user_id: int, 
                                            role_name: str, group_id: int, 
                                            internship_object_id: int, work_object_id: int):
@@ -2715,7 +2907,8 @@ async def send_notification_about_activation(session: AsyncSession, bot, user_id
         
         # Формируем уведомление в зависимости от роли
         if role_name == "Стажер":
-            notification_text = f"""✅Рекрутер активировал вам чат-бот!
+            notification_text = f"""✔️Доступ активирован
+Добро пожаловать в команду!
 
 👑Ваша Роль: {role_name}
 🗂️Ваша Группа: {group_name}
@@ -2725,15 +2918,20 @@ async def send_notification_about_activation(session: AsyncSession, bot, user_id
 Совсем скоро вам назначат наставника"""
         else:
             # Для Сотрудника, Рекрутера, Управляющего
-            notification_text = f"""✅Рекрутер активировал вам чат-бот!
+            notification_text = f"""✔️Доступ активирован
+Добро пожаловать в команду!
 
 👑Ваша Роль: {role_name}
 🗂️Ваша Группа: {group_name}
-📍2️⃣Ваш Объект работы: {work_object_name}
+📍2️⃣Ваш Объект работы: {work_object_name}"""
 
-🎯 Добро пожаловать в команду! Теперь вы можете пользоваться всеми функциями системы согласно вашей роли."""
+        # Создаем клавиатуру с кнопкой "Главное меню"
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+        ])
 
-        await bot.send_message(chat_id=user.tg_id, text=notification_text, parse_mode="HTML")
+        await bot.send_message(chat_id=user.tg_id, text=notification_text, parse_mode="HTML", reply_markup=keyboard)
         logger.info(f"Уведомление об активации отправлено пользователю {user.tg_id}")
         return True
         
@@ -2761,14 +2959,19 @@ async def send_notification_about_new_user_registration(session: AsyncSession, b
         # Формируем текст уведомления
         registration_date = user.registration_date.strftime('%d.%m.%Y %H:%M') if user.registration_date else "Не указана"
         
-        notification_text = f"""🆕 <b>Новый пользователь зарегистрировался!</b>
+        notification_text = f"""‼️<b>Новый пользователь</b>
 
-🙋‍♂️ <b>Пользователь:</b> {user.full_name}
-📞 <b>Телефон:</b> {user.phone_number}
-🗓️ <b>Дата регистрации:</b> {registration_date}
+<b>Пользователь:</b> {user.full_name}
+<b>Телефон:</b> {user.phone_number}
+<b>Дата регистрации:</b> {registration_date}
 
-⚠️ <b>Требует активации!</b>
-Используйте "Список новых пользователей" для назначения роли, группы и объектов."""
+⚠️<b>Требует активации!</b> Используй список "Новые пользователи" для назначения роли, группы и объектов"""
+
+        # Создаем инлайн клавиатуру с кнопкой "Новые пользователи"
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Новые пользователи", callback_data="show_new_users")]
+        ])
 
         # Отправляем уведомления всем рекрутерам
         for recruiter in recruiters:
@@ -2776,7 +2979,8 @@ async def send_notification_about_new_user_registration(session: AsyncSession, b
                 await bot.send_message(
                     chat_id=recruiter.tg_id,
                     text=notification_text,
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    reply_markup=keyboard
                 )
                 logger.info(f"Уведомление о новом пользователе отправлено рекрутеру {recruiter.tg_id}")
             except Exception as e:
@@ -3061,6 +3265,14 @@ async def update_user_role(session: AsyncSession, user_id: int, new_role_name: s
             if duplicates_cleaned > 0:
                 logger.info(f"Очищено {duplicates_cleaned} старых аттестаций при смене роли на Стажер")
             
+            # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Очищаем все результаты тестов при становлении стажером
+            # Это необходимо, чтобы при назначении траектории индикация была правильной
+            deleted_results = await session.execute(
+                delete(TestResult).where(TestResult.user_id == user_id)
+            )
+            if deleted_results.rowcount > 0:
+                logger.info(f"Очищено {deleted_results.rowcount} результатов тестов при смене роли на Стажер")
+            
         # Удаляем старую роль
         if user.roles:
             delete_stmt = delete(user_roles).where(user_roles.c.user_id == user_id)
@@ -3069,6 +3281,11 @@ async def update_user_role(session: AsyncSession, user_id: int, new_role_name: s
         # Добавляем новую роль
         insert_stmt = insert(user_roles).values(user_id=user_id, role_id=new_role.id)
         await session.execute(insert_stmt)
+        
+        # Обновляем дату назначения роли
+        from datetime import datetime
+        update_role_date_stmt = update(User).where(User.id == user_id).values(role_assigned_date=datetime.now())
+        await session.execute(update_role_date_stmt)
         
         # Управление объектом стажировки
         if new_role_name != "Стажер":
@@ -3582,13 +3799,44 @@ async def send_notification_about_data_change(session: AsyncSession, bot, user_i
         if not recruiter:
             logger.error(f"Рекрутер {recruiter_id} не найден")
             return False
-            
-        notification_text = f"""❗️Ваши данные изменены:
+        
+        # Специальная обработка для ролевых уведомлений (роль, группа, объекты)
+        if field_name in ["РОЛЬ", "ГРУППА", "ОБЪЕКТ СТАЖИРОВКИ", "ОБЪЕКТ РАБОТЫ"]:
+            if field_name == "РОЛЬ":
+                # new_value уже содержит полный текст с предупреждениями
+                notification_text = f"""‼️Ваши данные изменены:
+
+
+{new_value}
+
+
+Изменение внес: Рекрутер - {recruiter.full_name}"""
+            else:
+                # Для группы и объектов используем новый формат
+                notification_text = f"""‼️Ваши данные изменены:
+
+
+{field_name} изменена с '{old_value}' на '{new_value}'
+
+
+Изменение внес: Рекрутер - {recruiter.full_name}"""
+        else:
+            # Старый формат для ФИО и телефона
+            notification_text = f"""❗️Ваши данные изменены:
 Рекрутер - {recruiter.full_name}
 ⚠️НОВЫЙ {field_name}:
 ⚠️{new_value}"""
 
-        await bot.send_message(chat_id=user.tg_id, text=notification_text, parse_mode="HTML")
+        # Создаем клавиатуру с кнопкой "Перезагрузка" для ролевых уведомлений
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        if field_name in ["РОЛЬ", "ГРУППА", "ОБЪЕКТ СТАЖИРОВКИ", "ОБЪЕКТ РАБОТЫ"]:
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Перезагрузка", callback_data="reload_menu")]
+            ])
+            await bot.send_message(chat_id=user.tg_id, text=notification_text, parse_mode="HTML", reply_markup=keyboard)
+        else:
+            await bot.send_message(chat_id=user.tg_id, text=notification_text, parse_mode="HTML")
+            
         logger.info(f"Уведомление об изменении {field_name} отправлено пользователю {user.tg_id}")
         return True
         
@@ -3604,6 +3852,17 @@ async def migrate_new_tables():
         async with engine.begin() as conn:
             # Создаем новые таблицы если их нет
             await conn.run_sync(Base.metadata.create_all)
+            
+            # Добавляем столбец role_assigned_date если его нет
+            try:
+                await conn.execute(text("""
+                    ALTER TABLE users 
+                    ADD COLUMN IF NOT EXISTS role_assigned_date TIMESTAMP DEFAULT NOW()
+                """))
+                logger.info("✅ Столбец role_assigned_date добавлен в таблицу users")
+            except Exception as e:
+                logger.info(f"Столбец role_assigned_date уже существует или ошибка: {e}")
+                
         logger.info("✅ Миграция новых таблиц для траекторий ЗАВЕРШЕНА УСПЕШНО")
     except Exception as e:
         logger.error(f"❌ ОШИБКА МИГРАЦИИ новых таблиц: {type(e).__name__}: {e}")
@@ -4178,7 +4437,7 @@ async def get_available_mentors_for_trainee(session: AsyncSession, trainee_id: i
         return []
 
 
-async def assign_mentor_to_trainee(session: AsyncSession, trainee_id: int, mentor_id: int, recruiter_id: int) -> bool:
+async def assign_mentor_to_trainee(session: AsyncSession, trainee_id: int, mentor_id: int, recruiter_id: int, bot=None) -> bool:
     """Назначение наставника стажеру"""
     try:
         from database.models import Mentorship, User
@@ -4240,7 +4499,7 @@ async def assign_mentor_to_trainee(session: AsyncSession, trainee_id: int, mento
         await session.commit()
 
         # Отправляем уведомления
-        await send_mentor_assigned_notification(session, trainee_id, mentor_id, recruiter_id)
+        await send_mentor_assigned_notification(session, trainee_id, mentor_id, recruiter_id, bot)
 
         logger.info(f"Наставник {mentor_id} назначен стажеру {trainee_id} рекрутером {recruiter_id}")
         return True
@@ -4251,8 +4510,12 @@ async def assign_mentor_to_trainee(session: AsyncSession, trainee_id: int, mento
         return False
 
 
-async def send_mentor_assigned_notification(session: AsyncSession, trainee_id: int, mentor_id: int, recruiter_id: int) -> None:
+async def send_mentor_assigned_notification(session: AsyncSession, trainee_id: int, mentor_id: int, recruiter_id: int, bot=None) -> None:
     """Отправка уведомлений о назначении наставника"""
+    if not bot:
+        logger.warning("Bot instance not provided to send_mentor_assigned_notification")
+        return
+        
     try:
         from database.models import User
 
@@ -4331,11 +4594,6 @@ async def send_mentor_assigned_notification(session: AsyncSession, trainee_id: i
 
         # Отправляем уведомления
         try:
-            from main import bot
-        except ImportError:
-            logger.error("Не удалось импортировать bot из main")
-            return
-        try:
             await bot.send_message(
                 trainee.tg_id,
                 trainee_message,
@@ -4390,6 +4648,9 @@ async def assign_learning_path_to_trainee(session: AsyncSession, trainee_id: int
                 TraineeLearningPath.is_active == True
             ).values(is_active=False)
         )
+        
+        # Удаляем результаты тестов из старой траектории (если есть)
+        await delete_trajectory_test_results(session, trainee_id, learning_path_id)
 
         # Создаем новое назначение траектории
         trainee_path = TraineeLearningPath(
@@ -4485,7 +4746,8 @@ async def send_learning_path_assigned_notification(session: AsyncSession, traine
 
         # Отправляем уведомление стажеру
         if not bot:
-            from main import bot
+            logger.warning("Bot instance not provided to send_learning_path_assigned_notification")
+            return
         try:
             await bot.send_message(
                 trainee.tg_id,
@@ -4643,7 +4905,8 @@ async def send_stage_opened_notification(session: AsyncSession, trainee_id: int,
 
         # Отправляем уведомление стажеру
         if not bot:
-            from main import bot
+            logger.warning("Bot instance not provided to send_stage_opened_notification")
+            return
         try:
             await bot.send_message(
                 trainee.tg_id,
@@ -4661,8 +4924,12 @@ async def send_stage_opened_notification(session: AsyncSession, trainee_id: int,
         logger.error(f"Ошибка отправки уведомления об открытии этапа: {e}")
 
 
-async def send_stage_completion_notification_to_trainee(session: AsyncSession, trainee_id: int, stage_id: int) -> None:
+async def send_stage_completion_notification_to_trainee(session: AsyncSession, trainee_id: int, stage_id: int, bot=None) -> None:
     """Отправка уведомления стажеру о завершении этапа"""
+    if not bot:
+        logger.warning("Bot instance not provided to send_stage_completion_notification_to_trainee")
+        return
+        
     try:
         from database.models import User, LearningStage
 
@@ -4698,7 +4965,9 @@ async def send_stage_completion_notification_to_trainee(session: AsyncSession, t
 Обратитесь к вашему наставнику, чтобы получить доступ к следующему этапу"""
 
         # Отправляем уведомление стажеру
-        from main import bot
+        if not bot:
+            logger.warning("Bot instance not provided to send_stage_completion_notification_to_trainee")
+            return
         try:
             await bot.send_message(
                 trainee.tg_id,
@@ -5293,7 +5562,16 @@ async def change_trainee_to_employee(session: AsyncSession, trainee_id: int, att
         )
         logger.info(f"Наставничество деактивировано для нового сотрудника {trainee_id}")
 
-        logger.info(f"Роль стажера изменена на сотрудника для пользователя {trainee.full_name}. Траектории и наставничество деактивированы.")
+        # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Очищаем все результаты тестов при переходе в сотрудники
+        # Это необходимо, чтобы при возможном возврате в стажеры индикация была правильной
+        deleted_results = await session.execute(
+            delete(TestResult).where(TestResult.user_id == trainee_id)
+        )
+        if deleted_results.rowcount > 0:
+            logger.info(f"Очищено {deleted_results.rowcount} результатов тестов при переходе в сотрудники")
+
+        await session.commit()
+        logger.info(f"Роль стажера изменена на сотрудника для пользователя {trainee.full_name}. Траектории, наставничество и результаты тестов деактивированы.")
         return True
 
     except Exception as e:

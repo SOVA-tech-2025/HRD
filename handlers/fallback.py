@@ -2,6 +2,8 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
+from sqlalchemy.ext.asyncio import AsyncSession
+from database.db import get_user_by_tg_id
 
 from states.states import (
     AuthStates, RegistrationStates, AdminStates, 
@@ -12,10 +14,24 @@ from states.states import (
     TraineeTrajectoryStates, MentorAssignmentStates, AttestationAssignmentStates, 
     ManagerAttestationStates, BroadcastStates, KnowledgeBaseStates
 )
-from keyboards.keyboards import get_role_selection_keyboard, get_yes_no_keyboard, get_question_type_keyboard
+from keyboards.keyboards import get_role_selection_keyboard, get_yes_no_keyboard, get_question_type_keyboard, get_fallback_keyboard
 from utils.logger import log_user_action
 
 router = Router()
+
+# =================================
+# УНИВЕРСАЛЬНАЯ ФУНКЦИЯ ДЛЯ FALLBACK СООБЩЕНИЙ
+# =================================
+
+async def send_fallback_message(message: Message, state: FSMContext):
+    """Универсальная функция для отправки fallback сообщения с неожиданным вводом"""
+    await message.answer(
+        "👀 <b>Команда не распознана</b>\n\n"
+        "Бот не знает такую команду. Похоже, ты ввел что-то случайно…\n\n"
+        "Вот что можно сделать дальше:",
+        parse_mode="HTML",
+        reply_markup=get_fallback_keyboard()
+    )
 
 # =================================
 # ОБРАБОТЧИКИ ДЛЯ СОСТОЯНИЙ АВТОРИЗАЦИИ
@@ -24,13 +40,7 @@ router = Router()
 @router.message(StateFilter(AuthStates.waiting_for_auth))
 async def handle_unexpected_auth_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода в состоянии авторизации"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Вы находитесь в процессе авторизации.\n"
-        "Пожалуйста, используйте команду <code>/login</code> для входа в систему или <code>/register</code> для регистрации.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
+    await send_fallback_message(message, state)
 
 # =================================
 # ОБРАБОТЧИКИ ДЛЯ СОСТОЯНИЙ РЕГИСТРАЦИИ
@@ -48,13 +58,7 @@ async def handle_unexpected_name_input(message: Message, state: FSMContext):
             parse_mode="HTML"
         )
     else:
-        # Если текст корректный, но что-то пошло не так, повторяем инструкцию
-        await message.answer(
-            "🔄 <b>Повторите ввод</b>\n\n"
-            "Пожалуйста, введите ваше полное имя для регистрации.\n"
-            "Например: <code>Иван Петров</code>",
-            parse_mode="HTML"
-        )
+        await send_fallback_message(message, state)
 
 @router.message(StateFilter(RegistrationStates.waiting_for_phone))
 async def handle_unexpected_phone_input(message: Message, state: FSMContext):
@@ -726,14 +730,7 @@ async def handle_unexpected_group_name_input(message: Message, state: FSMContext
 @router.message(StateFilter(GroupManagementStates.waiting_for_group_selection))
 async def handle_unexpected_group_selection_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе группы"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора группы, которую хотите изменить.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(GroupManagementStates.waiting_for_new_group_name))
 async def handle_unexpected_new_group_name_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при изменении названия группы"""
@@ -749,18 +746,19 @@ async def handle_unexpected_new_group_name_input(message: Message, state: FSMCon
 @router.message(StateFilter(GroupManagementStates.waiting_for_rename_confirmation))
 async def handle_unexpected_rename_confirmation_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при подтверждении переименования"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для подтверждения или отмены переименования группы.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
+    await send_fallback_message(message, state)
 
 
-# =================================
-# FALLBACK HANDLERS ДЛЯ УПРАВЛЕНИЯ ОБЪЕКТАМИ
-# =================================
+@router.message(StateFilter(GroupManagementStates.waiting_for_delete_group_selection))
+async def handle_unexpected_delete_group_selection_input(message: Message, state: FSMContext):
+    """Обработка неожиданного ввода при выборе группы для удаления"""
+    await send_fallback_message(message, state)
 
+
+@router.message(StateFilter(GroupManagementStates.waiting_for_delete_confirmation))
+async def handle_unexpected_delete_confirmation_input(message: Message, state: FSMContext):
+    """Обработка неожиданного ввода при подтверждении удаления группы"""
+    await send_fallback_message(message, state)
 @router.message(StateFilter(ObjectManagementStates.waiting_for_object_name))
 async def handle_unexpected_object_name_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при создании объекта"""
@@ -776,14 +774,7 @@ async def handle_unexpected_object_name_input(message: Message, state: FSMContex
 @router.message(StateFilter(ObjectManagementStates.waiting_for_object_selection))
 async def handle_unexpected_object_selection_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе объекта"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора объекта, который хотите изменить.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(ObjectManagementStates.waiting_for_new_object_name))
 async def handle_unexpected_new_object_name_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при изменении названия объекта"""
@@ -799,238 +790,103 @@ async def handle_unexpected_new_object_name_input(message: Message, state: FSMCo
 @router.message(StateFilter(ObjectManagementStates.waiting_for_object_rename_confirmation))
 async def handle_unexpected_object_rename_confirmation_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при подтверждении переименования объекта"""
+    await send_fallback_message(message, state)
+
+
+@router.message(StateFilter(ObjectManagementStates.waiting_for_delete_object_selection))
+async def handle_unexpected_delete_object_selection_input(message: Message, state: FSMContext):
+    """Обработка неожиданного ввода при выборе объекта для удаления"""
     await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для подтверждения или отмены переименования объекта.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
+        "❓ <b>Некорректный выбор объекта</b>\n\n"
+        "Пожалуйста, используйте кнопки для выбора объекта для удаления.\n"
+        "Или нажмите 'Отменить' для возврата в меню управления объектами.",
         parse_mode="HTML"
     )
 
 
-# =================================
-# ОБРАБОТЧИКИ ДЛЯ СОСТОЯНИЙ АКТИВАЦИИ ПОЛЬЗОВАТЕЛЕЙ
-# =================================
+@router.message(StateFilter(ObjectManagementStates.waiting_for_delete_confirmation))
+async def handle_unexpected_delete_confirmation_input(message: Message, state: FSMContext):
+    """Обработка неожиданного ввода при подтверждении удаления объекта"""
+    await message.answer(
+        "❓ <b>Некорректное подтверждение</b>\n\n"
+        "Пожалуйста, используйте кнопки для подтверждения или отмены удаления объекта.\n"
+        "Или нажмите 'Отменить' для возврата в меню управления объектами.",
+        parse_mode="HTML"
+    )
+
 
 @router.message(StateFilter(UserActivationStates.waiting_for_user_selection))
 async def handle_unexpected_user_selection_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе пользователя для активации"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора пользователя, которого хотите активировать.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(UserActivationStates.waiting_for_role_selection))
 async def handle_unexpected_role_selection_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе роли"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора роли для нового пользователя.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(UserActivationStates.waiting_for_group_selection))
 async def handle_unexpected_group_selection_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе группы"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора группы для нового пользователя.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(UserActivationStates.waiting_for_internship_object_selection))
 async def handle_unexpected_internship_object_selection_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе объекта стажировки"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора объекта стажировки для нового пользователя.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(UserActivationStates.waiting_for_work_object_selection))
 async def handle_unexpected_work_object_selection_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе объекта работы"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора объекта работы для нового пользователя.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(UserActivationStates.waiting_for_activation_confirmation))
 async def handle_unexpected_activation_confirmation_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при подтверждении активации"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для подтверждения или отмены активации пользователя.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
-# =================================
-# ОБРАБОТЧИКИ ДЛЯ СОСТОЯНИЙ РЕДАКТИРОВАНИЯ ПОЛЬЗОВАТЕЛЕЙ
-# =================================
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(UserEditStates.waiting_for_user_number))
 async def handle_unexpected_user_number_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при вводе номера пользователя"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, введите корректный номер пользователя из списка.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(UserEditStates.waiting_for_new_full_name))
 async def handle_unexpected_new_full_name_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при вводе нового ФИО"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, введите корректное ФИО (полное имя).\n"
-        "Например: Иванов Иван Иванович\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(UserEditStates.waiting_for_new_phone))
 async def handle_unexpected_new_phone_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при вводе нового телефона"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, введите корректный номер телефона.\n"
-        "Например: +79991234567 или 89991234567\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(UserEditStates.waiting_for_new_role))
 async def handle_unexpected_new_role_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе новой роли"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора новой роли пользователя.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(UserEditStates.waiting_for_new_group))
 async def handle_unexpected_new_group_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе новой группы"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора новой группы пользователя.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(UserEditStates.waiting_for_new_internship_object))
 async def handle_unexpected_new_internship_object_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе нового объекта стажировки"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора нового объекта стажировки.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(UserEditStates.waiting_for_new_work_object))
 async def handle_unexpected_new_work_object_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе нового объекта работы"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора нового объекта работы.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(UserEditStates.waiting_for_change_confirmation))
 async def handle_unexpected_change_confirmation_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при подтверждении изменений"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для подтверждения или отмены изменений.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(UserEditStates.waiting_for_filter_selection))
 async def handle_unexpected_filter_selection_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе фильтра пользователей"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора способа фильтрации пользователей:\n"
-        "• <b>👥 Все пользователи</b> - показать всех\n"
-        "• <b>🗂️ Фильтр по группам</b> - выбор по группе\n"
-        "• <b>📍 Фильтр по объектам</b> - выбор по объекту\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(UserEditStates.waiting_for_user_selection))
 async def handle_unexpected_user_edit_selection_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе пользователя из списка"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора пользователя из списка.\n"
-        "Каждая кнопка содержит ФИО и роль пользователя.\n\n"
-        "Используйте кнопки навигации ⬅️ ➡️ для перехода между страницами.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(UserEditStates.viewing_user_info))
 async def handle_unexpected_viewing_user_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при просмотре информации о пользователе"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Вы находитесь в режиме просмотра информации о пользователе.\n\n"
-        "Доступные действия:\n"
-        "• <b>✏️ Редактировать</b> - перейти к редактированию\n"
-        "• <b>↩️ Назад к списку</b> - вернуться к списку пользователей\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
-# =================================
-# FALLBACK HANDLERS ДЛЯ ТРАЕКТОРИЙ ОБУЧЕНИЯ (LearningPathStates)
-# =================================
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(LearningPathStates.main_menu))
 async def handle_unexpected_learning_path_main_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода в главном меню траекторий"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Вы находитесь в редакторе траекторий обучения.\n"
-        "Пожалуйста, используйте кнопки для выбора действия:\n"
-        "• ➕Создать - создание новой траектории\n"
-        "• ✏️Изменить - редактирование существующей траектории\n"
-        "• 🔍Аттестации - управление аттестациями\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(LearningPathStates.waiting_for_trajectory_name))
 async def handle_unexpected_trajectory_name_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при вводе названия траектории"""
@@ -1084,17 +940,7 @@ async def handle_unexpected_session_name_input(message: Message, state: FSMConte
 @router.message(StateFilter(LearningPathStates.waiting_for_test_selection))
 async def handle_unexpected_test_selection_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе тестов"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора тестов:\n"
-        "• ➕Создать новый тест - для создания нового теста\n"
-        "• ✅Сохранить Сессию - для завершения сессии\n"
-        "• Выберите существующий тест из списка\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(LearningPathStates.creating_test_name))
 async def handle_unexpected_test_name_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при создании названия теста"""
@@ -1113,17 +959,7 @@ async def handle_unexpected_test_name_input(message: Message, state: FSMContext)
 @router.message(StateFilter(LearningPathStates.creating_test_materials_choice))
 async def handle_unexpected_test_materials_choice_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе добавления материалов"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора:\n"
-        "• ✅ Да - добавить материалы к тесту\n"
-        "• ❌Нет - пропустить материалы\n"
-        "• 🚫Отменить создание теста - отменить создание\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(LearningPathStates.creating_test_materials))
 async def handle_unexpected_test_materials_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при добавлении материалов"""
@@ -1156,18 +992,7 @@ async def handle_unexpected_test_description_input(message: Message, state: FSMC
 @router.message(StateFilter(LearningPathStates.creating_test_question_type))
 async def handle_unexpected_test_question_type_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе типа вопроса"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора типа вопроса:\n"
-        "• Свободный ответ (текст)\n"
-        "• Выбор одного правильного ответа\n"
-        "• Выбор нескольких правильных ответов\n"
-        "• Ответ \"Да\" или \"Нет\"\n\n"
-        "Для отмены создания теста используйте кнопку 'Отменить' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(LearningPathStates.creating_test_question_text))
 async def handle_unexpected_test_question_text_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при вводе текста вопроса"""
@@ -1178,6 +1003,21 @@ async def handle_unexpected_test_question_text_input(message: Message, state: FS
         "• Текст не может быть пустым\n"
         "• Вопрос должен быть понятным и конкретным\n"
         "• Избегайте слишком сложных формулировок\n\n"
+        "Для отмены создания теста используйте кнопку 'Отмена' в интерфейсе",
+        parse_mode="HTML"
+    )
+
+
+@router.message(StateFilter(LearningPathStates.creating_test_question_options))
+async def handle_unexpected_test_question_options_input(message: Message, state: FSMContext):
+    """Обработка неожиданного ввода при вводе вариантов ответа"""
+    await message.answer(
+        "❓ <b>Некорректный вариант</b>\n\n"
+        "Пожалуйста, введите корректный вариант ответа.\n\n"
+        "Требования:\n"
+        "• Вариант не может быть пустым\n"
+        "• Избегайте дубликатов вариантов\n"
+        "• После добавления минимум 2 вариантов нажмите 'Завершить'\n\n"
         "Для отмены создания теста используйте кнопку 'Отмена' в интерфейсе",
         parse_mode="HTML"
     )
@@ -1217,17 +1057,7 @@ async def handle_unexpected_test_question_points_input(message: Message, state: 
 @router.message(StateFilter(LearningPathStates.creating_test_more_questions))
 async def handle_unexpected_test_more_questions_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе добавления дополнительных вопросов"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора:\n"
-        "• ✅ Да - добавить еще один вопрос\n"
-        "• ❌Нет - завершить добавление вопросов\n"
-        "• 🚫Отменить создание теста - отменить создание\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(LearningPathStates.creating_test_threshold))
 async def handle_unexpected_test_threshold_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при вводе проходного балла"""
@@ -1246,42 +1076,15 @@ async def handle_unexpected_test_threshold_input(message: Message, state: FSMCon
 @router.message(StateFilter(LearningPathStates.adding_session_to_stage))
 async def handle_unexpected_session_management_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при управлении сессиями"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора действия:\n"
-        "• Добавить сессию - добавить новую сессию к текущему этапу\n"
-        "• Новый Этап - создать новый этап траектории\n"
-        "• Сохранить траекторию - завершить создание траектории\n"
-        "• 🏠 Главное меню - вернуться в главное меню\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(LearningPathStates.adding_stage_to_trajectory))
 async def handle_unexpected_stage_management_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при управлении этапами"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Вы находитесь в процессе добавления этапа к траектории.\n"
-        "Пожалуйста, следуйте инструкциям или используйте кнопки.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(LearningPathStates.waiting_for_attestation_selection))
 async def handle_unexpected_attestation_selection_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе аттестации"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора аттестации из списка.\n\n"
-        "Аттестация - это финальный тест траектории, который проводится руководителем.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(LearningPathStates.waiting_for_attestation_confirmation))
 async def handle_unexpected_attestation_confirmation_input(message: Message, state: FSMContext):
     """Fallback для состояния подтверждения аттестации (пункт 49 ТЗ)"""
@@ -1298,82 +1101,27 @@ async def handle_unexpected_attestation_confirmation_input(message: Message, sta
 @router.message(StateFilter(LearningPathStates.waiting_for_group_selection))
 async def handle_unexpected_group_selection_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе группы для траектории"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора группы, которой будет доступна траектория.\n\n"
-        "Группа определяет, какие наставники смогут работать с этой траекторией.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(LearningPathStates.waiting_for_final_save_confirmation))
 async def handle_unexpected_final_save_confirmation_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при финальном подтверждении сохранения (пункт 55 ТЗ)"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для финального подтверждения сохранения траектории:\n"
-        "• ✅Сохранить - окончательно сохранить траекторию\n"
-        "• 🚫Отменить - отменить сохранение\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(LearningPathStates.waiting_for_trajectory_save_confirmation))
 async def handle_unexpected_trajectory_save_confirmation_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при подтверждении сохранения траектории"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для подтверждения или отмены сохранения траектории:\n"
-        "• ✅Да - сохранить траекторию\n"
-        "• 🚫Отменить - отменить сохранение\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(LearningPathStates.waiting_for_trajectory_selection))
 async def handle_unexpected_trajectory_selection_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе траектории для редактирования"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора траектории из списка.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(LearningPathStates.editing_trajectory))
 async def handle_unexpected_trajectory_editing_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при редактировании траектории"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Вы находитесь в режиме редактирования траектории.\n"
-        "Пожалуйста, используйте кнопки для выбора действий редактирования.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
-# =================================
-# FALLBACK HANDLERS ДЛЯ АТТЕСТАЦИЙ (AttestationStates)
-# =================================
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(AttestationStates.main_menu))
 async def handle_unexpected_attestation_main_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода в главном меню аттестаций"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Вы находитесь в редакторе аттестаций.\n"
-        "Пожалуйста, используйте кнопки для выбора действия:\n"
-        "• ➕Создать - создание новой аттестации\n"
-        "• Выберите существующую аттестацию из списка\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(AttestationStates.waiting_for_attestation_name))
 async def handle_unexpected_attestation_name_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при вводе названия аттестации"""
@@ -1407,15 +1155,7 @@ async def handle_unexpected_attestation_question_input(message: Message, state: 
 @router.message(StateFilter(AttestationStates.waiting_for_more_questions))
 async def handle_unexpected_attestation_more_questions_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при добавлении дополнительных вопросов к аттестации"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопку 'Сохранить вопросы' для завершения добавления вопросов,\n"
-        "или отправьте текст следующего вопроса для продолжения.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(AttestationStates.waiting_for_passing_score))
 async def handle_unexpected_attestation_passing_score_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при вводе проходного балла аттестации"""
@@ -1434,94 +1174,43 @@ async def handle_unexpected_attestation_passing_score_input(message: Message, st
 @router.message(StateFilter(AttestationStates.waiting_for_attestation_selection))
 async def handle_unexpected_attestation_selection_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе аттестации"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора аттестации из списка.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(AttestationStates.editing_attestation))
 async def handle_unexpected_attestation_editing_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при редактировании аттестации"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Вы находитесь в режиме редактирования аттестации.\n"
-        "Пожалуйста, используйте кнопки для выбора действий редактирования.\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(AttestationStates.waiting_for_delete_confirmation))
 async def handle_unexpected_attestation_delete_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при подтверждении удаления аттестации"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Вы находитесь в процессе подтверждения удаления аттестации.\n"
-        "Пожалуйста, используйте кнопки:\n"
-        "• <b>🗑️ Да, удалить</b> - для подтверждения удаления\n"
-        "• <b>❌ Отменить</b> - для отмены удаления\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
-# =================================
-# FALLBACK ОБРАБОТЧИКИ ДЛЯ МАССОВОЙ РАССЫЛКИ (TASK 8)
-# =================================
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(BroadcastStates.selecting_test))
 async def handle_unexpected_broadcast_test_input(message: Message, state: FSMContext):
     """Обработчик неожиданного ввода при выборе теста для рассылки"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, выберите тест из списка на клавиатуре.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• Нажмите на название теста для выбора\n"
-        "• ❌ Отмена - для выхода из рассылки\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(BroadcastStates.selecting_groups))
 async def handle_unexpected_broadcast_groups_input(message: Message, state: FSMContext):
     """Обработчик неожиданного ввода при выборе групп для рассылки"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, выберите группы из списка на клавиатуре.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• Нажмите на название группы для добавления/удаления\n"
-        "• 📤 Отправить тест - когда выберете группы\n"
-        "• ❌ Отмена - для выхода из рассылки\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(BroadcastStates.confirming_broadcast))
 async def handle_unexpected_broadcast_confirmation_input(message: Message, state: FSMContext):
     """Обработчик неожиданного ввода при подтверждении рассылки"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для подтверждения рассылки.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• ✅ Отправить - для выполнения рассылки\n"
-        "• ❌ Отмена - для отмены рассылки\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
-# =================================
-# УНИВЕРСАЛЬНЫЙ ОБРАБОТЧИК ДЛЯ ЛЮБЫХ СОСТОЯНИЙ
-# =================================
-
+    await send_fallback_message(message, state)
 @router.message(F.text)
-async def handle_unexpected_input_with_state(message: Message, state: FSMContext):
+async def handle_unexpected_input_with_state(message: Message, state: FSMContext, session: AsyncSession):
     """Универсальный обработчик для неожиданного ввода в любых состояниях"""
+    # Проверяем, зарегистрирован ли пользователь
+    user = await get_user_by_tg_id(session, message.from_user.id)
+    if not user:
+        # Если пользователь не зарегистрирован, показываем приветственное сообщение
+        from keyboards.keyboards import get_welcome_keyboard
+        await message.answer(
+            "Привет! Добро пожаловать в чат-бот.\n\n"
+            "Ты ещё не зарегистрирован. Давай подключим тебе доступ.",
+            reply_markup=get_welcome_keyboard()
+        )
+        log_user_action(message.from_user.id, message.from_user.username, "unregistered user sent text")
+        return
+    
     current_state = await state.get_state()
     
     if current_state:
@@ -1544,34 +1233,26 @@ async def handle_unexpected_input_with_state(message: Message, state: FSMContext
         )
     else:
         # Если пользователь не в состоянии FSM
-        await message.answer(
-            "❓ <b>Команда не распознана</b>\n\n"
-            "Пожалуйста, используйте кнопки меню или доступные команды:\n"
-            "• <code>/help</code> - получить справку\n"
-            "• <code>/start</code> - перейти в главное меню\n"
-            "• <code>/profile</code> - посмотреть профиль",
-            parse_mode="HTML"
-        )
+        await send_fallback_message(message, state)
 
 # =================================
 # ОБРАБОТЧИК ДЛЯ НЕОЖИДАННЫХ CALLBACK QUERY
 # =================================
 
-@router.callback_query(F.data)
+@router.callback_query(F.data & ~F.data.in_(["main_menu", "fallback_back"]))
 async def handle_unexpected_callback(callback: CallbackQuery, state: FSMContext):
     """Обработчик для неожиданных callback запросов"""
     current_state = await state.get_state()
     
     await callback.message.edit_text(
-        f"❓ <b>Устаревшая кнопка</b>\n\n"
-        f"Эта кнопка больше не актуальна или не подходит для текущего состояния.\n\n"
-        f"Пожалуйста, используйте:\n"
-        "• Используйте кнопки 'Отмена' или 'Назад' для отмены операций\n"
-        f"• <code>/start</code> - для возврата в главное меню",
-        parse_mode="HTML"
+        "👀 <b>Команда не распознана</b>\n\n"
+        "Бот не знает такую команду. Похоже, ты ввел что-то случайно…\n\n"
+        "Вот что можно сделать дальше:",
+        parse_mode="HTML",
+        reply_markup=get_fallback_keyboard()
     )
     
-    await callback.answer("⚠️ Устаревшая кнопка", show_alert=True)
+    await callback.answer("👀 Команда не распознана", show_alert=True)
     
     log_user_action(
         callback.from_user.id, 
@@ -1588,30 +1269,11 @@ async def handle_unexpected_callback(callback: CallbackQuery, state: FSMContext)
 @router.message(StateFilter(AttestationAssignmentStates.selecting_manager_for_attestation))
 async def handle_unexpected_manager_selection_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе руководителя для аттестации"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора руководителя из списка.\n\n"
-        "🎯 <b>Выберите руководителя:</b> Нажмите на кнопку с именем руководителя\n"
-        "⬅️ <b>Назад:</b> Вернуться к просмотру стажера\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(AttestationAssignmentStates.confirming_attestation_assignment))
 async def handle_unexpected_attestation_confirmation_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при подтверждении назначения аттестации"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для подтверждения назначения аттестации.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• ✅ Да - подтвердить назначение аттестации\n"
-        "• ❌ Отменить - вернуться к выбору руководителя\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(ManagerAttestationStates.waiting_for_date))
 async def handle_unexpected_date_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при вводе даты аттестации"""
@@ -1645,17 +1307,7 @@ async def handle_unexpected_time_input(message: Message, state: FSMContext):
 @router.message(StateFilter(ManagerAttestationStates.confirming_schedule))
 async def handle_unexpected_schedule_confirmation_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при подтверждении расписания"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для подтверждения нового расписания.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• ✅ Да - сохранить новую дату и время\n"
-        "• ❌ Отменить - вернуться без сохранения\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(ManagerAttestationStates.waiting_for_score))
 async def handle_unexpected_score_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при оценке вопроса аттестации"""
@@ -1675,112 +1327,31 @@ async def handle_unexpected_score_input(message: Message, state: FSMContext):
 @router.message(StateFilter(ManagerAttestationStates.confirming_result))
 async def handle_unexpected_result_confirmation_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при подтверждении результатов аттестации"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для принятия решения по аттестации.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• ✅ Перевести в сотрудники - стажер становится сотрудником\n"
-        "• ❌ Оставить стажером - стажер остается на стажировке\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
-# =================================
-# FALLBACK HANDLERS ДЛЯ ТРАЕКТОРИЙ СТАЖЕРОВ (TraineeTrajectoryStates - Task 6)
-# =================================
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(TraineeTrajectoryStates.selecting_stage))
 async def handle_unexpected_stage_selection_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе этапа траектории"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора этапа траектории.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• Выберите открытый этап (🟡)\n"
-        "• 🏠 Главное меню - вернуться в главное меню\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(TraineeTrajectoryStates.selecting_session))
 async def handle_unexpected_session_selection_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе сессии"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора сессии в этапе.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• Выберите сессию для прохождения\n"
-        "• ⬅️ Назад - вернуться к выбору этапа\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(TraineeTrajectoryStates.selecting_test))
 async def handle_unexpected_test_selection_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе теста"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Пожалуйста, используйте кнопки для выбора теста.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• Выберите тест для прохождения\n"
-        "• 📚 Материалы - просмотреть материалы теста\n"
-        "• ⬅️ Назад - вернуться к выбору сессии\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(TraineeTrajectoryStates.viewing_materials))
 async def handle_unexpected_materials_viewing_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при просмотре материалов"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Вы просматриваете материалы для теста.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• ⬅️ Назад - вернуться к выбору теста\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(TraineeTrajectoryStates.taking_test))
 async def handle_unexpected_test_taking_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода во время прохождения теста"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Вы находитесь в режиме прохождения теста.\n\n"
-        "📋 <b>Используйте кнопки для:</b>\n"
-        "• Выбора ответа\n"
-        "• Навигации по вопросам\n"
-        "• Завершения теста\n\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
-# ==========================================================================
-# FALLBACK ОБРАБОТЧИКИ ДЛЯ БАЗЫ ЗНАНИЙ (Task 9)
-# ==========================================================================
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(KnowledgeBaseStates.main_menu))
 async def handle_unexpected_kb_main_menu_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода в главном меню базы знаний"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Вы находитесь в редакторе базы знаний.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• Создать папку\n"
-        "• Выбрать существующую папку\n"
-        "• Главное меню\n\n"
-        "Используйте кнопки для навигации.\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(KnowledgeBaseStates.waiting_for_folder_name))
 async def handle_unexpected_folder_name_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при создании папки"""
@@ -1876,83 +1447,23 @@ async def handle_unexpected_material_photos_input(message: Message, state: FSMCo
 @router.message(StateFilter(KnowledgeBaseStates.folder_created_add_material))
 async def handle_unexpected_folder_created_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода после создания папки"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Папка успешно создана! Выберите действие.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• Добавить материал - добавить файл или ссылку в папку\n"
-        "• Главное меню - вернуться к списку папок\n\n"
-        "Используйте кнопки для навигации.\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(KnowledgeBaseStates.confirming_material_save))
 async def handle_unexpected_material_save_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при подтверждении сохранения материала"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Материал готов к сохранению. Выберите действие.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• ✅Сохранить - сохранить материал в папку\n"
-        "• 🚫Отменить - отменить создание материала\n\n"
-        "Используйте кнопки для навигации.\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(KnowledgeBaseStates.viewing_folder))
 async def handle_unexpected_folder_viewing_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при просмотре папки"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Вы просматриваете содержимое папки.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• Выбрать материал для просмотра\n"
-        "• Доступ - настроить доступ групп к папке\n"
-        "• Удалить папку\n"
-        "• Изменить название папки\n"
-        "• Главное меню\n\n"
-        "Используйте кнопки для навигации.\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(KnowledgeBaseStates.viewing_material))
 async def handle_unexpected_material_viewing_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при просмотре материала"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Вы просматриваете материал базы знаний.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• Удалить материал\n"
-        "• Назад - вернуться к папке\n"
-        "• Главное меню\n\n"
-        "Используйте кнопки для навигации.\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(KnowledgeBaseStates.selecting_access_groups))
 async def handle_unexpected_access_groups_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при выборе групп доступа"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Вы настраиваете доступ к папке для групп пользователей.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• Выберите группы для доступа (можно несколько)\n"
-        "• Сохранить изменения - применить настройки\n"
-        "• Назад - вернуться к папке\n\n"
-        "Используйте кнопки для навигации.\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(KnowledgeBaseStates.waiting_for_new_folder_name))
 async def handle_unexpected_new_folder_name_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при переименовании папки"""
@@ -1975,92 +1486,44 @@ async def handle_unexpected_new_folder_name_input(message: Message, state: FSMCo
 @router.message(StateFilter(KnowledgeBaseStates.confirming_folder_rename))
 async def handle_unexpected_folder_rename_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при подтверждении переименования папки"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Папка готова к переименованию. Выберите действие.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• ✅Сохранить - применить новое название\n"
-        "• 🚫Отменить - отменить переименование\n\n"
-        "Используйте кнопки для навигации.\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(KnowledgeBaseStates.confirming_folder_deletion))
 async def handle_unexpected_folder_deletion_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при подтверждении удаления папки"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Вы подтверждаете удаление папки. Выберите действие.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• ✅Да, удалить - окончательно удалить папку и все материалы\n"
-        "• 🚫Нет, отмена - отменить удаление\n"
-        "• Главное меню\n\n"
-        "⚠️ <b>Внимание:</b> Удаление папки необратимо!\n\n"
-        "Используйте кнопки для навигации.\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(KnowledgeBaseStates.confirming_material_deletion))
 async def handle_unexpected_material_deletion_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при подтверждении удаления материала"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Вы подтверждаете удаление материала. Выберите действие.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• ✅Да, удалить - окончательно удалить материал\n"
-        "• 🚫Нет, отмена - отменить удаление\n"
-        "• Главное меню\n\n"
-        "⚠️ <b>Внимание:</b> Удаление материала необратимо!\n\n"
-        "Используйте кнопки для навигации.\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(KnowledgeBaseStates.employee_browsing))
 async def handle_unexpected_employee_browsing_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при просмотре базы знаний сотрудником"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Вы просматриваете базу знаний.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• Выберите папку для изучения материалов\n"
-        "• ⬅️ Назад к профилю\n\n"
-        "Используйте кнопки для навигации.\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
-
+    await send_fallback_message(message, state)
 @router.message(StateFilter(KnowledgeBaseStates.employee_viewing_folder))
 async def handle_unexpected_employee_folder_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при просмотре папки сотрудником"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Вы просматриваете содержимое папки базы знаний.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• Выберите материал для изучения\n"
-        "• ⬅️ Назад к папкам\n\n"
-        "Используйте кнопки для навигации.\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    )
-
+    await send_fallback_message(message, state)
 
 @router.message(StateFilter(KnowledgeBaseStates.employee_viewing_material))
 async def handle_unexpected_employee_material_input(message: Message, state: FSMContext):
     """Обработка неожиданного ввода при просмотре материала сотрудником"""
-    await message.answer(
-        "❓ <b>Неожиданный ввод</b>\n\n"
-        "Вы изучаете материал базы знаний.\n\n"
-        "📋 <b>Доступные действия:</b>\n"
-        "• ⬅️ Назад к материалам - вернуться к списку материалов папки\n"
-        "• 📚 К папкам - вернуться к выбору папок\n\n"
-        "Используйте кнопки для навигации.\n"
-        "Для отмены используйте кнопку 'Отмена' в интерфейсе",
-        parse_mode="HTML"
-    ) 
+    await send_fallback_message(message, state)
+
+
+# =================================
+# ОБРАБОТЧИКИ ДЛЯ FALLBACK КНОПОК
+# =================================
+
+@router.callback_query(F.data == "fallback_back")
+async def handle_fallback_back(callback: CallbackQuery, state: FSMContext):
+    """Обработчик кнопки 'Назад' в fallback сообщениях"""
+    # Получаем текущее состояние
+    current_state = await state.get_state()
+    
+    if current_state:
+        # Очищаем состояние для возврата к предыдущему действию
+        await state.clear()
+        await callback.answer("Возврат к предыдущему действию")
+    else:
+        # Если нет состояния, просто отвечаем
+        await callback.answer("Нет предыдущего действия для возврата")

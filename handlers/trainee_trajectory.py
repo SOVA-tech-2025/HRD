@@ -23,6 +23,27 @@ from utils.logger import log_user_action, log_user_error
 router = Router()
 
 
+async def format_trajectory_info(user, trainee_path=None, header="ВЫБОР ЭТАПА") -> str:
+    """Формирование информации о траектории для отображения"""
+    if not trainee_path:
+        return (
+            "🗺️ <b>ТРАЕКТОРИЯ ОБУЧЕНИЯ</b> 🗺️\n\n"
+            "❌ <b>Траектория не назначена</b>\n\n"
+            "Обратись к своему наставнику для назначения траектории, пока курс не выбран"
+        )
+    
+    return (
+        f"🗺️<b>ТРАЕКТОРИЯ</b>🗺️\n"
+        f"<b>{header}</b>\n"
+        f"🧑 <b>ФИО:</b> {user.full_name}\n"
+        f"👑 <b>Роли:</b> {', '.join([role.name for role in user.roles]) if user.roles else 'Не указаны'}\n"
+        f"🗂️<b>Группа:</b> {', '.join([group.name for group in user.groups]) if user.groups else 'Не указана'}\n"
+        f"📍<b>1️⃣Объект стажировки:</b> {user.internship_object.name if user.internship_object else 'Не указан'}\n"
+        f"📍<b>2️⃣Объект работы:</b> {user.work_object.name if user.work_object else 'Не указан'}\n\n"
+        f"⏺️<b>Название траектории:</b> {trainee_path.learning_path.name if trainee_path.learning_path else 'Не найдена'}\n"
+    )
+
+
 @router.message(Command("trajectory"))
 async def cmd_trajectory_slash(message: Message, state: FSMContext, session: AsyncSession):
     """Обработчик команды /trajectory для стажеров"""
@@ -62,9 +83,7 @@ async def cmd_trajectory(message: Message, state: FSMContext, session: AsyncSess
 
         if not trainee_path:
             await message.answer(
-                "🗺️ <b>ТРАЕКТОРИЯ ОБУЧЕНИЯ</b> 🗺️\n\n"
-                "❌ <b>Траектория не назначена</b>\n\n"
-                "Обратись к своему наставнику для назначения траектории, пока курс не выбран",
+                await format_trajectory_info(user, None),
                 parse_mode="HTML",
                 reply_markup=get_mentor_contact_keyboard()
             )
@@ -75,16 +94,7 @@ async def cmd_trajectory(message: Message, state: FSMContext, session: AsyncSess
         stages_progress = await get_trainee_stage_progress(session, trainee_path.id)
 
         # Формируем информацию о траектории согласно ТЗ
-        trajectory_info = (
-            f"🗺️<b>ТРАЕКТОРИЯ</b>🗺️\n"
-            f"<b>ВЫБОР ЭТАПА</b>\n"
-            f"🧑 <b>ФИО:</b> {user.full_name}\n"
-            f"👑 <b>Роли:</b> {', '.join([role.name for role in user.roles]) if user.roles else 'Не указаны'}\n"
-            f"🗂️<b>Группа:</b> {', '.join([group.name for group in user.groups]) if user.groups else 'Не указана'}\n"
-            f"📍<b>1️⃣Объект стажировки:</b> {user.internship_object.name if user.internship_object else 'Не указан'}\n"
-            f"📍<b>2️⃣Объект работы:</b> {user.work_object.name if user.work_object else 'Не указан'}\n\n"
-            f"⏺️<b>Название траектории:</b> {trainee_path.learning_path.name if trainee_path.learning_path else 'Не найдена'}\n"
-        )
+        trajectory_info = await format_trajectory_info(user, trainee_path)
 
         # Формируем информацию об этапах согласно ТЗ
         stages_info = ""
@@ -96,18 +106,21 @@ async def cmd_trajectory(message: Message, state: FSMContext, session: AsyncSess
             sessions_progress_for_stage = await get_stage_session_progress(session, stage_progress.id)
             
             # Определяем статус этапа: 🟢 если все сессии пройдены, 🟡 если открыт, ⏺️ если закрыт
-            all_sessions_completed = True
-            for sp in sessions_progress_for_stage:
-                if hasattr(sp.session, 'tests') and sp.session.tests:
-                    session_tests_passed = True
-                    for test in sp.session.tests:
-                        test_result = await get_user_test_result(session, user.id, test.id)
-                        if not (test_result and test_result.is_passed):
-                            session_tests_passed = False
+            # ИСПРАВЛЕНИЕ: проверяем завершенность только если этап открыт
+            all_sessions_completed = False
+            if stage_progress.is_opened and sessions_progress_for_stage:
+                all_sessions_completed = True
+                for sp in sessions_progress_for_stage:
+                    if hasattr(sp.session, 'tests') and sp.session.tests:
+                        session_tests_passed = True
+                        for test in sp.session.tests:
+                            test_result = await get_user_test_result(session, user.id, test.id)
+                            if not (test_result and test_result.is_passed):
+                                session_tests_passed = False
+                                break
+                        if not session_tests_passed:
+                            all_sessions_completed = False
                             break
-                    if not session_tests_passed:
-                        all_sessions_completed = False
-                        break
             
             if all_sessions_completed and sessions_progress_for_stage:
                 status_icon = "🟢"  # Все сессии пройдены
@@ -122,15 +135,18 @@ async def cmd_trajectory(message: Message, state: FSMContext, session: AsyncSess
             for session_progress in sessions_progress_for_stage:
                 # Определяем статус сессии: 🟢 если все тесты пройдены, 🟡 если этап открыт, ⏺️ если этап закрыт
                 if hasattr(session_progress.session, 'tests') and session_progress.session.tests:
-                    all_tests_passed = True
-                    for test in session_progress.session.tests:
-                        test_result = await get_user_test_result(session, user.id, test.id)
-                        if not (test_result and test_result.is_passed):
-                            all_tests_passed = False
-                            break
+                    # ИСПРАВЛЕНИЕ: проверяем пройденность только если этап открыт
+                    all_tests_passed = False
+                    if stage_progress.is_opened:
+                        all_tests_passed = True
+                        for test in session_progress.session.tests:
+                            test_result = await get_user_test_result(session, user.id, test.id)
+                            if not (test_result and test_result.is_passed):
+                                all_tests_passed = False
+                                break
                     
-                    if all_tests_passed:
-                        session_status_icon = "🟢"  # Все тесты пройдены
+                    if all_tests_passed and stage_progress.is_opened:
+                        session_status_icon = "🟢"  # Все тесты пройдены (только если этап открыт)
                     elif stage_progress.is_opened:
                         session_status_icon = "🟡"  # Этап открыт, сессия доступна
                     else:
@@ -143,8 +159,9 @@ async def cmd_trajectory(message: Message, state: FSMContext, session: AsyncSess
                 for test in session_progress.session.tests:
                     # Определяем статус теста
                     test_result = await get_user_test_result(session, user.id, test.id)
-                    if test_result and test_result.is_passed:
-                        test_status_icon = "🟢"  # Тест пройден
+                    # ИСПРАВЛЕНИЕ: показываем зеленый только если этап открыт И тест пройден
+                    if test_result and test_result.is_passed and stage_progress.is_opened:
+                        test_status_icon = "🟢"  # Тест пройден (только если этап открыт)
                     elif stage_progress.is_opened:
                         test_status_icon = "🟡"  # Этап открыт, тест доступен
                     else:
@@ -212,9 +229,7 @@ async def callback_trajectory_command(callback: CallbackQuery, state: FSMContext
 
         if not trainee_path:
             await callback.message.edit_text(
-                "🗺️ <b>ТРАЕКТОРИЯ ОБУЧЕНИЯ</b> 🗺️\n\n"
-                "❌ <b>Траектория не назначена</b>\n\n"
-                "Обратись к своему наставнику для назначения траектории, пока курс не выбран",
+                await format_trajectory_info(user, None),
                 parse_mode="HTML",
                 reply_markup=get_mentor_contact_keyboard()
             )
@@ -225,15 +240,7 @@ async def callback_trajectory_command(callback: CallbackQuery, state: FSMContext
         stages_progress = await get_trainee_stage_progress(session, trainee_path.id)
 
         # Формируем информацию о траектории согласно ТЗ
-        trajectory_info = (
-            f"🗺️<b>ТРАЕКТОРИЯ</b>🗺️\n"
-            f"<b>ВЫБОР ЭТАПА</b>\n"
-            f"🧑 <b>ФИО:</b> {user.full_name}\n"
-            f"👑 <b>Роли:</b> {', '.join([role.name for role in user.roles]) if user.roles else 'Не указаны'}\n"
-            f"🗂️<b>Группа:</b> {', '.join([group.name for group in user.groups]) if user.groups else 'Не указана'}\n"
-            f"📍<b>1️⃣Объект стажировки:</b> {user.internship_object.name if user.internship_object else 'Не указан'}\n"
-            f"📍<b>2️⃣Объект работы:</b> {user.work_object.name if user.work_object else 'Не указан'}\n\n"
-        )
+        trajectory_info = await format_trajectory_info(user, trainee_path)
 
         stages_info = ""
 
@@ -244,18 +251,21 @@ async def callback_trajectory_command(callback: CallbackQuery, state: FSMContext
             sessions_progress = await get_stage_session_progress(session, stage_progress.id)
             
             # Определяем статус этапа: 🟢 если все сессии пройдены, 🟡 если открыт, ⏺️ если закрыт
-            all_sessions_completed = True
-            for sp in sessions_progress:
-                if hasattr(sp.session, 'tests') and sp.session.tests:
-                    session_tests_passed = True
-                    for test in sp.session.tests:
-                        test_result = await get_user_test_result(session, user.id, test.id)
-                        if not (test_result and test_result.is_passed):
-                            session_tests_passed = False
+            # ИСПРАВЛЕНИЕ: проверяем завершенность только если этап открыт
+            all_sessions_completed = False
+            if stage_progress.is_opened and sessions_progress:
+                all_sessions_completed = True
+                for sp in sessions_progress:
+                    if hasattr(sp.session, 'tests') and sp.session.tests:
+                        session_tests_passed = True
+                        for test in sp.session.tests:
+                            test_result = await get_user_test_result(session, user.id, test.id)
+                            if not (test_result and test_result.is_passed):
+                                session_tests_passed = False
+                                break
+                        if not session_tests_passed:
+                            all_sessions_completed = False
                             break
-                    if not session_tests_passed:
-                        all_sessions_completed = False
-                        break
             
             if all_sessions_completed and sessions_progress:
                 stage_status_icon = "🟢"  # Все сессии пройдены
@@ -272,15 +282,18 @@ async def callback_trajectory_command(callback: CallbackQuery, state: FSMContext
             for session_progress in sessions_progress:
                 # Определяем статус сессии: 🟢 если все тесты пройдены, 🟡 если этап открыт, ⏺️ если этап закрыт
                 if hasattr(session_progress.session, 'tests') and session_progress.session.tests:
-                    all_tests_passed = True
-                    for test in session_progress.session.tests:
-                        test_result = await get_user_test_result(session, user.id, test.id)
-                        if not (test_result and test_result.is_passed):
-                            all_tests_passed = False
-                            break
+                    # ИСПРАВЛЕНИЕ: проверяем пройденность только если этап открыт
+                    all_tests_passed = False
+                    if stage_progress.is_opened:
+                        all_tests_passed = True
+                        for test in session_progress.session.tests:
+                            test_result = await get_user_test_result(session, user.id, test.id)
+                            if not (test_result and test_result.is_passed):
+                                all_tests_passed = False
+                                break
                     
-                    if all_tests_passed:
-                        session_status_icon = "🟢"  # Все тесты пройдены
+                    if all_tests_passed and stage_progress.is_opened:
+                        session_status_icon = "🟢"  # Все тесты пройдены (только если этап открыт)
                     elif stage_progress.is_opened:
                         session_status_icon = "🟡"  # Этап открыт, сессия доступна
                     else:
@@ -293,8 +306,9 @@ async def callback_trajectory_command(callback: CallbackQuery, state: FSMContext
                 for test in session_progress.session.tests:
                     # Определяем статус теста
                     test_result = await get_user_test_result(session, user.id, test.id)
-                    if test_result and test_result.is_passed:
-                        test_status_icon = "🟢"  # Тест пройден
+                    # ИСПРАВЛЕНИЕ: показываем зеленый только если этап открыт И тест пройден
+                    if test_result and test_result.is_passed and stage_progress.is_opened:
+                        test_status_icon = "🟢"  # Тест пройден (только если этап открыт)
                     elif stage_progress.is_opened:
                         test_status_icon = "🟡"  # Этап открыт, тест доступен
                     else:
@@ -377,16 +391,7 @@ async def callback_select_stage(callback: CallbackQuery, state: FSMContext, sess
         sessions_progress = await get_stage_session_progress(session, stage_progress.id)
 
         # Формируем информацию об этапе согласно ТЗ
-        stage_info = (
-            f"🗺️<b>ТРАЕКТОРИЯ</b>🗺️\n"
-            f"<b>ВЫБОР СЕССИИ</b>\n"
-            f"🧑 <b>ФИО:</b> {user.full_name}\n"
-            f"👑 <b>Роли:</b> {', '.join([role.name for role in user.roles]) if user.roles else 'Не указаны'}\n"
-            f"🗂️<b>Группа:</b> {', '.join([group.name for group in user.groups]) if user.groups else 'Не указана'}\n"
-            f"📍<b>1️⃣Объект стажировки:</b> {user.internship_object.name if user.internship_object else 'Не указан'}\n"
-            f"📍<b>2️⃣Объект работы:</b> {user.work_object.name if user.work_object else 'Не указан'}\n\n"
-            f"⏺️<b>Название траектории:</b> {trainee_path.learning_path.name if trainee_path.learning_path else 'Не найдена'}\n"
-        )
+        stage_info = await format_trajectory_info(user, trainee_path, "ВЫБОР СЕССИИ")
 
         # Формируем полную информацию о траектории согласно ТЗ
         full_trajectory_info = stage_info
@@ -397,18 +402,21 @@ async def callback_select_stage(callback: CallbackQuery, state: FSMContext, sess
             stage_sessions_progress = await get_stage_session_progress(session, sp.id)
             
             # Определяем статус этапа: 🟢 если все сессии пройдены, 🟡 если открыт, ⏺️ если закрыт
-            all_sessions_completed = True
-            for session_prog in stage_sessions_progress:
-                if hasattr(session_prog.session, 'tests') and session_prog.session.tests:
-                    session_tests_passed = True
-                    for test in session_prog.session.tests:
-                        test_result = await get_user_test_result(session, user.id, test.id)
-                        if not (test_result and test_result.is_passed):
-                            session_tests_passed = False
+            # ИСПРАВЛЕНИЕ: проверяем завершенность только если этап открыт
+            all_sessions_completed = False
+            if sp.is_opened and stage_sessions_progress:
+                all_sessions_completed = True
+                for session_prog in stage_sessions_progress:
+                    if hasattr(session_prog.session, 'tests') and session_prog.session.tests:
+                        session_tests_passed = True
+                        for test in session_prog.session.tests:
+                            test_result = await get_user_test_result(session, user.id, test.id)
+                            if not (test_result and test_result.is_passed):
+                                session_tests_passed = False
+                                break
+                        if not session_tests_passed:
+                            all_sessions_completed = False
                             break
-                    if not session_tests_passed:
-                        all_sessions_completed = False
-                        break
             
             if all_sessions_completed and stage_sessions_progress:
                 stage_icon = "🟢"  # Все сессии пройдены
@@ -444,8 +452,9 @@ async def callback_select_stage(callback: CallbackQuery, state: FSMContext, sess
                 for test in session_progress.session.tests:
                     # Определяем статус теста
                     test_result = await get_user_test_result(session, user.id, test.id)
-                    if test_result and test_result.is_passed:
-                        test_icon = "🟢"  # Тест пройден
+                    # ИСПРАВЛЕНИЕ: показываем зеленый только если этап открыт И тест пройден
+                    if test_result and test_result.is_passed and sp.is_opened:
+                        test_icon = "🟢"  # Тест пройден (только если этап открыт)
                     elif sp.is_opened:
                         test_icon = "🟡"  # Этап открыт, тест доступен
                     else:
@@ -531,16 +540,7 @@ async def callback_select_session(callback: CallbackQuery, state: FSMContext, se
         tests = selected_session.tests if hasattr(selected_session, 'tests') and selected_session.tests else []
 
         # Формируем полную информацию о траектории согласно ТЗ
-        session_info = (
-            f"🗺️<b>ТРАЕКТОРИЯ</b>🗺️\n"
-            f"<b>ВЫБОР ТЕСТА</b>\n"
-            f"🧑 <b>ФИО:</b> {user.full_name}\n"
-            f"👑 <b>Роли:</b> {', '.join([role.name for role in user.roles]) if user.roles else 'Не указаны'}\n"
-            f"🗂️<b>Группа:</b> {', '.join([group.name for group in user.groups]) if user.groups else 'Не указана'}\n"
-            f"📍<b>1️⃣Объект стажировки:</b> {user.internship_object.name if user.internship_object else 'Не указан'}\n"
-            f"📍<b>2️⃣Объект работы:</b> {user.work_object.name if user.work_object else 'Не указан'}\n\n"
-            f"⏺️<b>Название траектории:</b> {trainee_path.learning_path.name if trainee_path.learning_path else 'Не найдена'}\n"
-        )
+        session_info = await format_trajectory_info(user, trainee_path, "ВЫБОР ТЕСТА")
 
         # Формируем полную информацию о траектории согласно ТЗ
         full_trajectory_info = session_info
@@ -553,18 +553,21 @@ async def callback_select_session(callback: CallbackQuery, state: FSMContext, se
             stage_sessions_progress = await get_stage_session_progress(session, sp.id)
             
             # Определяем статус этапа: 🟢 если все сессии пройдены, 🟡 если открыт, ⏺️ если закрыт
-            all_sessions_completed = True
-            for session_prog in stage_sessions_progress:
-                if hasattr(session_prog.session, 'tests') and session_prog.session.tests:
-                    session_tests_passed = True
-                    for test in session_prog.session.tests:
-                        test_result = await get_user_test_result(session, user.id, test.id)
-                        if not (test_result and test_result.is_passed):
-                            session_tests_passed = False
+            # ИСПРАВЛЕНИЕ: проверяем завершенность только если этап открыт
+            all_sessions_completed = False
+            if sp.is_opened and stage_sessions_progress:
+                all_sessions_completed = True
+                for session_prog in stage_sessions_progress:
+                    if hasattr(session_prog.session, 'tests') and session_prog.session.tests:
+                        session_tests_passed = True
+                        for test in session_prog.session.tests:
+                            test_result = await get_user_test_result(session, user.id, test.id)
+                            if not (test_result and test_result.is_passed):
+                                session_tests_passed = False
+                                break
+                        if not session_tests_passed:
+                            all_sessions_completed = False
                             break
-                    if not session_tests_passed:
-                        all_sessions_completed = False
-                        break
             
             if all_sessions_completed and stage_sessions_progress:
                 stage_icon = "🟢"  # Все сессии пройдены
@@ -579,15 +582,18 @@ async def callback_select_session(callback: CallbackQuery, state: FSMContext, se
                 if session_progress.session:
                     # Определяем статус сессии: 🟢 если все тесты пройдены, 🟡 если этап открыт, ⏺️ если этап закрыт
                     if hasattr(session_progress.session, 'tests') and session_progress.session.tests:
-                        all_tests_passed = True
-                        for test in session_progress.session.tests:
-                            test_result = await get_user_test_result(session, user.id, test.id)
-                            if not (test_result and test_result.is_passed):
-                                all_tests_passed = False
-                                break
+                        # ИСПРАВЛЕНИЕ: проверяем пройденность только если этап открыт
+                        all_tests_passed = False
+                        if sp.is_opened:
+                            all_tests_passed = True
+                            for test in session_progress.session.tests:
+                                test_result = await get_user_test_result(session, user.id, test.id)
+                                if not (test_result and test_result.is_passed):
+                                    all_tests_passed = False
+                                    break
                         
-                        if all_tests_passed:
-                            session_icon = "🟢"  # Все тесты пройдены
+                        if all_tests_passed and sp.is_opened:
+                            session_icon = "🟢"  # Все тесты пройдены (только если этап открыт)
                         elif sp.is_opened:
                             session_icon = "🟡"  # Этап открыт, сессия доступна
                         else:
@@ -685,11 +691,12 @@ async def callback_take_test(callback: CallbackQuery, state: FSMContext, session
             f"📌 <b>Название:</b> {test.name}\n"
             f"📝 <b>Описание:</b> {test.description or 'Не указано'}\n"
             f"❓ <b>Количество вопросов:</b> {len(test.questions) if test.questions else 0}\n"
-            f"🎯 <b>Порог прохождения:</b> {test.threshold_score} из {test.max_score} баллов\n"
+            f"🎯 <b>Порог:</b> {test.threshold_score}/{test.max_score} баллов\n"
         )
 
         if test.material_link:
-            test_info += f"📚 <b>Материалы для изучения:</b>\n{test.material_link}\n\n"
+            material_display = test.material_link.replace("Файл: ", "") if test.material_link else ""
+            test_info += f"📚 <b>Материалы для изучения:</b>\n{material_display}\n\n"
         else:
             test_info += "📚 <b>Материалы:</b> Отсутствуют\n\n"
 
@@ -754,16 +761,7 @@ async def callback_back_to_session(callback: CallbackQuery, state: FSMContext, s
         tests = selected_session.tests if hasattr(selected_session, 'tests') and selected_session.tests else []
 
         # Формируем полную информацию о траектории согласно ТЗ
-        session_info = (
-            f"🗺️<b>ТРАЕКТОРИЯ</b>🗺️\n"
-            f"<b>ВЫБОР ТЕСТА</b>\n"
-            f"🧑 <b>ФИО:</b> {user.full_name}\n"
-            f"👑 <b>Роли:</b> {', '.join([role.name for role in user.roles]) if user.roles else 'Не указаны'}\n"
-            f"🗂️<b>Группа:</b> {', '.join([group.name for group in user.groups]) if user.groups else 'Не указана'}\n"
-            f"📍<b>1️⃣Объект стажировки:</b> {user.internship_object.name if user.internship_object else 'Не указан'}\n"
-            f"📍<b>2️⃣Объект работы:</b> {user.work_object.name if user.work_object else 'Не указан'}\n\n"
-            f"⏺️<b>Название траектории:</b> {trainee_path.learning_path.name if trainee_path.learning_path else 'Не найдена'}\n"
-        )
+        session_info = await format_trajectory_info(user, trainee_path, "ВЫБОР ТЕСТА")
 
         # Формируем полную информацию о траектории согласно ТЗ
         full_trajectory_info = session_info
@@ -776,18 +774,21 @@ async def callback_back_to_session(callback: CallbackQuery, state: FSMContext, s
             stage_sessions_progress = await get_stage_session_progress(session, sp.id)
             
             # Определяем статус этапа: 🟢 если все сессии пройдены, 🟡 если открыт, ⏺️ если закрыт
-            all_sessions_completed = True
-            for session_prog in stage_sessions_progress:
-                if hasattr(session_prog.session, 'tests') and session_prog.session.tests:
-                    session_tests_passed = True
-                    for test in session_prog.session.tests:
-                        test_result = await get_user_test_result(session, user.id, test.id)
-                        if not (test_result and test_result.is_passed):
-                            session_tests_passed = False
+            # ИСПРАВЛЕНИЕ: проверяем завершенность только если этап открыт
+            all_sessions_completed = False
+            if sp.is_opened and stage_sessions_progress:
+                all_sessions_completed = True
+                for session_prog in stage_sessions_progress:
+                    if hasattr(session_prog.session, 'tests') and session_prog.session.tests:
+                        session_tests_passed = True
+                        for test in session_prog.session.tests:
+                            test_result = await get_user_test_result(session, user.id, test.id)
+                            if not (test_result and test_result.is_passed):
+                                session_tests_passed = False
+                                break
+                        if not session_tests_passed:
+                            all_sessions_completed = False
                             break
-                    if not session_tests_passed:
-                        all_sessions_completed = False
-                        break
             
             if all_sessions_completed and stage_sessions_progress:
                 stage_icon = "🟢"  # Все сессии пройдены
@@ -823,8 +824,9 @@ async def callback_back_to_session(callback: CallbackQuery, state: FSMContext, s
                 for test in session_progress.session.tests:
                     # Определяем статус теста
                     test_result = await get_user_test_result(session, user.id, test.id)
-                    if test_result and test_result.is_passed:
-                        test_icon = "🟢"  # Тест пройден
+                    # ИСПРАВЛЕНИЕ: показываем зеленый только если этап открыт И тест пройден
+                    if test_result and test_result.is_passed and sp.is_opened:
+                        test_icon = "🟢"  # Тест пройден (только если этап открыт)
                     elif sp.is_opened:
                         test_icon = "🟡"  # Этап открыт, тест доступен
                     else:

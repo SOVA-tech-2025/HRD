@@ -271,7 +271,8 @@ async def callback_confirm_mentor_assignment(callback: CallbackQuery, state: FSM
             return
 
         # Назначаем наставника
-        success = await assign_mentor_to_trainee(session, trainee_id, mentor_id, recruiter_id)
+        from main import bot
+        success = await assign_mentor_to_trainee(session, trainee_id, mentor_id, recruiter_id, bot)
 
         if success:
             # Получаем обновленные данные для отображения

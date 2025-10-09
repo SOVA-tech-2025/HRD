@@ -18,10 +18,12 @@ from sqlalchemy import select
 from keyboards.keyboards import (
     get_simple_test_selection_keyboard, get_stage_selection_keyboard,
     get_yes_no_keyboard, get_question_selection_keyboard,
+    get_test_description_keyboard, get_test_materials_keyboard,
+    get_materials_choice_keyboard, get_test_created_success_keyboard,
     get_test_actions_keyboard, get_test_filter_keyboard,
     get_question_type_keyboard, get_test_edit_menu,
     get_question_management_keyboard, get_test_settings_keyboard,
-    get_finish_options_keyboard, get_test_start_keyboard
+    get_finish_options_keyboard, get_test_start_keyboard, get_tests_main_keyboard
 )
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from states.states import TestCreationStates, TestTakingStates
@@ -29,6 +31,48 @@ from utils.logger import log_user_action, log_user_error, logger
 from handlers.auth import check_auth
 
 router = Router()
+
+
+@router.message(F.text.in_(["Тесты 📄", "Тесты"]))
+async def cmd_tests_main(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработчик кнопки 'Тесты 📄' в главном меню рекрутера"""
+    try:
+        # Проверка авторизации
+        is_auth = await check_auth(message, state, session)
+        if not is_auth:
+            return
+        
+        # Получаем пользователя и проверяем права
+        user = await get_user_by_tg_id(session, message.from_user.id)
+        if not user:
+            await message.answer("❌ Вы не зарегистрированы в системе.")
+            return
+        
+        # Проверяем права на создание тестов (только рекрутеры)
+        has_permission = await check_user_permission(session, user.id, "create_tests")
+        if not has_permission:
+            await message.answer(
+                "❌ <b>Недостаточно прав</b>\n\n"
+                "У вас нет прав для управления тестами.\n"
+                "Обратитесь к администратору.",
+                parse_mode="HTML"
+            )
+            return
+        
+        # Показываем меню управления тестами
+        await message.answer(
+            "📄 <b>УПРАВЛЕНИЕ ТЕСТАМИ</b>\n\n"
+            "Выберите действие:",
+            parse_mode="HTML",
+            reply_markup=get_tests_main_keyboard()
+        )
+        
+        log_user_action(user.tg_id, "tests_main_menu", "Открыто меню управления тестами")
+        
+    except Exception as e:
+        await message.answer("Произошла ошибка при открытии меню тестов")
+        log_user_error(message.from_user.id, "tests_main_error", str(e))
+
 
 # =================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -57,7 +101,7 @@ async def cmd_manage_tests_command(message: Message, state: FSMContext, session:
     """Обработчик команды /manage_tests"""
     await cmd_list_tests(message, state, session)
 
-@router.message(F.text == "Создать тест")
+@router.message(F.text.in_(["Создать тест", "Создать новый", "Создать тест"]))
 async def cmd_create_test(message: Message, state: FSMContext, session: AsyncSession):
     """Обработчик команды создания теста"""
     is_auth = await check_auth(message, state, session)
@@ -91,7 +135,7 @@ async def cmd_create_test(message: Message, state: FSMContext, session: AsyncSes
     
     log_user_action(message.from_user.id, message.from_user.username, "started test creation")
 
-@router.message(F.text.in_(["Открыть список тестов", "Тесты стажеров 📝"]))
+@router.message(F.text.in_(["Открыть список тестов", "Список тестов", "Тесты стажеров 📝", "Открыть список тестов"]))
 async def cmd_list_tests(message: Message, state: FSMContext, session: AsyncSession):
     """Обработчик команды просмотра списка тестов"""
     is_auth = await check_auth(message, state, session)
@@ -136,6 +180,202 @@ async def cmd_list_tests(message: Message, state: FSMContext, session: AsyncSess
         reply_markup=get_simple_test_selection_keyboard(tests)
     )
 
+
+# =================================
+# ОБРАБОТЧИКИ ИНЛАЙН КНОПОК ДЛЯ РАКИРОВКИ
+# =================================
+
+@router.callback_query(F.data == "create_test")
+async def callback_create_test(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик инлайн кнопки 'Создать новый'"""
+    try:
+        await callback.answer()
+        
+        # Получаем пользователя и проверяем права
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.message.edit_text("❌ Вы не зарегистрированы в системе.")
+            return
+        
+        has_permission = await check_user_permission(session, user.id, "create_tests")
+        if not has_permission:
+            await callback.message.edit_text(
+                "❌ <b>Недостаточно прав</b>\n\n"
+                "У вас нет прав для создания тестов.\n"
+                "Обратитесь к администратору.",
+                parse_mode="HTML"
+            )
+            return
+        
+        await callback.message.edit_text(
+            "🔧 <b>Создание нового теста</b>\n\n"
+            "📝 Начинаем пошаговое создание теста для вашей системы стажировки.\n\n"
+            "1️⃣ <b>Шаг 1:</b> Введите название теста\n"
+            "💡 <i>Название должно быть информативным и понятным для стажеров</i>\n\n"
+            "📋 <b>Пример:</b> «Основы работы с клиентами» или «Техника безопасности»",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_tests_menu")],
+                [InlineKeyboardButton(text="🚫 Отменить создание теста", callback_data="cancel")]
+            ])
+        )
+        
+        await state.set_state(TestCreationStates.waiting_for_test_name)
+        await state.update_data(creator_id=user.id)
+        
+        log_user_action(user.tg_id, "started test creation", "Начато создание теста через инлайн кнопку")
+        
+    except Exception as e:
+        await callback.message.edit_text("Произошла ошибка при создании теста")
+        log_user_error(callback.from_user.id, "callback_create_test_error", str(e))
+
+
+@router.callback_query(F.data == "list_tests")
+async def callback_list_tests(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик инлайн кнопки 'Список тестов'"""
+    try:
+        await callback.answer()
+        
+        # Получаем пользователя и проверяем права
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.message.edit_text("❌ Вы не зарегистрированы в системе.")
+            return
+        
+        # Рекрутеры/управляющие (с правом create_tests) получают выбор
+        if await check_user_permission(session, user.id, "create_tests"):
+            await callback.message.edit_text(
+                "🗂️ Выберите, какие тесты вы хотите просмотреть:",
+                reply_markup=get_test_filter_keyboard()
+            )
+            return
+        
+        # Наставники (без права create_tests) видят все тесты
+        tests = await get_all_active_tests(session)
+        if not tests:
+            await callback.message.edit_text(
+                "📋 <b>Список доступных тестов</b>\n\n"
+                "В системе пока нет созданных тестов.\nОбратитесь к рекрутеру для создания тестов.",
+                parse_mode="HTML"
+            )
+            return
+        
+        tests_list = "\n\n".join([
+            f"<b>{i+1}. {test.name}</b>\n"
+            f"   🎯 Порог: {test.threshold_score}/{test.max_score} баллов\n"
+            f"   📅 Создан: {test.created_date.strftime('%d.%m.%Y')}\n"
+            f"   👤 Создатель: {await get_creator_name(session, test.creator_id)}"
+            for i, test in enumerate(tests)
+        ])
+        
+        await callback.message.edit_text(
+            f"📋 <b>Список доступных тестов</b>\n\n{tests_list}\n\n"
+            f"Выберите тест для просмотра и предоставления доступа:",
+            parse_mode="HTML",
+            reply_markup=get_simple_test_selection_keyboard(tests)
+        )
+        
+        log_user_action(user.tg_id, "list_tests", "Открыт список тестов через инлайн кнопку")
+        
+    except Exception as e:
+        await callback.message.edit_text("Произошла ошибка при открытии списка тестов")
+        log_user_error(callback.from_user.id, "callback_list_tests_error", str(e))
+
+
+@router.callback_query(F.data == "back_to_tests_menu")
+async def callback_back_to_tests_menu(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик кнопки 'Назад' - возврат к меню управления тестами"""
+    try:
+        await callback.answer()
+        
+        # Получаем пользователя и проверяем права
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.message.edit_text("❌ Вы не зарегистрированы в системе.")
+            return
+        
+        # Проверяем права на создание тестов (только рекрутеры)
+        has_permission = await check_user_permission(session, user.id, "create_tests")
+        if not has_permission:
+            await callback.message.edit_text(
+                "❌ <b>Недостаточно прав</b>\n\n"
+                "У вас нет прав для управления тестами.\n"
+                "Обратитесь к администратору.",
+                parse_mode="HTML"
+            )
+            return
+        
+        # Возвращаемся к меню управления тестами
+        await callback.message.edit_text(
+            "📄 <b>УПРАВЛЕНИЕ ТЕСТАМИ</b>\n\n"
+            "Выберите действие:",
+            parse_mode="HTML",
+            reply_markup=get_tests_main_keyboard()
+        )
+        
+        # Очищаем состояние FSM
+        await state.clear()
+        
+        log_user_action(user.tg_id, "back_to_tests_menu", "Возврат к меню управления тестами")
+        
+    except Exception as e:
+        await callback.message.edit_text("Произошла ошибка при возврате к меню тестов")
+        log_user_error(callback.from_user.id, "callback_back_to_tests_menu_error", str(e))
+
+
+@router.callback_query(F.data == "test_back")
+async def callback_test_back(callback: CallbackQuery, state: FSMContext):
+    """Обработчик кнопки 'Назад' в процессе создания теста"""
+    try:
+        await callback.answer()
+        
+        current_state = await state.get_state()
+        data = await state.get_data()
+        
+        if current_state == TestCreationStates.waiting_for_materials:
+            # Возврат к Шагу 1 - вводу названия теста
+            test_name = data.get('test_name', '')
+            await callback.message.edit_text(
+                "🔧 <b>Создание нового теста</b>\n\n"
+                "📝 Начинаем пошаговое создание теста для вашей системы стажировки.\n\n"
+                "1️⃣ <b>Шаг 1:</b> Введите название теста\n"
+                "💡 <i>Название должно быть информативным и понятным для стажеров</i>\n\n"
+                "📋 <b>Пример:</b> «Основы работы с клиентами» или «Техника безопасности»",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_tests_menu")],
+                    [InlineKeyboardButton(text="🚫 Отменить создание теста", callback_data="cancel")]
+                ])
+            )
+            await state.set_state(TestCreationStates.waiting_for_test_name)
+            
+        elif current_state == TestCreationStates.waiting_for_description:
+            # Возврат к Шаг 2 - выбору материалов
+            test_name = data.get('test_name', '')
+            await callback.message.edit_text(
+                f"✅ <b>Название принято:</b> {test_name}\n\n"
+                "2️⃣ <b>Шаг 2:</b> Материалы для изучения\n\n"
+                "📚 Есть ли у вас материалы, которые стажеры должны изучить перед прохождением теста?\n\n"
+                "💡 <b>Материалы могут быть:</b>\n"
+                "• Ссылки на обучающие видео\n"
+                "• Документы и инструкции\n"
+                "• Презентации или курсы\n"
+                "• Любые другие учебные ресурсы\n\n"
+                "❓ Хотите добавить материалы к тесту?",
+                parse_mode="HTML",
+                reply_markup=get_materials_choice_keyboard()
+            )
+            await state.set_state(TestCreationStates.waiting_for_materials)
+            
+        else:
+            # Для других состояний - просто возврат к предыдущему шагу
+            await callback.message.edit_text("❌ Не удалось вернуться к предыдущему шагу.")
+            
+    except Exception as e:
+        await callback.message.edit_text("❌ Произошла ошибка при возврате к предыдущему шагу.")
+        log_user_error(callback.from_user.id, "test_back_error", str(e))
+
+
 @router.message(TestCreationStates.waiting_for_test_name)
 async def process_test_name(message: Message, state: FSMContext, session: AsyncSession):
     """Обработка названия теста"""
@@ -158,7 +398,7 @@ async def process_test_name(message: Message, state: FSMContext, session: AsyncS
         "• Любые другие учебные ресурсы\n\n"
         "❓ Хотите добавить материалы к тесту?",
         parse_mode="HTML",
-        reply_markup=get_yes_no_keyboard("materials")
+        reply_markup=get_materials_choice_keyboard()
     )
     
     await state.set_state(TestCreationStates.waiting_for_materials)
@@ -171,10 +411,7 @@ async def process_materials_choice(callback: CallbackQuery, state: FSMContext):
     if choice == "yes":
         await callback.message.edit_text(
             "📎 Отправьте ссылку на материалы для изучения, PDF документ или нажмите 'Пропустить':",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="materials:skip")],
-                [InlineKeyboardButton(text="🚫 Отменить создание теста", callback_data="cancel")]
-            ])
+            reply_markup=get_test_materials_keyboard()
         )
     elif choice == "skip":
         await state.update_data(material_link=None)
@@ -203,10 +440,7 @@ async def process_materials_input(message: Message, state: FSMContext):
         # Неподдерживаемый тип сообщения
         await message.answer(
             "❌ Пожалуйста, отправьте ссылку на материалы, PDF документ или нажмите кнопку 'Пропустить'.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="materials:skip")],
-                [InlineKeyboardButton(text="🚫 Отменить создание теста", callback_data="cancel")]
-            ])
+            reply_markup=get_test_materials_keyboard()
         )
         return
     
@@ -214,12 +448,7 @@ async def process_materials_input(message: Message, state: FSMContext):
 
 async def ask_for_description(message: Message, state: FSMContext, show_cancel_button: bool = True):
     """Запрос описания теста"""
-    keyboard = None
-    if show_cancel_button:
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="description:skip")],
-            [InlineKeyboardButton(text="🚫 Отменить создание теста", callback_data="cancel")]
-        ])
+    keyboard = get_test_description_keyboard() if show_cancel_button else None
     
     await message.answer(
         "3️⃣ <b>Шаг 3:</b> Описание теста\n\n"
@@ -534,7 +763,8 @@ async def process_threshold_and_create_test(message: Message, state: FSMContext,
         f"📊 <b>Максимальный балл:</b> {test.max_score}\n"
         f"🎯 <b>Проходной балл:</b> {test.threshold_score} ({success_rate:.1f}%)\n\n"
         "🎉 Теперь наставники могут предоставлять доступ к этому тесту.",
-        parse_mode="HTML"
+        parse_mode="HTML",
+        reply_markup=get_test_created_success_keyboard()
     )
     
     log_user_action(
@@ -574,7 +804,7 @@ async def process_test_selection(callback: CallbackQuery, state: FSMContext, ses
 📝 <b>Описание:</b> {test.description or 'Не указано'}
 ❓ <b>Количество вопросов:</b> {questions_count}
 🎲 <b>Максимальный балл:</b> {test.max_score}
-🎯 <b>Порог прохождения:</b> {test.threshold_score} баллов
+🎯 <b>Порог:</b> {test.threshold_score} баллов
 {stage_info}📅 <b>Дата создания:</b> {test.created_date.strftime('%d.%m.%Y %H:%M')}
 🔗 <b>Материалы:</b> {f"📎 {test.material_link}" if test.material_link else 'Отсутствуют'}
 """
@@ -629,7 +859,8 @@ async def process_test_selection(callback: CallbackQuery, state: FSMContext, ses
         if test.material_link:
             if test.material_file_path:
                 # Если есть прикрепленный файл
-                materials_info = f"📚 <b>Материалы для изучения:</b>\n🔗 {test.material_link}\n\n"
+                material_display = test.material_link.replace("Файл: ", "") if test.material_link else ""
+                materials_info = f"📚 <b>Материалы для изучения:</b>\n🔗 {material_display}\n\n"
             else:
                 # Если это ссылка
                 materials_info = f"📚 <b>Материалы для изучения:</b>\n{test.material_link}\n\n"
@@ -650,7 +881,7 @@ async def process_test_selection(callback: CallbackQuery, state: FSMContext, ses
 📌 <b>Название:</b> {test.name}
 📝 <b>Описание:</b> {test.description or 'Не указано'}
 {stage_info}❓ <b>Количество вопросов:</b> {questions_count}
-🎯 <b>Порог прохождения:</b> {test.threshold_score} из {test.max_score} баллов
+🎯 <b>Порог:</b> {test.threshold_score}/{test.max_score} баллов
 {materials_info}{previous_result_info}"""
         
         await callback.message.edit_text(
@@ -1813,9 +2044,9 @@ async def toggle_shuffle_questions(callback: CallbackQuery, session: AsyncSessio
     )
     await callback.answer()
 
-@router.callback_query(F.data.startswith("answer_bool:"))
+@router.callback_query(F.data.startswith("answer_bool:"), TestCreationStates.waiting_for_answer)
 async def process_bool_answer(callback: CallbackQuery, state: FSMContext):
-    """Обработка выбора правильного ответа для Да/Нет"""
+    """Обработка выбора правильного ответа для Да/Нет (ТОЛЬКО для обычного создания теста)"""
     answer = callback.data.split(':')[1]
     await state.update_data(current_answer=answer)
     await callback.message.edit_text(
@@ -2072,14 +2303,12 @@ async def process_view_materials_admin(callback: CallbackQuery, state: FSMContex
         try:
             await callback.message.answer_document(
                 document=test.material_file_path,
-                caption=f"📚 <b>Материалы к тесту: «{test.name}»</b>\n\n"
-                       f"📎 Прикрепленный документ.",
+                caption=f"📚 <b>Материалы к тесту: «{test.name}»</b>",
                 parse_mode="HTML"
             )
             await callback.message.edit_text(
                 f"✅ <b>Материалы к тесту: «{test.name}»</b>\n\n"
-                f"📎 Документ отправлен выше.\n\n"
-                f"ℹ️ Стажеры также получат этот документ при просмотре материалов к тесту.",
+                f"📎 Документ отправлен ниже.",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="⬅️ Назад к тесту", callback_data=f"test:{test_id}")]
@@ -2100,8 +2329,7 @@ async def process_view_materials_admin(callback: CallbackQuery, state: FSMContex
         # Если это ссылка
         await callback.message.edit_text(
             f"📚 <b>Материалы к тесту: «{test.name}»</b>\n\n"
-            f"🔗 <b>Ссылка на материалы:</b>\n{test.material_link}\n\n"
-            f"ℹ️ Стажеры увидят эту же ссылку при просмотре материалов к тесту.",
+            f"🔗 <b>Ссылка на материалы:</b>\n{test.material_link}",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="⬅️ Назад к тесту", callback_data=f"test:{test_id}")]

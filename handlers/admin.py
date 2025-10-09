@@ -425,7 +425,7 @@ async def cmd_trainees(message: Message, state: FSMContext, session: AsyncSessio
     log_user_action(message.from_user.id, message.from_user.username, "viewed trainees list")
 
 
-@router.message(F.text == "Список Стажеров")
+@router.message(F.text.in_(["Список Стажеров", "Стажеры 🐣"]))
 async def button_trainees(message: Message, state: FSMContext, session: AsyncSession):
     """Обработчик кнопки просмотра списка Стажеров"""
     await cmd_trainees(message, state, session) 

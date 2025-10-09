@@ -45,7 +45,7 @@ router = Router()
 # Вспомогательные функции
 # ===============================
 
-async def download_and_save_file(bot, file_id: str, filename: str, max_file_size: int = 10 * 1024 * 1024) -> Optional[str]:
+async def download_and_save_file(bot, file_id: str, filename: str, max_file_size: int = 50 * 1024 * 1024) -> Optional[str]:
     """
     Скачивает файл с Telegram серверов и сохраняет в локальную файловую систему.
     Оптимизировано для production использования.
@@ -54,7 +54,7 @@ async def download_and_save_file(bot, file_id: str, filename: str, max_file_size
         bot: Экземпляр бота для скачивания файла
         file_id: ID файла в Telegram
         filename: Имя файла для сохранения
-        max_file_size: Максимальный размер файла в байтах (по умолчанию 10MB)
+        max_file_size: Максимальный размер файла в байтах (по умолчанию 50MB)
 
     Returns:
         str: Путь к сохраненному файлу или None при ошибке
@@ -390,8 +390,8 @@ async def process_material_content(message: Message, state: FSMContext, session:
         if message.document:
             # Проверяем тип файла и размер
             if message.document.mime_type == "application/pdf":
-                # Проверяем размер файла (10MB лимит)
-                max_size = 10 * 1024 * 1024  # 10MB
+                # Проверяем размер файла (50MB лимит)
+                max_size = 50 * 1024 * 1024  # 50MB
                 if message.document.file_size > max_size:
                     await message.answer(f"❌ Файл слишком большой. Максимальный размер: {max_size // (1024*1024)}MB")
                     return
@@ -431,7 +431,7 @@ async def process_material_content(message: Message, state: FSMContext, session:
         await state.update_data(material_number=material_number)
         
         # ТЗ 9-1 шаг 12
-        content_display = material_content if material_type == "link" else "PDF документ"
+        content_display = material_content if material_type == "link" else "Документ"
         await message.answer(
             "📚РЕДАКТОР БАЗЫ ЗНАНИЙ📚\n\n"
             f"📁Папка: {folder.name}\n\n"
@@ -512,7 +512,7 @@ async def process_material_photos(message: Message, state: FSMContext, session: 
 
         keyboard_buttons = [
             [InlineKeyboardButton(text="✅Продолжить", callback_data="kb_finish_photos")],
-            [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
         ]
         keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
 
@@ -570,7 +570,7 @@ async def show_photo_upload_option(message_or_callback, state: FSMContext, sessi
             return
 
         # Формируем сообщение с информацией о материале
-        content_display = material_content if material_type == "link" else "PDF документ"
+        content_display = material_content if material_type == "link" else "Документ"
         description_display = material_description if material_description else "Без описания"
 
         message_text = (
@@ -586,7 +586,7 @@ async def show_photo_upload_option(message_or_callback, state: FSMContext, sessi
 
         keyboard_buttons = [
             [InlineKeyboardButton(text="⏩Пропустить", callback_data="kb_skip_photos")],
-            [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
         ]
         keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
 
@@ -634,7 +634,7 @@ async def show_material_confirmation(message_or_callback, state: FSMContext, ses
             return
 
         # Формируем сообщение подтверждения
-        content_display = material_content if material_type == "link" else "PDF документ"
+        content_display = material_content if material_type == "link" else "Документ"
         description_display = material_description if material_description else "Без описания"
         photos_display = f"{len(material_photos)} фото" if material_photos else "Без фотографий"
 
@@ -716,7 +716,7 @@ async def callback_save_material(callback: CallbackQuery, state: FSMContext, ses
         # ТЗ 9-1 шаг 16: Материал сохранен - показываем ВСЕ материалы в папке
         materials_display = []
         for i, mat in enumerate(updated_folder.materials, 1):
-            mat_content = mat.content if mat.material_type == "link" else "PDF документ"
+            mat_content = mat.content if mat.material_type == "link" else "Документ"
             mat_description = mat.description if mat.description else "Без описания"
             photos_info = ""
             if mat.photos and len(mat.photos) > 0:
@@ -915,8 +915,7 @@ async def callback_view_material(callback: CallbackQuery, state: FSMContext, ses
                         # Отправляем файл
                         await callback.bot.send_document(
                             chat_id=callback.message.chat.id,
-                            document=FSInputFile(file_path),
-                            caption=f"📎 PDF документ: {material.name}"
+                            document=FSInputFile(file_path)
                         )
                 else:
                     await callback.bot.send_message(
@@ -967,7 +966,7 @@ async def callback_delete_material(callback: CallbackQuery, state: FSMContext, s
             content_display = material.content  # Показываем сам URL для ссылок
         else:
             # Для PDF файлов показываем имя файла и информацию о том, что это документ
-            filename = Path(material.content).name if material.content else "PDF документ"
+            filename = Path(material.content).name if material.content else "Документ"
             content_display = f"📎 {filename}"
 
         description_display = material.description if material.description else "Описание не указано"
@@ -1052,8 +1051,7 @@ async def callback_delete_material(callback: CallbackQuery, state: FSMContext, s
                         # Отправляем файл
                         await callback.bot.send_document(
                             chat_id=callback.message.chat.id,
-                            document=FSInputFile(file_path),
-                            caption=f"📎 PDF документ: {material.name}"
+                            document=FSInputFile(file_path)
                         )
                 else:
                     await callback.bot.send_message(
@@ -1770,7 +1768,7 @@ async def callback_employee_view_material(callback: CallbackQuery, state: FSMCon
             content_display = f"🔗 <a href='{material.content}'>Открыть ссылку</a>"
         else:
             # Для PDF файлов отправляем файл и показываем информацию
-            content_display = "📎 PDF документ прикреплен ниже"
+            content_display = "📎 Документ прикреплен ниже"
 
         description_display = material.description if material.description else "Описание не указано"
 
@@ -1844,8 +1842,7 @@ async def callback_employee_view_material(callback: CallbackQuery, state: FSMCon
                         # Отправляем файл
                         await callback.bot.send_document(
                             chat_id=callback.message.chat.id,
-                            document=FSInputFile(file_path),
-                            caption=f"📎 PDF документ: {material.name}"
+                            document=FSInputFile(file_path)
                         )
                 else:
                     await callback.bot.send_message(
@@ -1920,32 +1917,6 @@ async def callback_employee_back_to_folders(callback: CallbackQuery, state: FSMC
 # Общие обработчики
 # ===============================
 
-@router.callback_query(F.data == "main_menu")
-async def callback_main_menu(callback: CallbackQuery, state: FSMContext):
-    """Возврат к главному меню"""
-    try:
-        await callback.answer()
-        await state.clear()
-        
-        from keyboards.keyboards import get_keyboard_by_role
-        
-        # Отправляем сообщение о возврате к главному меню
-        await callback.message.answer(
-            "🏠 Главное меню",
-            reply_markup=get_keyboard_by_role(["Рекрутер"])  # Предполагаем роль рекрутера для базы знаний
-        )
-        
-        # Удаляем inline сообщение
-        try:
-            await callback.message.delete()
-        except:
-            pass
-            
-        log_user_action(callback.from_user.id, "returned_to_main_menu", "Возврат к главному меню из базы знаний")
-
-    except Exception as e:
-        await callback.message.edit_text("Произошла ошибка при возврате к главному меню")
-        log_user_error(callback.from_user.id, "main_menu_error", str(e))
 
 
 import asyncio

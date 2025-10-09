@@ -11,22 +11,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database.db import (
     create_object, get_all_objects, get_object_by_id, 
     update_object_name, get_object_users, get_user_roles,
-    check_user_permission, get_user_by_tg_id
+    check_user_permission, get_user_by_tg_id, delete_object
 )
 from handlers.auth import check_auth
 from states.states import ObjectManagementStates
 from keyboards.keyboards import (
     get_object_management_keyboard, get_object_selection_keyboard,
     get_object_rename_confirmation_keyboard, get_main_menu_keyboard,
-    get_keyboard_by_role
+    get_keyboard_by_role, get_object_delete_selection_keyboard,
+    get_object_delete_confirmation_keyboard
 )
 from utils.logger import log_user_action, log_user_error
-from utils.validators import validate_name
+from utils.validators import validate_object_name
 
 router = Router()
 
 
-@router.message(F.text == "Объекты")
+@router.message(F.text.in_(["Объекты", "Объекты 📍"]))
 async def cmd_objects(message: Message, state: FSMContext, session: AsyncSession):
     """Обработчик команды 'Объекты'"""
     try:
@@ -56,7 +57,8 @@ async def cmd_objects(message: Message, state: FSMContext, session: AsyncSession
             "В данном меню вы можете:\n"
             "1. Создавать объекты\n"
             "2. Посмотреть существующие объекты\n"
-            "3. Менять названия объектам",
+            "3. Менять названия объектам\n"
+            "4. Удалять объекты",
             reply_markup=get_object_management_keyboard(),
             parse_mode="HTML"
         )
@@ -116,10 +118,10 @@ async def process_object_name(message: Message, state: FSMContext, session: Asyn
         object_name = message.text.strip()
         
         # Валидация названия
-        if not validate_name(object_name):
+        if not validate_object_name(object_name):
             await message.answer(
                 "❌ Некорректное название объекта.\n"
-                "Название должно содержать только буквы, цифры, пробелы и знаки препинания.\n"
+                "Название должно содержать только буквы, цифры, пробелы, знаки препинания и слеш для адресов.\n"
                 "Попробуйте еще раз:"
             )
             return
@@ -290,10 +292,10 @@ async def process_new_object_name(message: Message, state: FSMContext, session: 
         old_name = data.get("old_name")
         
         # Валидация названия
-        if not validate_name(new_name):
+        if not validate_object_name(new_name):
             await message.answer(
                 "❌ Некорректное название объекта.\n"
-                "Название должно содержать только буквы, цифры, пробелы и знаки препинания.\n"
+                "Название должно содержать только буквы, цифры, пробелы, знаки препинания и слеш для адресов.\n"
                 "Попробуйте еще раз:"
             )
             return
@@ -383,38 +385,216 @@ async def callback_cancel_object_rename(callback: CallbackQuery, state: FSMConte
         await state.clear()
 
 
-@router.callback_query(F.data == "main_menu")
-async def callback_main_menu(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
-    """Обработчик возврата в главное меню"""
+@router.callback_query(F.data == "manage_delete_object")
+async def callback_manage_delete_object(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик кнопки 'Удалить объект'"""
     try:
-        # Получение пользователя
+        # Проверяем права доступа
         user = await get_user_by_tg_id(session, callback.from_user.id)
-        if not user:
-            await callback.message.edit_text("Вы не зарегистрированы в системе.")
-            await callback.answer()
+        if not user or not await check_user_permission(session, user.id, "manage_objects"):
+            await callback.answer("У вас нет прав для удаления объектов", show_alert=True)
+            return
+        
+        # Получаем все объекты
+        objects = await get_all_objects(session)
+        if not objects:
+            await callback.message.edit_text(
+                "📍<b>УПРАВЛЕНИЕ ОБЪЕКТАМИ</b>📍\n"
+                "🗑️<b>Удаление объекта</b>🗑️\n\n"
+                "❌ <b>Объекты не найдены!</b>\n\n"
+                "Сначала создайте объекты для удаления.",
+                reply_markup=get_main_menu_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+        
+        # Показываем предупреждение и список объектов
+        await callback.message.edit_text(
+            "📍<b>УПРАВЛЕНИЕ ОБЪЕКТАМИ</b>📍\n"
+            "🗑️<b>Удаление объекта</b>🗑️\n\n"
+            "⚠️ <b>Внимание!</b> Это действие необратимо!\n"
+            "Объект будет полностью удален из системы.\n\n"
+            "Выберите объект для удаления:",
+            reply_markup=get_object_delete_selection_keyboard(objects),
+            parse_mode="HTML"
+        )
+        await state.set_state(ObjectManagementStates.waiting_for_delete_object_selection)
+        await callback.answer()
+        
+    except Exception as e:
+        await callback.message.edit_text("Произошла ошибка при получении списка объектов")
+        log_user_error(callback.from_user.id, "object_delete_list_error", str(e))
+        await state.clear()
+
+
+@router.callback_query(F.data.startswith("object_delete_page:"))
+async def callback_object_delete_page(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик пагинации при выборе объекта для удаления"""
+    try:
+        page = int(callback.data.split(":")[1])
+        
+        # Получаем все объекты
+        objects = await get_all_objects(session)
+        if not objects:
+            await callback.answer("Объекты не найдены", show_alert=True)
+            return
+        
+        # Показываем страницу
+        page_objects = objects[page * 5:(page + 1) * 5]
+        if not page_objects:
+            await callback.answer("Страница пуста", show_alert=True)
+            return
+        
+        await callback.message.edit_text(
+            "📍<b>УПРАВЛЕНИЕ ОБЪЕКТАМИ</b>📍\n"
+            "🗑️<b>Удаление объекта</b>🗑️\n\n"
+            "⚠️ <b>Внимание!</b> Это действие необратимо!\n"
+            "Объект будет полностью удален из системы.\n\n"
+            "Выберите объект для удаления:",
+            reply_markup=get_object_delete_selection_keyboard(objects, page),
+            parse_mode="HTML"
+        )
+        await callback.answer()
+        
+    except Exception as e:
+        await callback.answer("Ошибка при переключении страницы", show_alert=True)
+        log_user_error(callback.from_user.id, "object_delete_page_error", str(e))
+
+
+@router.callback_query(F.data.startswith("delete_object:"))
+async def callback_delete_object(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик выбора объекта для удаления"""
+    try:
+        object_id = int(callback.data.split(":")[1])
+        
+        # Проверяем повторное нажатие на тот же объект
+        data = await state.get_data()
+        selected_object_id = data.get('selected_object_id')
+        last_error_message = data.get('last_error_message')
+        
+        # Если пользователь нажал на тот же объект и состояние не изменилось
+        if selected_object_id == object_id and last_error_message:
+            await callback.answer(last_error_message, show_alert=True)
+            return
+        
+        # Получаем информацию об объекте
+        object_obj = await get_object_by_id(session, object_id)
+        if not object_obj:
+            await callback.answer("Объект не найден", show_alert=True)
+            return
+        
+        # Проверяем, можно ли удалить объект (включает все проверки: user_objects, internship_object_id, work_object_id)
+        users_in_object = await get_object_users(session, object_id)
+        if users_in_object:
+            error_msg = f"❌ В объекте есть пользователи ({len(users_in_object)} чел.)"
+            await callback.message.edit_text(
+                "📍<b>УПРАВЛЕНИЕ ОБЪЕКТАМИ</b>📍\n"
+                "🗑️<b>Удаление объекта</b>🗑️\n\n"
+                f"❌ <b>Нельзя удалить объект!</b>\n\n"
+                f"<b>Объект:</b> {object_obj.name}\n"
+                f"<b>ID:</b> {object_obj.id}\n"
+                f"<b>Создан:</b> {object_obj.created_date.strftime('%d.%m.%Y %H:%M')}\n\n"
+                f"⚠️ <b>В объекте есть пользователи ({len(users_in_object)} чел.)</b>\n"
+                f"Сначала удалите всех пользователей из объекта или измените их объекты стажировки/работы.",
+                reply_markup=get_main_menu_keyboard(),
+                parse_mode="HTML"
+            )
+            await state.update_data(selected_object_id=object_id, last_error_message=error_msg)
             await state.clear()
             return
         
-        # Получаем роли пользователя для определения клавиатуры
-        user_roles = await get_user_roles(session, user.id)
-        role_names = [role.name for role in user_roles]
-        
-        # Отправляем соответствующую клавиатуру
-        keyboard = get_keyboard_by_role(role_names)
-        
-        await callback.message.answer(
-            "🏠 <b>Главное меню</b>\n\n"
-            "Выберите действие:",
-            reply_markup=keyboard,
+        # Показываем подтверждение удаления
+        await callback.message.edit_text(
+            "📍<b>УПРАВЛЕНИЕ ОБЪЕКТАМИ</b>📍\n"
+            "🗑️<b>Удаление объекта</b>🗑️\n\n"
+            f"<b>Объект:</b> {object_obj.name}\n"
+            f"<b>ID:</b> {object_obj.id}\n"
+            f"<b>Создан:</b> {object_obj.created_date.strftime('%d.%m.%Y %H:%M')}\n\n"
+            f"⚠️ <b>Внимание!</b> Это действие необратимо!\n"
+            f"Объект будет полностью удален из системы.\n\n"
+            f"Вы уверены, что хотите удалить этот объект?",
+            reply_markup=get_object_delete_confirmation_keyboard(object_id),
             parse_mode="HTML"
         )
+        await state.set_state(ObjectManagementStates.waiting_for_delete_confirmation)
+        await state.update_data(selected_object_id=object_id, last_error_message=None)
+        await callback.answer()
         
-        # Удаляем старое сообщение
-        await callback.message.delete()
+    except Exception as e:
+        await callback.message.edit_text("Произошла ошибка при получении информации об объекте")
+        log_user_error(callback.from_user.id, "object_delete_info_error", str(e))
+        await state.clear()
+
+
+@router.callback_query(F.data.startswith("confirm_object_delete:"))
+async def callback_confirm_delete_object(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик подтверждения удаления объекта"""
+    try:
+        object_id = int(callback.data.split(":")[1])
+        
+        # Получаем информацию об объекте
+        object_obj = await get_object_by_id(session, object_id)
+        if not object_obj:
+            await callback.message.edit_text("Объект не найден")
+            await state.clear()
+            return
+        
+        # Удаляем объект
+        success = await delete_object(session, object_id, callback.from_user.id)
+        
+        if success:
+            await callback.message.edit_text(
+                "📍<b>УПРАВЛЕНИЕ ОБЪЕКТАМИ</b>📍\n"
+                "🗑️<b>Удаление объекта</b>🗑️\n\n"
+                f"✅ <b>Объект успешно удален!</b>\n\n"
+                f"<b>Удаленный объект:</b> {object_obj.name}\n"
+                f"<b>ID:</b> {object_obj.id}\n\n"
+                f"Объект полностью удален из системы.",
+                reply_markup=get_main_menu_keyboard(),
+                parse_mode="HTML"
+            )
+            log_user_action(callback.from_user.id, "object_deleted", f"Удалил объект {object_obj.name} (ID: {object_id})")
+        else:
+            await callback.message.edit_text(
+                "📍<b>УПРАВЛЕНИЕ ОБЪЕКТАМИ</b>📍\n"
+                "🗑️<b>Удаление объекта</b>🗑️\n\n"
+                f"❌ <b>Не удалось удалить объект!</b>\n\n"
+                f"<b>Объект:</b> {object_obj.name}\n"
+                f"<b>ID:</b> {object_obj.id}\n\n"
+                f"Возможно, объект используется в системе.",
+                reply_markup=get_main_menu_keyboard(),
+                parse_mode="HTML"
+            )
+        
         await state.clear()
         await callback.answer()
-        log_user_action(user.tg_id, "returned_to_main_menu", "Вернулся в главное меню")
+        
+    except Exception as e:
+        await callback.message.edit_text("Произошла ошибка при удалении объекта")
+        log_user_error(callback.from_user.id, "object_delete_error", str(e))
+        await state.clear()
+
+
+@router.callback_query(F.data == "cancel_object_delete")
+async def callback_cancel_delete_object(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик отмены удаления объекта"""
+    try:
+        await callback.message.edit_text(
+            "📍<b>УПРАВЛЕНИЕ ОБЪЕКТАМИ</b>📍\n\n"
+            "В данном меню вы можете:\n"
+            "1. Создавать объекты\n"
+            "2. Посмотреть существующие объекты\n"
+            "3. Менять названия объектам\n"
+            "4. Удалять объекты",
+            reply_markup=get_object_management_keyboard(),
+            parse_mode="HTML"
+        )
+        await state.clear()
+        await callback.answer()
+        log_user_action(callback.from_user.id, "object_delete_cancelled", "Отменил удаление объекта")
     except Exception as e:
         await callback.message.edit_text("Произошла ошибка")
-        log_user_error(callback.from_user.id, "main_menu_error", str(e))
+        log_user_error(callback.from_user.id, "object_delete_cancel_error", str(e))
         await state.clear()
+
+

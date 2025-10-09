@@ -1,9 +1,10 @@
-from aiogram import Router, F, Bot
+from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
+from datetime import datetime
 
 from database.db import (
     get_unassigned_trainees, get_available_mentors, assign_mentor,
@@ -27,6 +28,15 @@ from keyboards.keyboards import (
     get_tests_for_access_keyboard, get_manager_selection_keyboard,
     get_manager_assignment_confirmation_keyboard, get_manager_actions_keyboard
 )
+
+def get_days_word(days: int) -> str:
+    """Получение правильного склонения слова 'день' в зависимости от числа"""
+    if days % 10 == 1 and days % 100 != 11:
+        return "день"
+    elif days % 10 in [2, 3, 4] and days % 100 not in [12, 13, 14]:
+        return "дня"
+    else:
+        return "дней"
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from states.states import MentorshipStates, AttestationAssignmentStates, TraineeManagementStates
 from utils.logger import log_user_action, log_user_error
@@ -119,12 +129,15 @@ async def cmd_my_mentor(message: Message, state: FSMContext, session: AsyncSessi
         return
     
     await message.answer(
-        f"👨‍🏫 <b>Ваш наставник</b>\n\n"
-        f"👤 <b>ФИО:</b> {mentor.full_name}\n"
-        f"📞 <b>Телефон:</b> {mentor.phone_number}\n"
-        f"📧 <b>Telegram:</b> @{mentor.username or 'не указан'}\n\n"
-        "Обращайтесь к наставнику по вопросам прохождения стажировки!",
-        parse_mode="HTML"
+        f"🎓 <b>Твой наставник</b>\n\n"
+        f"<b>Имя:</b> {mentor.full_name}\n"
+        f"<b>Телефон:</b> {mentor.phone_number}\n"
+        f"<b>Telegram:</b> @{mentor.username or 'не указан'}\n\n"
+        f"<i>Если что-то непонятно по стажировке, сразу напиши наставнику, он подскажет тебе следующий шаг</i>",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+        ])
     )
     
     log_user_action(message.from_user.id, message.from_user.username, "viewed mentor info")
@@ -163,13 +176,18 @@ async def cmd_mentor_trainees(message: Message, state: FSMContext, session: Asyn
         trainee_path = await get_trainee_learning_path(session, trainee.id)
         trajectory_name = trainee_path.learning_path.name if trainee_path else "не выбрано"
 
+        # Подсчитываем количество дней в статусе стажера
+        days_as_trainee = (datetime.now() - trainee.role_assigned_date).days
+        days_word = get_days_word(days_as_trainee)
+
         # Добавляем информацию о стажере согласно ТЗ
-        message_text += f"{i}.  <b>{trainee.full_name}</b>\n"
-        message_text += f"📍<b>1️⃣Объект стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
-        message_text += f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n"
-        message_text += f"🗺️<b>Траектория:</b> {trajectory_name}\n"
-        message_text += f"   📞 {trainee.phone_number}\n"
-        message_text += f"   📅 Регистрация: {trainee.registration_date.strftime('%d.%m.%Y')}\n\n"
+        message_text += f"{i}. <b>{trainee.full_name}</b>\n\n"
+        message_text += f"<b>Телефон:</b> {trainee.phone_number}\n"
+        message_text += f"<b>В статусе стажера:</b> {days_as_trainee} {days_word}\n"
+        message_text += f"<b>Объект стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
+        message_text += f"<b>Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n"
+        message_text += f"📌<b>Траектория:</b> {trajectory_name}\n\n"
+        message_text += "━━━━━━━━━━━━\n\n"
 
         # Добавляем кнопку для выбора стажера
         keyboard.inline_keyboard.append([
@@ -185,7 +203,7 @@ async def cmd_mentor_trainees(message: Message, state: FSMContext, session: Asyn
     ])
     
     await message.answer(
-        message_text + "Выберите стажера для управления его траекторией обучения:",
+        message_text + "Выбери стажёра для взаимодействия, откроется карточка с данными, прогрессом и назначением траектории обучения:",
         reply_markup=keyboard,
         parse_mode="HTML"
     )
@@ -447,18 +465,8 @@ async def process_view_all_mentors(callback: CallbackQuery, state: FSMContext, s
     
     await callback.answer()
 
-@router.callback_query(F.data == "main_menu")
-async def process_main_menu(callback: CallbackQuery, state: FSMContext):
-    """Возврат в главное меню"""
-    await callback.message.edit_text(
-        "🏠 <b>Главное меню</b>\n\n"
-        "Используйте команды бота или кнопки клавиатуры для навигации по системе.",
-        parse_mode="HTML"
-    )
-    await state.clear()
-    await callback.answer()
 
-@router.message(F.text == "Список Наставников")
+@router.message(F.text.in_(["Список Наставников", "Наставники 🦉"]))
 async def cmd_list_mentors(message: Message, state: FSMContext, session: AsyncSession):
     """Обработчик команды просмотра списка наставников"""
     is_auth = await check_auth(message, state, session)
@@ -603,17 +611,20 @@ async def callback_select_trainee_for_trajectory(callback: CallbackQuery, sessio
 
     # Формируем сообщение согласно ТЗ
     profile_text = (
-        "🙋‍♂️<b>ПРОСМОТР СТАЖЁРА</b>🙋‍♂️\n\n"
-        f"🧑 <b>ФИО:</b> {trainee.full_name}\n"
-        f"📞 <b>Телефон:</b> {trainee.phone_number}\n"
-        f"🆔 <b>Telegram ID:</b> {trainee.tg_id}\n"
-        f"👤 <b>Username:</b> @{trainee.username or 'не указан'}\n"
-        f"📅 <b>Дата регистрации:</b> {trainee.registration_date.strftime('%d.%m.%Y %H:%M')}\n"
-        f"👑 <b>Роли:</b> {', '.join([role.name for role in trainee.roles])}\n"
-        f"🗂️<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
-        f"📍<b>1️⃣Объект стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
-        f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n"
-        f"🎱<b>Номер пользователя:</b> {trainee_id}\n"
+        f"🦸🏻‍♂️ <b>Стажер:</b> {trainee.full_name}\n"
+        f"<b>Траектория:</b> {trainee_path.learning_path.name if trainee_path and trainee_path.learning_path else 'не выбрана'}\n\n\n"
+        f"<b>Телефон:</b> {trainee.phone_number}\n"
+        f"<b>Username:</b> @{trainee.username or 'не указан'}\n"
+        f"<b>Номер:</b> #{trainee_id}\n"
+        f"<b>Дата регистрации:</b> {trainee.registration_date.strftime('%d.%m.%Y %H:%M')}\n\n\n"
+        "━━━━━━━━━━━━\n\n\n"
+        "🗂️ <b>Статус:</b>\n"
+        f"<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
+        f"<b>Роль:</b> {', '.join([role.name for role in trainee.roles])}\n\n\n"
+        "━━━━━━━━━━━━\n\n\n"
+        "📍 <b>Объект:</b>\n"
+        f"<b>Стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
+        f"<b>Работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n\n"
         f"{trajectory_info}"
     )
 
@@ -670,29 +681,39 @@ async def callback_select_trajectory_for_trainee(callback: CallbackQuery, sessio
     available_paths = await get_available_learning_paths_for_mentor(session, mentor.id)
 
     if not available_paths:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"select_trainee_for_trajectory:{trainee_id}")]
+        ])
+        
         await callback.message.edit_text(
             f"❌ <b>Нет доступных траекторий</b>\n\n"
             f"👤 <b>Стажер:</b> {trainee.full_name}\n\n"
             "Для вас нет доступных траекторий обучения.\n"
             "Возможно, нет траекторий для вашей группы.",
-            parse_mode="HTML"
+            parse_mode="HTML",
+            reply_markup=keyboard
         )
         await callback.answer()
         return
 
     # Формируем информацию о стажере
     trainee_info = (
-        f"🙋‍♂️<b>ПРОСМОТР СТАЖЁРА</b>🙋‍♂️\n\n"
-        f"🧑 <b>ФИО:</b> {trainee.full_name}\n"
-        f"👤 <b>Username:</b> @{trainee.username or 'не указан'}\n"
-        f"👑 <b>Роли:</b> {', '.join([role.name for role in trainee.roles])}\n"
-        f"🗂️<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
-        f"📍<b>1️⃣Объект стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
-        f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n"
-        f"🎱<b>Номер пользователя:</b> {trainee_id}\n\n"
-        "🗺️<b>Траектория:</b> не выбрано\n\n"
-        "Выберите траекторию обучения👇"
-    )
+            f"🦸🏻‍♂️ <b>Стажер:</b> {trainee.full_name}\n"
+            f"<b>Траектория:</b> не выбрана\n\n\n"
+            f"<b>Телефон:</b> {trainee.phone_number}\n"
+            f"<b>Username:</b> @{trainee.username or 'не указан'}\n"
+            f"<b>Номер:</b> #{trainee_id}\n"
+            f"<b>Дата регистрации:</b> {trainee.registration_date.strftime('%d.%m.%Y %H:%M')}\n\n\n"
+            "━━━━━━━━━━━━\n\n\n"
+            "🗂️ <b>Статус:</b>\n"
+            f"<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
+            f"<b>Роль:</b> {', '.join([role.name for role in trainee.roles])}\n\n\n"
+            "━━━━━━━━━━━━\n\n\n"
+            "📍 <b>Объект:</b>\n"
+            f"<b>Стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
+            f"<b>Работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n\n"
+            "Выберите траекторию обучения👇"
+        )
 
     # Создаем клавиатуру с доступными траекториями
     keyboard = InlineKeyboardMarkup(inline_keyboard=[])
@@ -704,6 +725,11 @@ async def callback_select_trajectory_for_trainee(callback: CallbackQuery, sessio
                 callback_data=f"assign_trajectory:{trainee_id}:{learning_path.id}"
             )
         ])
+
+    # Добавляем кнопку "Назад"
+    keyboard.inline_keyboard.append([
+        InlineKeyboardButton(text="⬅️ Назад", callback_data=f"select_trainee_for_trajectory:{trainee_id}")
+    ])
 
     await callback.message.edit_text(
         trainee_info,
@@ -718,6 +744,7 @@ async def callback_select_trajectory_for_trainee(callback: CallbackQuery, sessio
 @router.callback_query(F.data.startswith("assign_trajectory:"))
 async def callback_assign_trajectory(callback: CallbackQuery, session: AsyncSession):
     """Обработчик назначения траектории стажеру - ПО ТЗ 6-й задачи шаг 11"""
+    bot = callback.message.bot  # Получаем bot для уведомлений
     parts = callback.data.split(":")
     trainee_id = int(parts[1])
     learning_path_id = int(parts[2])
@@ -732,7 +759,7 @@ async def callback_assign_trajectory(callback: CallbackQuery, session: AsyncSess
         return
 
     # Назначаем траекторию
-    success = await assign_learning_path_to_trainee(session, trainee_id, learning_path_id, mentor.id)
+    success = await assign_learning_path_to_trainee(session, trainee_id, learning_path_id, mentor.id, bot)
 
     if success:
         # Получаем информацию о назначенной траектории и этапах
@@ -741,15 +768,21 @@ async def callback_assign_trajectory(callback: CallbackQuery, session: AsyncSess
 
         # Формируем сообщение согласно ТЗ
         trainee_info = (
-            f"🙋‍♂️<b>ПРОСМОТР СТАЖЁРА</b>🙋‍♂️\n"
+            f"🦸🏻‍♂️ <b>Стажер:</b> {trainee.full_name}\n"
+            f"<b>Траектория:</b> {learning_path.name}\n\n\n"
+            f"<b>Телефон:</b> {trainee.phone_number}\n"
+            f"<b>Username:</b> @{trainee.username or 'не указан'}\n"
+            f"<b>Номер:</b> #{trainee_id}\n"
+            f"<b>Дата регистрации:</b> {trainee.registration_date.strftime('%d.%m.%Y %H:%M')}\n\n\n"
+            "━━━━━━━━━━━━\n\n\n"
+            "🗂️ <b>Статус:</b>\n"
+            f"<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
+            f"<b>Роль:</b> {', '.join([role.name for role in trainee.roles])}\n\n\n"
+            "━━━━━━━━━━━━\n\n\n"
+            "📍 <b>Объект:</b>\n"
+            f"<b>Стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
+            f"<b>Работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n\n"
             "🗺️<b>Управление траекторией</b>\n\n"
-            f"🧑 <b>ФИО:</b> {trainee.full_name}\n"
-            f"👤 <b>Username:</b> @{trainee.username or 'не указан'}\n"
-            f"👑 <b>Роли:</b> {', '.join([role.name for role in trainee.roles])}\n"
-            f"🗂️<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
-            f"📍<b>1️⃣Объект стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
-            f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n"
-            f"🎱<b>Номер пользователя:</b> {trainee_id}\n\n"
             f"⏺️<b>Название траектории:</b> {learning_path.name}\n"
         )
 
@@ -813,7 +846,7 @@ def generate_trajectory_progress_for_mentor(trainee_path, stages_progress, test_
     if not trainee_path:
         return "🗺️<b>Траектория:</b> не выбрано"
 
-    progress = f"⏺️<b>Название траектории:</b> {trainee_path.learning_path.name}\n"
+    progress = f"⏺️<b>Название траектории:</b> {trainee_path.learning_path.name if trainee_path.learning_path else 'Не указано'}\n"
 
     # Создаем словарь результатов тестов для быстрого поиска
     test_results_dict = {}
@@ -824,11 +857,16 @@ def generate_trajectory_progress_for_mentor(trainee_path, stages_progress, test_
     for stage_progress in stages_progress:
         # Определяем статус этапа: 🟢 если все сессии пройдены, 🟡 если открыт, ⏺️ если закрыт
         sessions_progress = stage_progress.session_progress
-        all_sessions_completed = all(
-            all(test.id in test_results_dict and test_results_dict[test.id].is_passed 
-                for test in sp.session.tests) 
-            for sp in sessions_progress if hasattr(sp.session, 'tests') and sp.session.tests
-        ) if sessions_progress else False
+        
+        # Проверяем, все ли тесты в сессиях пройдены (только если этап открыт)
+        all_sessions_completed = False
+        if sessions_progress and stage_progress.is_opened:
+            # Проверяем только если этап открыт
+            all_sessions_completed = all(
+                all(test.id in test_results_dict and test_results_dict[test.id].is_passed 
+                    for test in sp.session.tests) 
+                for sp in sessions_progress if hasattr(sp.session, 'tests') and sp.session.tests
+            )
         
         if all_sessions_completed and sessions_progress:
             stage_status_icon = "🟢"  # Все сессии пройдены
@@ -843,12 +881,16 @@ def generate_trajectory_progress_for_mentor(trainee_path, stages_progress, test_
         for session_progress in sessions_progress:
             # Определяем статус сессии: 🟢 если все тесты пройдены, 🟡 если этап открыт, ⏺️ если этап закрыт
             if hasattr(session_progress.session, 'tests') and session_progress.session.tests:
-                all_tests_passed = all(
-                    test.id in test_results_dict and test_results_dict[test.id].is_passed 
-                    for test in session_progress.session.tests
-                )
-                if all_tests_passed:
-                    session_status_icon = "🟢"  # Все тесты пройдены
+                # ИСПРАВЛЕНИЕ: проверяем пройденность только если этап открыт
+                all_tests_passed = False
+                if stage_progress.is_opened:
+                    all_tests_passed = all(
+                        test.id in test_results_dict and test_results_dict[test.id].is_passed 
+                        for test in session_progress.session.tests
+                    )
+                
+                if all_tests_passed and stage_progress.is_opened:
+                    session_status_icon = "🟢"  # Все тесты пройдены (только если этап открыт)
                 elif stage_progress.is_opened:
                     session_status_icon = "🟡"  # Этап открыт, сессия доступна
                 else:
@@ -863,13 +905,14 @@ def generate_trajectory_progress_for_mentor(trainee_path, stages_progress, test_
                 # Определяем статус теста и процент прохождения
                 if test.id in test_results_dict:
                     result = test_results_dict[test.id]
-                    if result.is_passed:
+                    # ИСПРАВЛЕНИЕ: показываем зеленый только если этап открыт И тест пройден
+                    if result.is_passed and stage_progress.is_opened:
                         test_status = "🟢"
                         # Вычисляем процент прохождения
                         percentage = (result.score / result.max_possible_score) * 100
                         percentage_text = f" - {percentage:.0f}%"
                     else:
-                        # Тест не пройден, но доступен если этап открыт
+                        # Тест не пройден, или этап закрыт
                         test_status = "🟡" if stage_progress.is_opened else "⏺️"
                         percentage_text = ""
                 else:
@@ -894,7 +937,7 @@ async def generate_trajectory_progress_with_attestation_status(session, trainee_
     if not trainee_path:
         return "🗺️<b>Траектория:</b> не выбрано"
 
-    progress = f"⏺️<b>Название траектории:</b> {trainee_path.learning_path.name}\n"
+    progress = f"⏺️<b>Название траектории:</b> {trainee_path.learning_path.name if trainee_path.learning_path else 'Не указано'}\n"
 
     # Создаем словарь результатов тестов для быстрого поиска
     test_results_dict = {}
@@ -905,11 +948,16 @@ async def generate_trajectory_progress_with_attestation_status(session, trainee_
     for stage_progress in stages_progress:
         # Определяем статус этапа: 🟢 если все сессии пройдены, 🟡 если открыт, ⏺️ если закрыт
         sessions_progress = stage_progress.session_progress
-        all_sessions_completed = all(
-            all(test.id in test_results_dict and test_results_dict[test.id].is_passed 
-                for test in sp.session.tests) 
-            for sp in sessions_progress if hasattr(sp.session, 'tests') and sp.session.tests
-        ) if sessions_progress else False
+        
+        # Проверяем, все ли тесты в сессиях пройдены (только если этап открыт)
+        all_sessions_completed = False
+        if sessions_progress and stage_progress.is_opened:
+            # Проверяем только если этап открыт
+            all_sessions_completed = all(
+                all(test.id in test_results_dict and test_results_dict[test.id].is_passed 
+                    for test in sp.session.tests) 
+                for sp in sessions_progress if hasattr(sp.session, 'tests') and sp.session.tests
+            )
         
         if all_sessions_completed and sessions_progress:
             stage_status_icon = "🟢"  # Все сессии пройдены
@@ -924,12 +972,16 @@ async def generate_trajectory_progress_with_attestation_status(session, trainee_
         for session_progress in sessions_progress:
             # Определяем статус сессии
             if hasattr(session_progress.session, 'tests') and session_progress.session.tests:
-                all_tests_passed = all(
-                    test.id in test_results_dict and test_results_dict[test.id].is_passed 
-                    for test in session_progress.session.tests
-                )
-                if all_tests_passed:
-                    session_status_icon = "🟢"  # Все тесты пройдены
+                # ИСПРАВЛЕНИЕ: проверяем пройденность только если этап открыт
+                all_tests_passed = False
+                if stage_progress.is_opened:
+                    all_tests_passed = all(
+                        test.id in test_results_dict and test_results_dict[test.id].is_passed 
+                        for test in session_progress.session.tests
+                    )
+                
+                if all_tests_passed and stage_progress.is_opened:
+                    session_status_icon = "🟢"  # Все тесты пройдены (только если этап открыт)
                 elif stage_progress.is_opened:
                     session_status_icon = "🟡"  # Этап открыт, сессия доступна
                 else:
@@ -944,11 +996,13 @@ async def generate_trajectory_progress_with_attestation_status(session, trainee_
                 # Определяем статус теста и процент прохождения
                 if test.id in test_results_dict:
                     result = test_results_dict[test.id]
-                    if result.is_passed:
+                    # ИСПРАВЛЕНИЕ: показываем зеленый только если этап открыт И тест пройден
+                    if result.is_passed and stage_progress.is_opened:
                         test_status = "🟢"
                         percentage = (result.score / result.max_possible_score) * 100
                         percentage_text = f" - {percentage:.0f}%"
                     else:
+                        # Тест не пройден, или этап закрыт
                         test_status = "🟡" if stage_progress.is_opened else "⏺️"
                         percentage_text = ""
                 else:
@@ -1004,13 +1058,18 @@ async def process_my_trainees_callback(callback: CallbackQuery, session: AsyncSe
         trainee_path = await get_trainee_learning_path(session, trainee.id)
         trajectory_name = trainee_path.learning_path.name if trainee_path else "не выбрано"
 
+        # Подсчитываем количество дней в статусе стажера
+        days_as_trainee = (datetime.now() - trainee.role_assigned_date).days
+        days_word = get_days_word(days_as_trainee)
+
         # Добавляем информацию о стажере согласно ТЗ
-        message_text += f"{i}.  <b>{trainee.full_name}</b>\n"
-        message_text += f"📍<b>1️⃣Объект стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
-        message_text += f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n"
-        message_text += f"🗺️<b>Траектория:</b> {trajectory_name}\n"
-        message_text += f"   📞 {trainee.phone_number}\n"
-        message_text += f"   📅 Регистрация: {trainee.registration_date.strftime('%d.%m.%Y')}\n\n"
+        message_text += f"{i}. <b>{trainee.full_name}</b>\n\n"
+        message_text += f"<b>Телефон:</b> {trainee.phone_number}\n"
+        message_text += f"<b>В статусе стажера:</b> {days_as_trainee} {days_word}\n"
+        message_text += f"<b>Объект стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
+        message_text += f"<b>Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n"
+        message_text += f"📌<b>Траектория:</b> {trajectory_name}\n\n"
+        message_text += "━━━━━━━━━━━━\n\n"
 
         # Добавляем кнопку для выбора стажера
         keyboard.inline_keyboard.append([
@@ -1026,7 +1085,7 @@ async def process_my_trainees_callback(callback: CallbackQuery, session: AsyncSe
     ])
     
     await callback.message.edit_text(
-        message_text + "Выберите стажера для управления его траекторией обучения:",
+        message_text + "Выбери стажёра для взаимодействия, откроется карточка с данными, прогрессом и назначением траектории обучения:",
         parse_mode="HTML",
         reply_markup=keyboard
     )
@@ -1911,7 +1970,7 @@ async def callback_view_stage(callback: CallbackQuery, state: FSMContext, sessio
         stage_info = (
             f"📊<b>ЭТАП {stage_progress.stage.order_number}: {stage_progress.stage.name}</b>📊\n\n"
             f"👤 <b>Стажер:</b> {trainee.full_name}\n"
-            f"🗺️<b>Траектория:</b> {trainee_path.learning_path.name}\n\n"
+            f"🗺️<b>Траектория:</b> {trainee_path.learning_path.name if trainee_path.learning_path else 'Не указано'}\n\n"
         )
 
         # Статус этапа
@@ -2032,15 +2091,21 @@ async def callback_view_trajectory(callback: CallbackQuery, state: FSMContext, s
 
         # Формируем информацию о траектории
         trajectory_info = (
-            f"🙋‍♂️<b>ПРОСМОТР СТАЖЁРА</b>🙋‍♂️\n\n"
-            f"🗺️<b>Управление траекторией</b>\n\n"
-            f"🧑 <b>ФИО:</b> {trainee.full_name}\n"
-            f"👤 <b>Username:</b> @{trainee.username or 'не указан'}\n"
-            f"👑 <b>Роли:</b> {', '.join([role.name for role in trainee.roles])}\n"
-            f"🗂️<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
-            f"📍<b>1️⃣Объект стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
-            f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n"
-            f"🎱<b>Номер пользователя:</b> {trainee_id}\n\n"
+            f"🦸🏻‍♂️ <b>Стажер:</b> {trainee.full_name}\n"
+            f"<b>Траектория:</b> {trainee_path.learning_path.name if trainee_path.learning_path else 'Не указано'}\n\n\n"
+            f"<b>Телефон:</b> {trainee.phone_number}\n"
+            f"<b>Username:</b> @{trainee.username or 'не указан'}\n"
+            f"<b>Номер:</b> #{trainee_id}\n"
+            f"<b>Дата регистрации:</b> {trainee.registration_date.strftime('%d.%m.%Y %H:%M')}\n\n\n"
+            "━━━━━━━━━━━━\n\n\n"
+            "🗂️ <b>Статус:</b>\n"
+            f"<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
+            f"<b>Роль:</b> {', '.join([role.name for role in trainee.roles])}\n\n\n"
+            "━━━━━━━━━━━━\n\n\n"
+            "📍 <b>Объект:</b>\n"
+            f"<b>Стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
+            f"<b>Работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n\n"
+            "🗺️<b>Управление траекторией</b>\n\n"
         )
 
         # Используем новую функцию с правильным статусом аттестации для Task 7
@@ -2078,92 +2143,18 @@ async def callback_manage_stages(callback: CallbackQuery, state: FSMContext, ses
         await callback.answer()
 
         trainee_id = int(callback.data.split(":")[1])
-
-        # Получаем траекторию стажера
-        trainee_path = await get_trainee_learning_path(session, trainee_id)
-
-        if not trainee_path:
-            await callback.message.edit_text("Траектория не найдена")
-            return
-
-        # Получаем этапы
-        stages_progress = await get_trainee_stage_progress(session, trainee_path.id)
-
-        # Формируем информацию об этапах
-        stages_info = ""
-        keyboard_buttons = []
-
-        for stage_progress in stages_progress:
-            stage = stage_progress.stage
-            status_icon = "🟢" if stage_progress.is_completed else ("🟡" if stage_progress.is_opened else "⏺️")
-            
-            status_text = "Пройден" if stage_progress.is_completed else ("Открыт" if stage_progress.is_opened else "Закрыт")
-
-            stages_info += f"{status_icon}<b>Этап {stage.order_number}:</b> {stage.name}\n"
-            stages_info += f"   📊 Статус: {status_text}\n"
-
-            # Добавляем кнопки для всех этапов
-            if not stage_progress.is_opened:
-                # Кликабельная кнопка для закрытых этапов
-                keyboard_buttons.append([
-                    InlineKeyboardButton(
-                        text=f"🔓 Открыть этап {stage.order_number}",
-                        callback_data=f"open_stage:{trainee_id}:{stage.id}"
-                    )
-                ])
-            elif stage_progress.is_opened and not stage_progress.is_completed:
-                # Некликабельная кнопка для открытых этапов
-                keyboard_buttons.append([
-                    InlineKeyboardButton(
-                        text=f"🟢 Этап {stage.order_number} доступен",
-                        callback_data=f"stage_available_stub:{trainee_id}:{stage.id}"
-                    )
-                ])
-
+        
+        # Используем вынесенную функцию для обновления интерфейса
+        await update_stages_management_interface(callback, session, trainee_id)
+        
+        # Получаем имя стажера для логирования
         trainee = await get_user_by_id(session, trainee_id)
-        
-        # Получаем результаты тестов для правильной индикации
-        test_results = await get_user_test_results(session, trainee_id)
-        
-        # Формируем полную информацию о стажере согласно ТЗ шаг 6
-        header_info = (
-            f"🙋‍♂️<b>ПРОСМОТР СТАЖЁРА</b>🙋‍♂️\n"
-            f"🗺️<b>Управление траекторией</b>\n\n\n"
-            f"🧑 <b>ФИО:</b> {trainee.full_name}\n"
-            f"📞 <b>Телефон:</b> {trainee.phone_number}\n"
-            f"🆔 <b>Telegram ID:</b> {trainee.tg_id}\n"
-            f"👤 <b>Username:</b> @{trainee.username or 'не указан'}\n"
-            f"📅 <b>Дата регистрации:</b> {trainee.registration_date.strftime('%d.%m.%Y %H:%M')}\n"
-            f"👑 <b>Роли:</b> {', '.join([role.name for role in trainee.roles])}\n"
-            f"🗂️<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
-            f"📍<b>1️⃣Объект стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
-            f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n"
-            f"🎱<b>Номер пользователя:</b> {trainee_id}\n\n"
-        )
-        
-        # Добавляем полную траекторию согласно ТЗ
-        trajectory_progress = generate_trajectory_progress_for_mentor(trainee_path, stages_progress, test_results)
-        header_info += trajectory_progress + "\n"
-        header_info += "🟡 <b>Какой этап необходимо открыть стажеру?</b>"
-
-        # Добавляем кнопку "Назад"
-        keyboard_buttons.append([
-            InlineKeyboardButton(text="↩️ Назад", callback_data=f"select_trainee_for_trajectory:{trainee_id}")
-        ])
-
-        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
-
-        await callback.message.edit_text(
-            header_info,
-            reply_markup=keyboard,
-            parse_mode="HTML"
-        )
-
-        log_user_action(callback.from_user.id, "stages_management_opened", f"Открыто управление этапами для стажера {trainee.full_name}")
+        if trainee:
+            log_user_action(callback.from_user.id, "stages_management_opened", f"Открыто управление этапами для стажера {trainee.full_name}")
 
     except Exception as e:
-        await callback.message.edit_text("Произошла ошибка при управлении этапами")
         log_user_error(callback.from_user.id, "manage_stages_error", str(e))
+        await callback.message.edit_text("Произошла ошибка при открытии управления этапами")
 
 
 @router.callback_query(F.data.startswith("open_stage:"))
@@ -2192,15 +2183,21 @@ async def callback_open_stage(callback: CallbackQuery, state: FSMContext, sessio
 
             # Формируем полную информацию согласно ТЗ шаг 9
             success_message = (
-                f"🙋‍♂️<b>ПРОСМОТР СТАЖЁРА</b>🙋‍♂️\n"
-                f"🗺️<b>Управление траекторией</b>\n\n"
-                f"🧑 <b>ФИО:</b> {trainee.full_name}\n"
-                f"👤 <b>Username:</b> @{trainee.username or 'не указан'}\n"
-                f"👑 <b>Роли:</b> {', '.join([role.name for role in trainee.roles])}\n"
-                f"🗂️<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
-                f"📍<b>1️⃣Объект стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
-                f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n"
-                f"🎱<b>Номер пользователя:</b> {trainee_id}\n\n"
+                f"🦸🏻‍♂️ <b>Стажер:</b> {trainee.full_name}\n"
+                f"<b>Траектория:</b> {trainee_path.learning_path.name if trainee_path.learning_path else 'Не указано'}\n\n\n"
+                f"<b>Телефон:</b> {trainee.phone_number}\n"
+                f"<b>Username:</b> @{trainee.username or 'не указан'}\n"
+                f"<b>Номер:</b> #{trainee_id}\n"
+                f"<b>Дата регистрации:</b> {trainee.registration_date.strftime('%d.%m.%Y %H:%M')}\n\n\n"
+                "━━━━━━━━━━━━\n\n\n"
+                "🗂️ <b>Статус:</b>\n"
+                f"<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
+                f"<b>Роль:</b> {', '.join([role.name for role in trainee.roles])}\n\n\n"
+                "━━━━━━━━━━━━\n\n\n"
+                "📍 <b>Объект:</b>\n"
+                f"<b>Стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
+                f"<b>Работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n\n"
+                "🗺️<b>Управление траекторией</b>\n\n"
             )
             
             # Добавляем полную траекторию с обновленными статусами
@@ -2220,6 +2217,9 @@ async def callback_open_stage(callback: CallbackQuery, state: FSMContext, sessio
                 [
                     InlineKeyboardButton(text="👥 Мои стажёры", callback_data="my_trainees"),
                     InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")
+                ],
+                [
+                    InlineKeyboardButton(text="⬅️ Назад к этапам", callback_data=f"manage_stages:{trainee_id}")
                 ]
             ])
 
@@ -2641,16 +2641,22 @@ async def callback_view_trainee_attestation(callback: CallbackQuery, state: FSMC
         
         # Формируем сообщение согласно ТЗ
         message_text = (
-            "🙋‍♂️<b>ПРОСМОТР СТАЖЁРА</b>🙋‍♂️\n"
+            f"🦸🏻‍♂️ <b>Стажер:</b> {trainee.full_name}\n"
+            f"<b>Траектория:</b> {trainee_path.learning_path.name if trainee_path else 'не выбрана'}\n\n\n"
+            f"<b>Телефон:</b> {trainee.phone_number}\n"
+            f"<b>Username:</b> @{trainee.username or 'не указан'}\n"
+            f"<b>Номер:</b> #{trainee_id}\n"
+            f"<b>Дата регистрации:</b> {trainee.registration_date.strftime('%d.%m.%Y %H:%M')}\n\n\n"
+            "━━━━━━━━━━━━\n\n\n"
+            "🗂️ <b>Статус:</b>\n"
+            f"<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
+            f"<b>Роль:</b> {', '.join([role.name for role in trainee.roles])}\n\n\n"
+            "━━━━━━━━━━━━\n\n\n"
+            "📍 <b>Объект:</b>\n"
+            f"<b>Стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
+            f"<b>Работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n\n"
             "🗺️<b>Управление траекторией</b>\n"
             "🔍<b>Аттестация</b>\n\n"
-            f"🧑 <b>ФИО:</b> {trainee.full_name}\n"
-            f"📞 <b>Телефон:</b> {trainee.phone_number}\n"
-            f"👤 <b>Username:</b> @{trainee.username or 'не указан'}\n"
-            f"👑 <b>Роли:</b> {', '.join([role.name for role in trainee.roles])}\n"
-            f"🗂️<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
-            f"📍<b>1️⃣Объект стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
-            f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n"
             "🟡<b>Выберите руководителя для аттестации👇</b>"
         )
         
@@ -2705,6 +2711,7 @@ async def callback_select_manager_for_attestation(callback: CallbackQuery, state
         trainee = await get_user_by_id(session, trainee_id)
         manager = await get_user_by_id(session, manager_id)
         attestation = await get_attestation_by_id(session, attestation_id)
+        trainee_path = await get_trainee_learning_path(session, trainee_id)
         
         if not trainee or not manager or not attestation:
             await callback.message.edit_text("Ошибка: данные не найдены")
@@ -2715,16 +2722,22 @@ async def callback_select_manager_for_attestation(callback: CallbackQuery, state
         
         # Формируем сообщение подтверждения согласно ТЗ
         confirmation_text = (
-            "🙋‍♂️<b>ПРОСМОТР СТАЖЁРА</b>🙋‍♂️\n"
+            f"🦸🏻‍♂️ <b>Стажер:</b> {trainee.full_name}\n"
+            f"<b>Траектория:</b> {trainee_path.learning_path.name if trainee_path else 'не выбрана'}\n\n\n"
+            f"<b>Телефон:</b> {trainee.phone_number}\n"
+            f"<b>Username:</b> @{trainee.username or 'не указан'}\n"
+            f"<b>Номер:</b> #{trainee_id}\n"
+            f"<b>Дата регистрации:</b> {trainee.registration_date.strftime('%d.%m.%Y %H:%M')}\n\n\n"
+            "━━━━━━━━━━━━\n\n\n"
+            "🗂️ <b>Статус:</b>\n"
+            f"<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
+            f"<b>Роль:</b> {', '.join([role.name for role in trainee.roles])}\n\n\n"
+            "━━━━━━━━━━━━\n\n\n"
+            "📍 <b>Объект:</b>\n"
+            f"<b>Стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
+            f"<b>Работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n\n"
             "🗺️<b>Управление траекторией</b>\n"
             "🔍<b>Аттестация</b>\n\n"
-            f"🧑 <b>ФИО:</b> {trainee.full_name}\n"
-            f"📞 <b>Телефон:</b> {trainee.phone_number}\n"
-            f"👤 <b>Username:</b> @{trainee.username or 'не указан'}\n"
-            f"👑 <b>Роли:</b> {', '.join([role.name for role in trainee.roles])}\n"
-            f"🗂️<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
-            f"📍<b>1️⃣Объект стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
-            f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n"
             f"🔍⏺️<b>Аттестация:</b> {attestation.name}\n"
             f"🟢<b>Руководитель:</b> {manager.full_name}\n"
             "🟢<b>Дата:</b> \n"
@@ -2825,7 +2838,7 @@ async def callback_confirm_attestation_assignment(callback: CallbackQuery, state
 
 
 # Функции уведомлений для Task 7
-async def send_attestation_assignment_notification_to_trainee(session: AsyncSession, bot: Bot, assignment_id: int):
+async def send_attestation_assignment_notification_to_trainee(session: AsyncSession, bot, assignment_id: int):
     """Отправка уведомления стажеру о назначении аттестации (ТЗ шаг 14)"""
     try:
         # Получаем данные назначения
@@ -2862,7 +2875,7 @@ async def send_attestation_assignment_notification_to_trainee(session: AsyncSess
         log_user_error(0, "send_attestation_notification_to_trainee_error", str(e))
 
 
-async def send_attestation_assignment_notification_to_manager(session: AsyncSession, bot: Bot, assignment_id: int):
+async def send_attestation_assignment_notification_to_manager(session: AsyncSession, bot, assignment_id: int):
     """Отправка уведомления руководителю о назначении стажера на аттестацию (ТЗ шаг 15)"""
     try:
         # Получаем данные назначения
@@ -2898,4 +2911,183 @@ async def send_attestation_assignment_notification_to_manager(session: AsyncSess
         
     except Exception as e:
         log_user_error(0, "send_attestation_notification_to_manager_error", str(e))
+
+
+@router.callback_query(F.data.startswith("toggle_stage:"))
+async def callback_toggle_stage(callback: CallbackQuery, state: FSMContext, session: AsyncSession, bot):
+    """Обработчик переключения статуса этапа (открыть/закрыть)"""
+    try:
+        await callback.answer()
+
+        parts = callback.data.split(":")
+        trainee_id = int(parts[1])
+        stage_id = int(parts[2])
+
+        # Получаем текущий статус этапа
+        trainee_path = await get_trainee_learning_path(session, trainee_id)
+        if not trainee_path:
+            await callback.message.edit_text("Траектория не найдена")
+            return
+
+        stages_progress = await get_trainee_stage_progress(session, trainee_path.id)
+        current_stage_progress = next((sp for sp in stages_progress if sp.stage_id == stage_id), None)
+        
+        if not current_stage_progress:
+            await callback.message.edit_text("Этап не найден")
+            return
+
+        # Проверяем, что этап не завершен (завершенные этапы нельзя изменять)
+        if current_stage_progress.is_completed:
+            await callback.answer("❌ Завершенные этапы нельзя изменять", show_alert=True)
+            return
+
+        # Переключаем статус этапа
+        if current_stage_progress.is_opened:
+            # Закрываем этап
+            from database.models import TraineeStageProgress, TraineeSessionProgress
+            await session.execute(
+                update(TraineeStageProgress).where(
+                    TraineeStageProgress.id == current_stage_progress.id
+                ).values(is_opened=False)
+            )
+            
+            # Закрываем все сессии этого этапа
+            await session.execute(
+                update(TraineeSessionProgress).where(
+                    TraineeSessionProgress.stage_progress_id == current_stage_progress.id
+                ).values(is_opened=False)
+            )
+            
+            await session.commit()
+            
+            # Уведомление стажеру о закрытии этапа не отправляем
+            # (стажеру не нужно знать о закрытии этапов)
+            
+            action_text = "закрыт"
+        else:
+            # Открываем этап
+            success = await open_stage_for_trainee(session, trainee_id, stage_id, bot)
+            if not success:
+                await callback.message.edit_text("Ошибка при открытии этапа")
+                return
+            action_text = "открыт"
+
+        # Обновляем интерфейс управления этапами
+        await update_stages_management_interface(callback, session, trainee_id)
+        
+        log_user_action(callback.from_user.id, "stage_toggled", f"Этап {stage_id} {action_text} для стажера {trainee_id}")
+
+    except Exception as e:
+        log_user_error(callback.from_user.id, "toggle_stage_error", str(e))
+        await callback.message.edit_text("Произошла ошибка при изменении статуса этапа")
+
+
+@router.callback_query(F.data.startswith("stage_available_stub:"))
+async def callback_stage_available_stub(callback: CallbackQuery):
+    """Заглушка для завершенных этапов"""
+    await callback.answer("Этап уже завершен и не может быть изменен", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("stage_completed_stub:"))
+async def callback_stage_completed_stub(callback: CallbackQuery):
+    """Заглушка для завершенных этапов"""
+    await callback.answer("Этап завершен и не может быть изменен", show_alert=True)
+
+
+async def update_stages_management_interface(callback: CallbackQuery, session: AsyncSession, trainee_id: int):
+    """Обновление интерфейса управления этапами (вынесенная логика)"""
+    try:
+        # Получаем траекторию стажера
+        trainee_path = await get_trainee_learning_path(session, trainee_id)
+        if not trainee_path:
+            await callback.message.edit_text("Траектория не найдена")
+            return
+
+        # Получаем этапы
+        stages_progress = await get_trainee_stage_progress(session, trainee_path.id)
+
+        # Формируем информацию об этапах
+        stages_info = ""
+        keyboard_buttons = []
+
+        for stage_progress in stages_progress:
+            stage = stage_progress.stage
+            status_icon = "🟢" if stage_progress.is_completed else ("🟡" if stage_progress.is_opened else "⏺️")
+            
+            status_text = "Пройден" if stage_progress.is_completed else ("Открыт" if stage_progress.is_opened else "Закрыт")
+
+            stages_info += f"{status_icon}<b>Этап {stage.order_number}:</b> {stage.name}\n"
+            stages_info += f"   📊 Статус: {status_text}\n"
+
+            # Добавляем кнопки для всех этапов с toggle-функциональностью
+            if not stage_progress.is_opened:
+                # Кнопка для закрытых этапов
+                keyboard_buttons.append([
+                    InlineKeyboardButton(
+                        text=f"🔓 Открыть этап {stage.order_number}",
+                        callback_data=f"toggle_stage:{trainee_id}:{stage.id}"
+                    )
+                ])
+            elif stage_progress.is_opened and not stage_progress.is_completed:
+                # Кнопка для открытых этапов (можно закрыть)
+                keyboard_buttons.append([
+                    InlineKeyboardButton(
+                        text=f"🔒 Закрыть этап {stage.order_number}",
+                        callback_data=f"toggle_stage:{trainee_id}:{stage.id}"
+                    )
+                ])
+            elif stage_progress.is_completed:
+                # Завершенные этапы нельзя закрыть
+                keyboard_buttons.append([
+                    InlineKeyboardButton(
+                        text=f"✅ Этап {stage.order_number} завершен",
+                        callback_data=f"stage_completed_stub:{trainee_id}:{stage.id}"
+                    )
+                ])
+
+        trainee = await get_user_by_id(session, trainee_id)
+        
+        # Получаем результаты тестов для правильной индикации
+        test_results = await get_user_test_results(session, trainee_id)
+        
+        # Формируем полную информацию согласно ТЗ шаг 6
+        header_info = (
+            f"🦸🏻‍♂️ <b>Стажер:</b> {trainee.full_name}\n"
+            f"<b>Траектория:</b> {trainee_path.learning_path.name if trainee_path else 'не выбрана'}\n\n\n"
+            f"<b>Телефон:</b> {trainee.phone_number}\n"
+            f"<b>Username:</b> @{trainee.username or 'не указан'}\n"
+            f"<b>Номер:</b> #{trainee_id}\n"
+            f"<b>Дата регистрации:</b> {trainee.registration_date.strftime('%d.%m.%Y %H:%M')}\n\n\n"
+            "━━━━━━━━━━━━\n\n\n"
+            "🗂️ <b>Статус:</b>\n"
+            f"<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
+            f"<b>Роль:</b> {', '.join([role.name for role in trainee.roles])}\n\n\n"
+            "━━━━━━━━━━━━\n\n\n"
+            "📍 <b>Объект:</b>\n"
+            f"<b>Стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
+            f"<b>Работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n\n"
+            "🗺️<b>Управление траекторией</b>\n\n"
+        )
+        
+        # Добавляем полную траекторию согласно ТЗ
+        trajectory_progress = generate_trajectory_progress_for_mentor(trainee_path, stages_progress, test_results)
+        header_info += trajectory_progress + "\n"
+        header_info += "🟡 <b>Какой этап необходимо открыть стажеру?</b>"
+
+        # Добавляем кнопку "Назад" к выбору траектории
+        keyboard_buttons.append([
+            InlineKeyboardButton(text="⬅️ Назад", callback_data=f"select_trainee_for_trajectory:{trainee_id}")
+        ])
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+
+        await callback.message.edit_text(
+            header_info,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        log_user_error(callback.from_user.id, "update_stages_interface_error", str(e))
+        await callback.message.edit_text("Ошибка при обновлении интерфейса")
 

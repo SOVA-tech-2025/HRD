@@ -1,12 +1,13 @@
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.db import get_user_by_tg_id, get_user_roles, check_user_permission
 from handlers.auth import check_auth
 from keyboards.keyboards import format_help_message
+from utils.logger import logger, log_user_action
 
 router = Router()
 
@@ -127,3 +128,124 @@ async def button_profile(message: Message, state: FSMContext, session: AsyncSess
 @router.message(F.text.in_(["Помощь", "❓ Помощь", "Помощь ❓"]))
 async def button_help(message: Message, state: FSMContext, session: AsyncSession):
     await cmd_help(message, state, session)
+
+@router.callback_query(F.data == "main_menu")
+async def process_main_menu(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Универсальный обработчик возврата в главное меню с обновлением клавиатуры согласно роли"""
+    try:
+        # Получаем пользователя
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.answer("❌ Пользователь не найден", show_alert=True)
+            return
+
+        if not user.is_active:
+            await callback.answer("❌ Ваш аккаунт деактивирован", show_alert=True)
+            return
+
+        # Получаем роли пользователя
+        roles = await get_user_roles(session, user.id)
+        if not roles:
+            await callback.answer("❌ Роли не назначены", show_alert=True)
+            return
+
+        # Определяем приоритетную роль
+        role_priority = {
+            "Руководитель": 5,
+            "Рекрутер": 4, 
+            "Наставник": 3,
+            "Сотрудник": 2,
+            "Стажер": 1
+        }
+        
+        primary_role = max(roles, key=lambda r: role_priority.get(r.name, 0))
+        
+        # Получаем клавиатуру согласно роли
+        from keyboards.keyboards import get_keyboard_by_role
+        keyboard = get_keyboard_by_role(primary_role.name)
+        
+        # Отправляем новое сообщение с правильной клавиатурой (ReplyKeyboardMarkup нельзя использовать в edit_text)
+        await callback.message.answer(
+            "🏠 <b>Главное меню</b>\n\n"
+            "Используйте команды бота или кнопки клавиатуры для навигации по системе.",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+        # Удаляем старое inline сообщение
+        try:
+            await callback.message.delete()
+        except:
+            pass
+        
+        # Очищаем состояние
+        await state.clear()
+        await callback.answer()
+        
+        # Логируем действие
+        log_user_action(callback.from_user.id, callback.from_user.username, "returned_to_main_menu")
+        
+    except Exception as e:
+        logger.error(f"Ошибка в process_main_menu: {e}")
+        await callback.answer("❌ Ошибка при возврате в главное меню", show_alert=True)
+
+
+@router.callback_query(F.data == "reload_menu")
+async def process_reload_menu(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик кнопки 'Перезагрузка' - обновляет клавиатуру согласно роли пользователя"""
+    try:
+        # Получаем пользователя
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.answer("❌ Пользователь не найден", show_alert=True)
+            return
+
+        if not user.is_active:
+            await callback.answer("❌ Ваш аккаунт деактивирован", show_alert=True)
+            return
+
+        # Получаем роли пользователя
+        roles = await get_user_roles(session, user.id)
+        if not roles:
+            await callback.answer("❌ Роли не назначены", show_alert=True)
+            return
+
+        # Определяем приоритетную роль
+        role_priority = {
+            "Руководитель": 5,
+            "Рекрутер": 4, 
+            "Наставник": 3,
+            "Сотрудник": 2,
+            "Стажер": 1
+        }
+        
+        primary_role = max(roles, key=lambda r: role_priority.get(r.name, 0))
+        
+        # Получаем клавиатуру согласно роли
+        from keyboards.keyboards import get_keyboard_by_role
+        keyboard = get_keyboard_by_role(primary_role.name)
+        
+        # Отправляем новое сообщение с правильной клавиатурой
+        await callback.message.answer(
+            "🔄 <b>Клавиатура обновлена</b>\n\n"
+            "Ваша клавиатура обновлена согласно текущей роли. Используйте кнопки для навигации по системе.",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+        # Удаляем старое inline сообщение
+        try:
+            await callback.message.delete()
+        except:
+            pass
+        
+        # Очищаем состояние
+        await state.clear()
+        await callback.answer()
+        
+        # Логируем действие
+        log_user_action(callback.from_user.id, callback.from_user.username, "reloaded_menu")
+        
+    except Exception as e:
+        logger.error(f"Ошибка в process_reload_menu: {e}")
+        await callback.answer("❌ Ошибка при обновлении клавиатуры", show_alert=True)

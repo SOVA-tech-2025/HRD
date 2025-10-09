@@ -11,6 +11,7 @@ from database.db import init_db
 from handlers import auth, registration, common, admin, role_permissions, tests, mentorship, test_taking, groups, objects, user_activation, user_edit, learning_paths, mentor_assignment, trainee_trajectory, manager_attestation, manager_menu, employee_transition, broadcast, knowledge_base, fallback
 from middlewares.db_middleware import DatabaseMiddleware
 from middlewares.role_middleware import RoleMiddleware
+from middlewares.bot_middleware import BotMiddleware
 from utils.errors import router as error_router
 from utils.config_validator import validate_env_vars
 from utils.logger import logger
@@ -51,6 +52,7 @@ dp.include_router(common.router)
 dp.include_router(fallback.router)
 
 dp.update.middleware(DatabaseMiddleware())
+dp.update.middleware(BotMiddleware())
 dp.update.middleware(RoleMiddleware())
 
 async def main():

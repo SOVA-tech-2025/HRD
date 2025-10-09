@@ -72,18 +72,19 @@ def get_trainee_keyboard() -> ReplyKeyboardMarkup:
 def get_recruiter_keyboard() -> ReplyKeyboardMarkup:
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="Мой профиль")],
-            [KeyboardButton(text="Создать тест"), KeyboardButton(text="Открыть список тестов")],
+            [KeyboardButton(text="Мой профиль 🦸🏻‍♂️")],
+            [KeyboardButton(text="Рассылка ✈️")],
+            [KeyboardButton(text="Тесты 📄")],
             [KeyboardButton(text="Назначить наставника")],
-            [KeyboardButton(text="Список Наставников")],
-            [KeyboardButton(text="Список Стажеров")],
-            [KeyboardButton(text="Группы пользователей")],
-            [KeyboardButton(text="Объекты")],
-            [KeyboardButton(text="Траектории")],
-            [KeyboardButton(text="База знаний")],
-            [KeyboardButton(text="Список новых пользователей")],
-            [KeyboardButton(text="Все пользователи")],
-            [KeyboardButton(text="Помощь")]
+            [KeyboardButton(text="Наставники 🦉")],
+            [KeyboardButton(text="Стажеры 🐣")],
+            [KeyboardButton(text="Группы 🗂️")],
+            [KeyboardButton(text="Объекты 📍")],
+            [KeyboardButton(text="Траектория 📖")],
+            [KeyboardButton(text="База знаний 📁")],
+            [KeyboardButton(text="Все пользователи 🚸")],
+            [KeyboardButton(text="Новые пользователи ➕")],
+            [KeyboardButton(text="Помощь ❓")]
         ],
         resize_keyboard=True
     )
@@ -98,6 +99,7 @@ def get_mentor_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="Мои стажеры 👥")],
             [KeyboardButton(text="Тесты стажеров 📝"), KeyboardButton(text="Мои тесты 📋")],
             [KeyboardButton(text="База знаний 📁")],
+            [KeyboardButton(text="Посмотреть баллы 📊")],
             [KeyboardButton(text="Помощь ❓")]
         ],
         resize_keyboard=True
@@ -294,6 +296,54 @@ def get_yes_no_keyboard(prefix: str) -> InlineKeyboardMarkup:
     return keyboard
 
 
+def get_test_description_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для ввода описания теста с кнопкой Назад"""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="test_back")],
+            [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="description:skip")],
+            [InlineKeyboardButton(text="🚫 Отменить создание теста", callback_data="cancel")]
+        ]
+    )
+    return keyboard
+
+
+def get_test_materials_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для ввода материалов теста с кнопкой Назад"""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="test_back")],
+            [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="materials:skip")],
+            [InlineKeyboardButton(text="🚫 Отменить создание теста", callback_data="cancel")]
+        ]
+    )
+    return keyboard
+
+
+def get_materials_choice_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для выбора добавления материалов с кнопкой Назад"""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Да", callback_data="materials:yes")],
+            [InlineKeyboardButton(text="❌ Нет", callback_data="materials:no")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="test_back")],
+            [InlineKeyboardButton(text="🚫 Отменить создание теста", callback_data="cancel")]
+        ]
+    )
+    return keyboard
+
+
+def get_test_created_success_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура после успешного создания теста"""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📋 К списку тестов", callback_data="list_tests")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+        ]
+    )
+    return keyboard
+
+
 def get_question_type_keyboard(is_creating_test: bool = True) -> InlineKeyboardMarkup:
     """Клавиатура для выбора типа вопроса"""
     keyboard_buttons = [
@@ -340,8 +390,7 @@ def get_test_filter_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="🗂️ Мои тесты", callback_data="test_filter:my"),
                 InlineKeyboardButton(text="📚 Все тесты", callback_data="test_filter:all")
             ],
-            [InlineKeyboardButton(text="✉️ Рассылка", callback_data="test_filter:broadcast")],
-            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_tests_menu")]
         ]
     )
     return keyboard
@@ -358,7 +407,7 @@ def get_simple_test_selection_keyboard(tests: list) -> InlineKeyboardMarkup:
         )
         keyboard.append([button])
     
-    keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
+    keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_tests_menu")])
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -751,6 +800,7 @@ def format_help_message(role_name: str) -> str:
 • <b>Тесты стажеров 📝</b> — посмотреть тесты, доступные для назначения стажерам
 • <b>Мои тесты 📋</b> — пройти тесты, назначенные рекрутером через рассылку
 • <b>База знаний 📁</b> — получить доступ к корпоративным материалам
+• <b>Посмотреть баллы 📊</b> — посмотреть результаты пройденных тестов
 
 <b>Возможности:</b>
 • Назначение траекторий обучения своим стажерам
@@ -768,16 +818,18 @@ def format_help_message(role_name: str) -> str:
 Твоя задача — создавать контент для обучения и управлять процессом наставничества.
 
 <b>Основные функции:</b>
-• <b>Мой профиль</b> — посмотреть информацию о себе
-• <b>Создать тест</b> — запустить мастер создания нового теста
-• <b>Открыть список тестов</b> — управлять всеми тестами в системе
+• <b>Мой профиль 🦸🏻‍♂️</b> — посмотреть информацию о себе
+• <b>Рассылка ✈️</b> — массовая рассылка тестов сотрудникам по группам
+• <b>Тесты 📄</b> — управление тестами (создание и просмотр)
 • <b>Назначить наставника</b> — назначить наставника новому стажеру
-• <b>Траектории</b> — создавать и управлять траекториями обучения
-• <b>База знаний</b> — управлять корпоративными материалами
-• <b>Список новых пользователей</b> — активировать новых пользователей
-• <b>Все пользователи</b> — редактировать данные пользователей
-• <b>Группы пользователей</b> — управлять группами сотрудников
-• <b>Объекты</b> — управлять объектами работы
+• <b>Наставники 🦉</b> — просмотреть список наставников
+• <b>Стажеры 🐣</b> — просмотреть список стажеров
+• <b>Группы 🗂️</b> — управлять группами сотрудников
+• <b>Объекты 📍</b> — управлять объектами работы
+• <b>Траектория 📖</b> — создавать и управлять траекториями обучения
+• <b>База знаний 📁</b> — управлять корпоративными материалами
+• <b>Все пользователи 🚸</b> — редактировать данные пользователей
+• <b>Новые пользователи ➕</b> — активировать новых пользователей
 
 <b>Возможности:</b>
 • Создание и управление траекториями обучения
@@ -851,6 +903,7 @@ def get_group_management_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton(text="➕ Создать группу", callback_data="create_group")],
         [InlineKeyboardButton(text="📝 Изменить группу", callback_data="manage_edit_group")],
+        [InlineKeyboardButton(text="🗑️ Удалить группу", callback_data="manage_delete_group")],
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -908,6 +961,61 @@ def get_group_rename_confirmation_keyboard(group_id: int) -> InlineKeyboardMarku
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
+def get_group_delete_selection_keyboard(groups: list, page: int = 0, per_page: int = 5) -> InlineKeyboardMarkup:
+    """Клавиатура для выбора группы для удаления с пагинацией"""
+    keyboard = []
+    
+    # Пагинация
+    start_index = page * per_page
+    end_index = start_index + per_page
+    page_groups = groups[start_index:end_index]
+    
+    # Кнопки групп
+    for group in page_groups:
+        button = InlineKeyboardButton(
+            text=f"🗂️ {group.name}",
+            callback_data=f"delete_group:{group.id}"
+        )
+        keyboard.append([button])
+    
+    # Навигационные кнопки
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"delete_group_page:{page-1}"))
+    if end_index < len(groups):
+        nav_buttons.append(InlineKeyboardButton(text="Вперёд ➡️", callback_data=f"delete_group_page:{page+1}"))
+    
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+    
+    # Информация о страницах
+    total_pages = (len(groups) + per_page - 1) // per_page
+    if total_pages > 1:
+        page_info = InlineKeyboardButton(
+            text=f"📄 {page + 1}/{total_pages}",
+            callback_data="page_info"
+        )
+        keyboard.append([page_info])
+    
+    # Кнопки управления
+    keyboard.append([
+        InlineKeyboardButton(text="❌ Отменить", callback_data="cancel_delete_group"),
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")
+    ])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_group_delete_confirmation_keyboard(group_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура подтверждения удаления группы"""
+    keyboard = [
+        [InlineKeyboardButton(text="🗑️ Да, удалить", callback_data=f"confirm_delete_group:{group_id}")],
+        [InlineKeyboardButton(text="❌ Отменить", callback_data="cancel_delete_group")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
 def get_main_menu_keyboard() -> InlineKeyboardMarkup:
     """Простая клавиатура с кнопкой 'Главное меню'"""
     keyboard = [
@@ -923,8 +1031,9 @@ def get_main_menu_keyboard() -> InlineKeyboardMarkup:
 def get_object_management_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура для управления объектами"""
     keyboard = [
-        [InlineKeyboardButton(text="Создать объект", callback_data="create_object")],
-        [InlineKeyboardButton(text="Изменить объект", callback_data="edit_object")],
+        [InlineKeyboardButton(text="➕ Создать объект", callback_data="create_object")],
+        [InlineKeyboardButton(text="✏️ Изменить объект", callback_data="edit_object")],
+        [InlineKeyboardButton(text="🗑️ Удалить объект", callback_data="manage_delete_object")],
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -994,6 +1103,53 @@ def get_object_rename_confirmation_keyboard(object_id: int) -> InlineKeyboardMar
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
+def get_object_delete_selection_keyboard(objects: list, page: int = 0, per_page: int = 5) -> InlineKeyboardMarkup:
+    """Клавиатура для выбора объекта для удаления с пагинацией"""
+    keyboard = []
+    
+    # Добавляем объекты для текущей страницы
+    start_idx = page * per_page
+    end_idx = start_idx + per_page
+    page_objects = objects[start_idx:end_idx]
+    
+    for obj in page_objects:
+        keyboard.append([InlineKeyboardButton(
+            text=f"🗑️ {obj.name}",
+            callback_data=f"delete_object:{obj.id}"
+        )])
+    
+    # Добавляем кнопки навигации если нужно
+    total_pages = (len(objects) + per_page - 1) // per_page
+    nav_buttons = []
+    
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"object_delete_page:{page-1}"))
+    
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton(text="Вперёд ➡️", callback_data=f"object_delete_page:{page+1}"))
+    
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+    
+    # Кнопки управления
+    keyboard.extend([
+        [InlineKeyboardButton(text="❌ Отменить", callback_data="cancel_object_delete")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_object_delete_confirmation_keyboard(object_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура для подтверждения удаления объекта"""
+    keyboard = [
+        [InlineKeyboardButton(text="🗑️ Да, удалить", callback_data=f"confirm_object_delete:{object_id}")],
+        [InlineKeyboardButton(text="❌ Отменить", callback_data="cancel_object_delete")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
 def get_user_editor_keyboard(is_trainee: bool = False) -> InlineKeyboardMarkup:
     """Клавиатура для редактора пользователя"""
     keyboard = [
@@ -1008,7 +1164,7 @@ def get_user_editor_keyboard(is_trainee: bool = False) -> InlineKeyboardMarkup:
         keyboard.append([InlineKeyboardButton(text="1️⃣Объект стажировки", callback_data="edit_internship_object")])
     
     keyboard.append([InlineKeyboardButton(text="2️⃣Объект работы", callback_data="edit_work_object")])
-    keyboard.append([InlineKeyboardButton(text="Главное меню", callback_data="edit_return_to_menu")])
+    keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="edit_return_to_menu")])
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -1028,9 +1184,9 @@ def get_learning_paths_main_keyboard() -> InlineKeyboardMarkup:
     """Главное меню редактора траекторий"""
     keyboard = [
         [InlineKeyboardButton(text="➕Создать", callback_data="create_trajectory")],
-        [InlineKeyboardButton(text="✏️Изменить", callback_data="edit_trajectory")],
+        [InlineKeyboardButton(text="👁️Просмотреть", callback_data="edit_trajectory")],
         [InlineKeyboardButton(text="🔍Аттестации", callback_data="manage_attestations")],
-        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -1039,7 +1195,7 @@ def get_trajectory_creation_start_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура для начала создания траектории"""
     keyboard = [
         [InlineKeyboardButton(text="Начать", callback_data="start_trajectory_creation")],
-        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -1121,7 +1277,7 @@ def get_session_management_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="Добавить сессию", callback_data="add_session")],
         [InlineKeyboardButton(text="Новый Этап", callback_data="add_stage")],
         [InlineKeyboardButton(text="Сохранить траекторию", callback_data="save_trajectory")],
-        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -1185,7 +1341,7 @@ def get_attestations_main_keyboard(attestations: list) -> InlineKeyboardMarkup:
             callback_data=f"view_attestation:{attestation.id}"
         )])
     
-    keyboard.append([InlineKeyboardButton(text="Главное меню", callback_data="main_menu")])
+    keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -1194,7 +1350,7 @@ def get_attestation_creation_start_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура для начала создания аттестации"""
     keyboard = [
         [InlineKeyboardButton(text="Далее⏩", callback_data="start_attestation_creation")],
-        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -1387,7 +1543,7 @@ def get_knowledge_base_main_keyboard(has_folders: bool = False) -> InlineKeyboar
     """Основная клавиатура базы знаний для рекрутера (ТЗ 9-1 шаг 2)"""
     keyboard = [
         [InlineKeyboardButton(text="Создать папку", callback_data="kb_create_folder")],
-        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
     ]
     
     # Если папки есть, показываем их кнопки будут добавлены динамически
@@ -1401,7 +1557,7 @@ def get_knowledge_folders_keyboard(folders: list, show_create: bool = True) -> I
     # Кнопки управления
     if show_create:
         keyboard.append([InlineKeyboardButton(text="Создать папку", callback_data="kb_create_folder")])
-    keyboard.append([InlineKeyboardButton(text="Главное меню", callback_data="main_menu")])
+    keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
     
     # Папки (максимум 4-5 для читабельности)
     for folder in folders:
@@ -1418,7 +1574,7 @@ def get_folder_created_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура после создания папки (ТЗ 9-1 шаг 6)"""
     keyboard = [
         [InlineKeyboardButton(text="Добавить материал", callback_data="kb_add_material")],
-        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -1427,7 +1583,7 @@ def get_material_description_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура для пропуска описания материала (ТЗ 9-1 шаг 12)"""
     keyboard = [
         [InlineKeyboardButton(text="⏩Пропустить", callback_data="kb_skip_description")],
-        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -1445,7 +1601,7 @@ def get_material_saved_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура после сохранения материала (ТЗ 9-1 шаг 16)"""
     keyboard = [
         [InlineKeyboardButton(text="Добавить материал", callback_data="kb_add_material")],
-        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -1468,7 +1624,7 @@ def get_folder_view_keyboard(folder_id: int, materials: list) -> InlineKeyboardM
         [InlineKeyboardButton(text="Доступ", callback_data=f"kb_access:{folder_id}")],
         [InlineKeyboardButton(text="Удалить папку", callback_data=f"kb_delete_folder:{folder_id}")],
         [InlineKeyboardButton(text="Изменить название", callback_data=f"kb_rename_folder:{folder_id}")],
-        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
     ])
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -1479,7 +1635,7 @@ def get_material_view_keyboard(material_id: int) -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton(text="Удалить материал", callback_data=f"kb_delete_material:{material_id}")],
         [InlineKeyboardButton(text="Назад", callback_data="kb_back")],
-        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -1489,7 +1645,7 @@ def get_material_delete_confirmation_keyboard(material_id: int) -> InlineKeyboar
     keyboard = [
         [InlineKeyboardButton(text="✅Да, удалить", callback_data=f"kb_confirm_delete_material:{material_id}")],
         [InlineKeyboardButton(text="🚫Нет, отмена", callback_data="kb_cancel_delete")],
-        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -1533,7 +1689,7 @@ def get_folder_delete_confirmation_keyboard(folder_id: int) -> InlineKeyboardMar
     keyboard = [
         [InlineKeyboardButton(text="✅Да, удалить", callback_data=f"kb_confirm_delete_folder:{folder_id}")],
         [InlineKeyboardButton(text="🚫Нет, отмена", callback_data="kb_cancel_delete")],
-        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -1541,7 +1697,7 @@ def get_folder_delete_confirmation_keyboard(folder_id: int) -> InlineKeyboardMar
 def get_folder_deleted_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура после удаления папки (ТЗ 9-5 шаг 7)"""
     keyboard = [
-        [InlineKeyboardButton(text="Главное меню", callback_data="main_menu")]
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -1599,5 +1755,24 @@ def get_mentor_contact_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton(text="👨‍🏫 Связь с наставником", callback_data="contact_mentor")],
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_tests_main_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для управления тестами (ракировка из главного меню)"""
+    keyboard = [
+        [InlineKeyboardButton(text="➕ Создать новый", callback_data="create_test")],
+        [InlineKeyboardButton(text="📋 Список тестов", callback_data="list_tests")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_fallback_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для fallback сообщений с неожиданным вводом"""
+    keyboard = [
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="fallback_back")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard) 

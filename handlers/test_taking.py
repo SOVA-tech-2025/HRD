@@ -7,14 +7,18 @@ import json
 import random
 from datetime import datetime
 
+
+
 from database.db import (
     get_trainee_available_tests, get_user_available_tests, get_user_test_results, check_user_permission,
     get_user_by_tg_id, get_test_by_id, check_test_access, get_user_test_result,
     get_test_questions, save_test_result, get_user_test_attempts_count, can_user_take_test,
     get_trainee_learning_path, get_trainee_stage_progress, get_stage_session_progress,
     complete_session_for_trainee, complete_stage_for_trainee, get_user_by_id,
-    get_trainee_attestation_status, get_user_roles, get_employee_tests_from_recruiter
+    get_trainee_attestation_status, get_user_roles, get_employee_tests_from_recruiter,
+    get_user_mentor
 )
+from handlers.mentorship import get_days_word
 from database.models import InternshipStage, TestResult
 from sqlalchemy import select
 from keyboards.keyboards import get_simple_test_selection_keyboard, get_test_start_keyboard, get_test_selection_for_taking_keyboard, get_mentor_contact_keyboard
@@ -61,8 +65,8 @@ async def cmd_trajectory_tests(message: Message, state: FSMContext, session: Asy
     if not available_tests:
         await message.answer(
             "🗺️ <b>Тесты траектории</b>\n\n"
-            "У вас пока нет доступных тестов для прохождения.\n"
-            "Обратитесь к наставнику для получения доступа к тестам.",
+            "У тебя пока нет доступных тестов для прохождения.\n"
+            "Обратись к наставнику для получения доступа к тестам.",
             parse_mode="HTML"
         )
         return
@@ -143,38 +147,33 @@ async def cmd_trainee_broadcast_tests(message: Message, state: FSMContext, sessi
             # Адаптируем сообщение в зависимости от роли
             if is_trainee:
                 no_tests_message = (
-                    "📋 <b>Мои тесты</b>\n\n"
-                    "❌ У тебя пока нет индивидуальных тестов.\n\n"
-                    "📝 <b>Откуда берутся тесты:</b>\n"
-                    "• Рекрутер назначает тесты через массовую рассылку\n"
-                    "• Наставник может дать индивидуальный тест вне траектории\n"
-                    "• Тесты траектории находятся в отдельной кнопке 'Тесты траектории 🗺️'\n\n"
-                    "Ожидай назначения новых тестов от рекрутера или наставника."
+                    "❌ Пока новых тестов нет\n"
+                    "Когда появятся, тебе придёт уведомление"
                 )
             elif is_mentor:
                 no_tests_message = (
-                    "📋 <b>Мои тесты</b>\n\n"
-                    "❌ У тебя пока нет тестов от рекрутера.\n\n"
-                    "📝 <b>Откуда берутся тесты:</b>\n"
-                    "• Рекрутер назначает тесты через массовую рассылку по группам\n\n"
-                    "Ожидай назначения новых тестов от рекрутера."
+                    "❌ Пока новых тестов нет\n"
+                    "Когда появятся, тебе придёт уведомление"
                 )
             elif is_employee:
                 no_tests_message = (
-                    "📋 <b>Мои тесты</b>\n\n"
-                    "❌ У тебя пока нет тестов от рекрутера.\n\n"
-                    "📝 <b>Откуда берутся тесты:</b>\n"
-                    "• Рекрутер назначает тесты через массовую рассылку по группам\n\n"
-                    "Ожидай назначения новых тестов от рекрутера."
+                    "❌ Пока новых тестов нет\n"
+                    "Когда появятся, тебе придёт уведомление"
                 )
             else:
                 no_tests_message = (
-                    "📋 <b>Мои тесты</b>\n\n"
-                    "❌ У тебя пока нет тестов.\n\n"
-                    "Ожидай назначения новых тестов от рекрутера."
+                    "❌ Пока новых тестов нет\n"
+                    "Когда появятся, тебе придёт уведомление"
                 )
             
-            await message.answer(no_tests_message, parse_mode="HTML")
+            # Добавляем кнопку "Главное меню" для всех ролей
+            await message.answer(
+                no_tests_message, 
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+                ])
+            )
             return
             
         # Формируем список доступных тестов (включая пройденные для пересдачи)
@@ -235,13 +234,8 @@ async def cmd_trainee_broadcast_tests(message: Message, state: FSMContext, sessi
         await message.answer("Произошла ошибка при получении списка тестов")
         log_user_error(message.from_user.id, "my_tests_error", str(e))
 
-@router.message(F.text.in_(["Посмотреть баллы", "📊 Посмотреть баллы", "Посмотреть баллы 📊"]))
-async def cmd_view_scores(message: Message, state: FSMContext, session: AsyncSession):
-    """Обработчик команды просмотра баллов стажера"""
-    is_auth = await check_auth(message, state, session)
-    if not is_auth:
-        return
-    
+async def show_user_test_scores(message: Message, session: AsyncSession) -> None:
+    """Универсальная функция для показа результатов тестирования пользователя"""
     user = await get_user_by_tg_id(session, message.from_user.id)
     if not user:
         await message.answer("Вы не зарегистрированы в системе.")
@@ -252,13 +246,22 @@ async def cmd_view_scores(message: Message, state: FSMContext, session: AsyncSes
         await message.answer("У вас нет прав для просмотра результатов тестов.")
         return
     
+    # Определяем роль пользователя
+    user_roles = [role.name for role in user.roles]
+    if "Стажер" in user_roles:
+        user_role = "стажер"
+    elif "Наставник" in user_roles:
+        user_role = "наставник"
+    else:
+        user_role = "пользователь"
+    
     test_results = await get_user_test_results(session, user.id)
     
     if not test_results:
         await message.answer(
-            "📊 <b>Ваши результаты</b>\n\n"
-            "Вы пока не проходили тестов.\n"
-            "Используйте кнопку 'Мои тесты 📋' для прохождения доступных тестов.",
+            f"📊 <b>Ваши результаты</b>\n\n"
+            f"Вы пока не проходили тестов.\n"
+            f"Используйте кнопку 'Мои тесты 📋' для прохождения доступных тестов.",
             parse_mode="HTML"
         )
         return
@@ -270,15 +273,15 @@ async def cmd_view_scores(message: Message, state: FSMContext, session: AsyncSes
     
     for result in test_results:
         test = await get_test_by_id(session, result.test_id)
-        status = "✅ Пройден" if result.is_passed else "❌ Не пройден"
+        status = "пройден" if result.is_passed else "не пройден"
         percentage = (result.score / result.max_possible_score * 100) if result.max_possible_score > 0 else 0
         
         results_list.append(
-            f"📋 <b>{test.name if test else 'Неизвестный тест'}</b>\n"
-            f"   📊 Баллы: {result.score}/{result.max_possible_score} ({percentage:.1f}%)\n"
-            f"   {status}\n"
-            f"   📅 Дата: {result.created_date.strftime('%d.%m.%Y %H:%M')}\n"
-            f"   ⏱️ Время: {(result.end_time - result.start_time).total_seconds():.0f} сек"
+            f"<b>Тест:</b> {test.name if test else 'Неизвестный тест'}\n"
+            f"• Баллы: {result.score}/{result.max_possible_score} ({percentage:.1f}%)\n"
+            f"• Статус: {status}\n"
+            f"• Дата: {result.created_date.strftime('%d.%m.%Y %H:%M')}\n"
+            f"• Время: {(result.end_time - result.start_time).total_seconds():.0f} сек"
         )
         
         total_score += result.score
@@ -290,19 +293,76 @@ async def cmd_view_scores(message: Message, state: FSMContext, session: AsyncSes
     # Статистика прогресса
     success_rate = (passed_count / total_tests_taken * 100) if total_tests_taken > 0 else 0
     
+    # Формируем клавиатуру в зависимости от роли
+    keyboard = []
+    if user_role == "стажер":
+        # Для стажера добавляем кнопку связи с наставником
+        mentor = await get_user_mentor(session, user.id)
+        if mentor:
+            keyboard.append([InlineKeyboardButton(text="✍️ Написать наставнику", url=f"tg://user?id={mentor.tg_id}")])
+    
+    keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
+    
+    # Формируем контекстную информацию о пользователе
+    days_in_status = (datetime.now() - user.role_assigned_date).days
+    days_text = get_days_word(days_in_status)
+    
+    if user_role == "стажер":
+        context_info = (
+            f"🦸🏻‍♂️<b>Стажер:</b> {user.full_name}\n\n"
+            f"<b>Телефон:</b> {user.phone_number}\n"
+            f"<b>В статусе стажера:</b> {days_in_status} {days_text}\n"
+            f"<b>Объект стажировки:</b> {user.internship_object.name if user.internship_object else 'Не указан'}\n"
+            f"<b>Объект работы:</b> {user.work_object.name if user.work_object else 'Не указан'}\n\n"
+            f"━━━━━━━━━━━━\n\n"
+        )
+    else:
+        context_info = (
+            f"👨‍🏫<b>Наставник:</b> {user.full_name}\n\n"
+            f"<b>Телефон:</b> {user.phone_number}\n"
+            f"<b>В статусе наставника:</b> {days_in_status} {days_text}\n"
+            f"<b>Объект стажировки:</b> {user.internship_object.name if user.internship_object else 'Не указан'}\n"
+            f"<b>Объект работы:</b> {user.work_object.name if user.work_object else 'Не указан'}\n\n"
+            f"━━━━━━━━━━━━\n\n"
+        )
+    
+    # Формируем сообщение в зависимости от роли
+    if user_role == "стажер":
+        message_text = (
+            f"{context_info}"
+            f"📊 <b>Общая статистика</b>\n"
+            f"• Пройдено тестов: {passed_count}/{total_tests_taken}\n"
+            f"• Процент успеха: {success_rate:.1f}%\n\n"
+            f"🧾 <b>Детальные результаты</b>\n{results_text}\n\n"
+            f"💡 <b>Совет:</b>\nОбратитесь к наставнику для получения доступа к новым тестам!"
+        )
+    else:
+        message_text = (
+            f"{context_info}"
+            f"📊 <b>Общая статистика</b>\n"
+            f"• Пройдено тестов: {passed_count}/{total_tests_taken}\n"
+            f"• Процент успеха: {success_rate:.1f}%\n\n"
+            f"🧾 <b>Детальные результаты</b>\n{results_text}\n\n"
+            f"💡 <b>Совет:</b>\nПродолжайте развиваться и помогайте своим стажерам!"
+        )
+    
     await message.answer(
-        f"📊 <b>Ваши результаты тестирования</b>\n\n"
-        f"📈 <b>Общая статистика:</b>\n"
-        f"• Пройдено тестов: {passed_count}/{total_tests_taken}\n"
-        f"• Процент успеха: {success_rate:.1f}%\n"
-        f"• Общий набранный балл: {total_score}\n"
-        f"• Последний тест: {test_results[0].created_date.strftime('%d.%m.%Y') if test_results else 'Нет'}\n\n"
-        f"📋 <b>Детальные результаты:</b>\n\n{results_text}\n\n"
-        f"💡 <b>Совет:</b> Обратитесь к наставнику для получения доступа к новым тестам!",
-        parse_mode="HTML"
+        message_text,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard) if keyboard else None
     )
     
-    log_user_action(message.from_user.id, message.from_user.username, "viewed test results")
+    log_user_action(message.from_user.id, message.from_user.username, f"viewed test results as {user_role}")
+
+
+@router.message(F.text.in_(["Посмотреть баллы", "📊 Посмотреть баллы", "Посмотреть баллы 📊"]))
+async def cmd_view_scores(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработчик команды просмотра баллов (универсальный для стажера и наставника)"""
+    is_auth = await check_auth(message, state, session)
+    if not is_auth:
+        return
+    
+    await show_user_test_scores(message, session)
 
 @router.callback_query(TestTakingStates.waiting_for_test_selection, F.data.startswith("test:"))
 async def process_test_selection_for_taking(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
@@ -322,7 +382,7 @@ async def process_test_selection_for_taking(callback: CallbackQuery, state: FSMC
     if not has_access:
         await callback.message.edit_text(
             "❌ <b>Доступ запрещен</b>\n\n"
-            "У вас нет доступа к этому тесту. Обратитесь к наставнику.",
+            "У тебя нет доступа к этому тесту. Обратись к наставнику.",
             parse_mode="HTML"
         )
         await callback.answer()
@@ -349,7 +409,8 @@ async def process_test_selection_for_taking(callback: CallbackQuery, state: FSMC
     if test.material_link:
         if test.material_file_path:
             # Если есть прикрепленный файл
-            materials_info = f"📚 <b>Материалы для изучения:</b>\n🔗 {test.material_link}\n\n"
+            material_display = test.material_link.replace("Файл: ", "") if test.material_link else ""
+            materials_info = f"📚 <b>Материалы для изучения:</b>\n🔗 {material_display}\n\n"
         else:
             # Если это ссылка
             materials_info = f"📚 <b>Материалы для изучения:</b>\n{test.material_link}\n\n"
@@ -377,7 +438,7 @@ async def process_test_selection_for_taking(callback: CallbackQuery, state: FSMC
 📌 <b>Название:</b> {test.name}
 📝 <b>Описание:</b> {test.description or 'Не указано'}
 {stage_info}❓ <b>Количество вопросов:</b> {questions_count}
-🎯 <b>Порог прохождения:</b> {test.threshold_score} из {test.max_score} баллов
+🎯 <b>Порог:</b> {test.threshold_score}/{test.max_score} баллов
 {attempts_info}{materials_info}{previous_result_info}"""
     
     await callback.message.edit_text(
@@ -436,9 +497,9 @@ async def process_start_test(callback: CallbackQuery, state: FSMContext, session
             f"📋 <b>Тест:</b> {test.name}\n"
             f"❌ <b>Причина:</b> {error_message}{attempts_info}\n\n"
             f"💡 <b>Что делать:</b>\n"
-            f"{'• Обратитесь к наставнику для увеличения лимита попыток' if test.max_attempts > 0 else '• Этот тест можно пройти только один раз'}\n"
-            f"• Изучите материалы к тесту более внимательно\n"
-            f"• Просмотрите свои ошибки в предыдущих попытках",
+            f"{'• Обратись к наставнику для увеличения лимита попыток' if test.max_attempts > 0 else '• Этот тест можно пройти только один раз'}\n"
+            f"• Изучи материалы к тесту более внимательно\n"
+            f"• Просмотри свои ошибки в предыдущих попытках",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="📋 К списку тестов", callback_data="back_to_test_list")]
@@ -450,7 +511,7 @@ async def process_start_test(callback: CallbackQuery, state: FSMContext, session
     
     questions = await get_test_questions(session, test_id)
     if not questions:
-        await callback.message.edit_text("❌ В этом тесте нет вопросов. Обратитесь к наставнику.")
+        await callback.message.edit_text("❌ В этом тесте нет вопросов. Обратись к наставнику.")
         await state.clear()
         return
 
@@ -511,8 +572,7 @@ async def show_question(message: Message, state: FSMContext):
         # Сохраняем порядок вариантов для корректного сопоставления ответов
         await state.update_data(current_options_order=options)
         
-        # Для множественного выбора показываем только инструкцию, без кнопок выбора
-        keyboard.append([InlineKeyboardButton(text="📝 Отправьте номера вариантов через запятую", callback_data="info")])
+        # Для множественного выбора не показываем кнопки - пользователь вводит ответы текстом
     elif question.question_type == 'yes_no':
         keyboard.append([
             InlineKeyboardButton(text="👍 Да", callback_data="answer:Да"),
@@ -556,6 +616,7 @@ async def show_question(message: Message, state: FSMContext):
 @router.message(TestTakingStates.taking_test)
 async def process_text_answer(message: Message, state: FSMContext, session: AsyncSession):
     """Обработка текстового, числового или множественного ответа"""
+    bot = message.bot  # Получаем bot из message
     data = await state.get_data()
     questions = data['questions']
     index = data['current_question_index']
@@ -646,11 +707,12 @@ async def process_text_answer(message: Message, state: FSMContext, session: Asyn
     
     await state.update_data(user_answers=user_answers, answers_details=answers_details)
     
-    await process_next_step(message, state, session)
+    await process_next_step(message, state, session, bot)
 
 @router.callback_query(TestTakingStates.taking_test, F.data.startswith("answer:"))
 async def process_answer_selection(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Обработка ответа на вопрос с выбором"""
+    bot = callback.message.bot  # Получаем bot из callback
     data = await state.get_data()
     questions = data['questions']
     index = data['current_question_index']
@@ -688,10 +750,10 @@ async def process_answer_selection(callback: CallbackQuery, state: FSMContext, s
 
     await state.update_data(user_answers=user_answers, answers_details=answers_details)
     
-    await process_next_step(callback.message, state, session)
+    await process_next_step(callback.message, state, session, bot)
     await callback.answer()
 
-async def process_next_step(message: Message, state: FSMContext, session: AsyncSession):
+async def process_next_step(message: Message, state: FSMContext, session: AsyncSession, bot=None):
     """Переходит к следующему вопросу или завершает тест"""
     data = await state.get_data()
     index = data['current_question_index']
@@ -702,9 +764,9 @@ async def process_next_step(message: Message, state: FSMContext, session: AsyncS
         await state.update_data(current_question_index=new_index)
         await show_question(message, state)
     else:
-        await finish_test(message, state, session)
+        await finish_test(message, state, session, bot)
 
-async def finish_test(message: Message, state: FSMContext, session: AsyncSession):
+async def finish_test(message: Message, state: FSMContext, session: AsyncSession, bot=None):
     """Завершение теста и подсчет результатов"""
     data = await state.get_data()
     questions = data['questions']
@@ -808,24 +870,17 @@ async def finish_test(message: Message, state: FSMContext, session: AsyncSession
     # ВАЖНО: Проверяем завершение этапа ТОЛЬКО для тестов траектории (не для рассылки)
     stage_completion_message = ""
     if is_passed:
-        # Проверяем, является ли тест частью траектории (granted_by НЕ рекрутер)
+        # Проверяем, является ли тест частью траектории (любого этапа)
         is_trajectory_test = await is_test_from_trajectory(session, user.id, test_id)
         if is_trajectory_test:
             logger.info(f"Тест {test_id} - это тест ТРАЕКТОРИИ, проверяем завершение этапа")
-            stage_completion_message = await check_and_notify_stage_completion(session, user.id, test_id)
+            stage_completion_message = await check_and_notify_stage_completion(session, user.id, test_id, bot)
         else:
             logger.info(f"Тест {test_id} - это тест РАССЫЛКИ, пропускаем проверку траектории")
 
     status_text = "✅ <b>Тест успешно пройден!</b>" if is_passed else "❌ <b>Тест не пройден</b>"
     
     keyboard = []
-    # Показываем кнопку "Показать мои ошибки" только если есть ошибки
-    # и тест содержит вопросы с вариантами ответов (не только свободный ввод)
-    if wrong_answers_data:
-        # Проверяем, есть ли в тесте вопросы с вариантами ответов
-        has_choice_questions = any(q.question_type in ['single_choice', 'multiple_choice', 'yes_no'] for q in questions)
-        if has_choice_questions:
-            keyboard.append([InlineKeyboardButton(text="🔍 Показать мои ошибки", callback_data=f"show_errors:{result.id}")])
 
     # ВАЖНО: Показываем прогресс траектории ТОЛЬКО для тестов траектории (не для рассылки)
     progress_info = ""
@@ -845,7 +900,7 @@ async def finish_test(message: Message, state: FSMContext, session: AsyncSession
         if trainee_path:
             stages_progress = await get_trainee_stage_progress(session, trainee_path.id)
 
-            progress_info = f"\n\n🏆<b>Ваш прогресс</b>\n"
+            progress_info = f"\n\n🏆<b>Твой прогресс</b>\n"
             progress_info += f"⏺️<b>Название траектории:</b> {trainee_path.learning_path.name}\n"
 
             for stage_progress in stages_progress:
@@ -964,7 +1019,7 @@ async def finish_test(message: Message, state: FSMContext, session: AsyncSession
     try:
         await message.edit_text(
             f"{status_text}\n"
-            f"Ваш результат: <b>{score}</b> из <b>{test.max_score}</b> баллов.\n"
+            f"Твой результат: <b>{score}</b> из <b>{test.max_score}</b> баллов.\n"
             f"Проходной балл: {test.threshold_score}"
             f"{progress_info}"
             f"{stage_completion_message}",
@@ -976,7 +1031,7 @@ async def finish_test(message: Message, state: FSMContext, session: AsyncSession
         # отправляем новое сообщение
         await message.answer(
             f"{status_text}\n"
-            f"Ваш результат: <b>{score}</b> из <b>{test.max_score}</b> баллов.\n"
+            f"Твой результат: <b>{score}</b> из <b>{test.max_score}</b> баллов.\n"
             f"Проходной балл: {test.threshold_score}"
             f"{progress_info}"
             f"{stage_completion_message}",
@@ -985,26 +1040,6 @@ async def finish_test(message: Message, state: FSMContext, session: AsyncSession
         )
     await state.clear()
 
-@router.callback_query(F.data.startswith("show_errors:"))
-async def show_wrong_answers(callback: CallbackQuery, session: AsyncSession):
-    """Показывает неверные ответы пользователя"""
-    result_id = int(callback.data.split(':')[1])
-    test_result = await session.get(TestResult, result_id)
-    
-    if not test_result or not test_result.wrong_answers:
-        await callback.answer("✅ У вас не было ошибок в этом тесте!", show_alert=True)
-        return
-        
-    errors_text = "<b>🔍 Ваши ошибки:</b>\n\n"
-    for i, error in enumerate(test_result.wrong_answers, 1):
-        errors_text += (
-            f"<b>{i}. Вопрос:</b> {error['question']}\n"
-            f"   - Ваш ответ: <code>{error['user_answer']}</code>\n"
-            f"   - Правильный ответ: <code>{error['correct_answer']}</code>\n\n"
-        )
-        
-    await callback.message.answer(errors_text, parse_mode="HTML")
-    await callback.answer()
 
 @router.callback_query(F.data.startswith("view_materials:"))
 async def process_view_materials(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
@@ -1049,7 +1084,7 @@ async def process_view_materials(callback: CallbackQuery, state: FSMContext, ses
             await callback.message.edit_text(
                 f"❌ <b>Ошибка загрузки файла</b>\n\n"
                 f"Не удалось загрузить прикрепленный файл.\n"
-                f"Обратитесь к наставнику.\n\n"
+                f"Обратись к наставнику.\n\n"
                 f"📌 <b>Тест:</b> {test.name}",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -1152,38 +1187,32 @@ async def process_back_to_test_list(callback: CallbackQuery, state: FSMContext, 
         if not available_tests:
             if is_trainee:
                 no_tests_message = (
-                    "📋 <b>Мои тесты</b>\n\n"
-                    "❌ У тебя пока нет индивидуальных тестов.\n\n"
-                    "📝 <b>Откуда берутся тесты:</b>\n"
-                    "• Рекрутер назначает тесты через массовую рассылку\n"
-                    "• Наставник может дать индивидуальный тест вне траектории\n"
-                    "• Тесты траектории находятся в отдельной кнопке 'Тесты траектории 🗺️'\n\n"
-                    "Ожидай назначения новых тестов от рекрутера или наставника."
+                    "❌ Пока новых тестов нет\n"
+                    "Когда появятся, тебе придёт уведомление"
                 )
             elif is_mentor:
                 no_tests_message = (
-                    "📋 <b>Мои тесты</b>\n\n"
-                    "❌ У тебя пока нет тестов от рекрутера.\n\n"
-                    "📝 <b>Откуда берутся тесты:</b>\n"
-                    "• Рекрутер назначает тесты через массовую рассылку по группам\n\n"
-                    "Ожидай назначения новых тестов от рекрутера."
+                    "❌ Пока новых тестов нет\n"
+                    "Когда появятся, тебе придёт уведомление"
                 )
             elif is_employee:
                 no_tests_message = (
-                    "📋 <b>Мои тесты</b>\n\n"
-                    "❌ У тебя пока нет тестов от рекрутера.\n\n"
-                    "📝 <b>Откуда берутся тесты:</b>\n"
-                    "• Рекрутер назначает тесты через массовую рассылку по группам\n\n"
-                    "Ожидай назначения новых тестов от рекрутера."
+                    "❌ Пока новых тестов нет\n"
+                    "Когда появятся, тебе придёт уведомление"
                 )
             else:
                 no_tests_message = (
-                    "📋 <b>Мои тесты</b>\n\n"
-                    "❌ У тебя пока нет тестов.\n\n"
-                    "Ожидай назначения новых тестов от рекрутера."
+                    "❌ Пока новых тестов нет\n"
+                    "Когда появятся, тебе придёт уведомление"
                 )
             
-            await callback.message.edit_text(no_tests_message, parse_mode="HTML")
+            await callback.message.edit_text(
+                no_tests_message, 
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+                ])
+            )
             await callback.answer()
             return
         
@@ -1274,14 +1303,6 @@ async def process_back_to_test_details(callback: CallbackQuery, state: FSMContex
     """Обработчик возврата к деталям теста"""
     await process_test_selection_for_taking(callback, state, session)
 
-@router.callback_query(F.data == "info")
-async def process_info_button(callback: CallbackQuery):
-    """Обработчик информационных кнопок с инструкциями"""
-    await callback.answer(
-        "💡 Для ответа введите номера вариантов через запятую.\n"
-        "Например: 1, 3 или 2, 4, 5",
-        show_alert=True
-    )
 
 @router.callback_query(TestTakingStates.waiting_for_test_start, F.data.startswith("start_test:"))
 async def process_start_test_button(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
@@ -1324,7 +1345,7 @@ async def process_take_test_from_notification(callback: CallbackQuery, state: FS
     if not has_access:
         await callback.message.edit_text(
             "❌ <b>Доступ запрещен</b>\n\n"
-            "У вас нет доступа к этому тесту. Обратитесь к наставнику.",
+            "У тебя нет доступа к этому тесту. Обратись к наставнику.",
             parse_mode="HTML"
         )
         await callback.answer()
@@ -1351,7 +1372,8 @@ async def process_take_test_from_notification(callback: CallbackQuery, state: FS
     if test.material_link:
         if test.material_file_path:
             # Если есть прикрепленный файл
-            materials_info = f"📚 <b>Материалы для изучения:</b>\n🔗 {test.material_link}\n\n"
+            material_display = test.material_link.replace("Файл: ", "") if test.material_link else ""
+            materials_info = f"📚 <b>Материалы для изучения:</b>\n🔗 {material_display}\n\n"
         else:
             # Если это ссылка
             materials_info = f"📚 <b>Материалы для изучения:</b>\n{test.material_link}\n\n"
@@ -1379,7 +1401,7 @@ async def process_take_test_from_notification(callback: CallbackQuery, state: FS
 📌 <b>Название:</b> {test.name}
 📝 <b>Описание:</b> {test.description or 'Не указано'}
 {stage_info}❓ <b>Количество вопросов:</b> {questions_count}
-🎯 <b>Порог прохождения:</b> {test.threshold_score} из {test.max_score} баллов
+🎯 <b>Порог:</b> {test.threshold_score}/{test.max_score} баллов
 {attempts_info}{materials_info}{previous_result_info}"""
     
     await callback.message.edit_text(
@@ -1421,8 +1443,8 @@ async def process_trajectory_tests_shortcut(callback: CallbackQuery, state: FSMC
     if not available_tests:
         await callback.message.edit_text(
             "🗺️ <b>Тесты траектории</b>\n\n"
-            "У вас пока нет доступных тестов для прохождения.\n"
-            "Обратитесь к наставнику для получения доступа к тестам.",
+            "У тебя пока нет доступных тестов для прохождения.\n"
+            "Обратись к наставнику для получения доступа к тестам.",
             parse_mode="HTML"
         )
         await callback.answer()
@@ -1475,14 +1497,12 @@ async def process_my_broadcast_tests_shortcut(callback: CallbackQuery, state: FS
     
     if not available_tests:
         await callback.message.edit_text(
-            "📋 <b>Мои тесты</b>\n\n"
-            "❌ У вас пока нет индивидуальных тестов.\n\n"
-            "📝 <b>Откуда берутся тесты:</b>\n"
-            "• Рекрутер назначает тесты через массовую рассылку\n"
-            "• Наставник может дать индивидуальный тест вне траектории\n"
-            "• Тесты траектории находятся в отдельной кнопке 'Тесты траектории 🗺️'\n\n"
-            "Ожидайте назначения новых тестов от рекрутера или наставника.",
-            parse_mode="HTML"
+            "❌ Пока новых тестов нет\n"
+            "Когда появятся, тебе придёт уведомление",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+            ])
         )
         await callback.answer()
         return
@@ -1570,7 +1590,7 @@ async def is_test_from_trajectory(session: AsyncSession, user_id: int, test_id: 
         if not trainee_path:
             return False
         
-        # Проверяем, входит ли тест в сессии траектории
+        # Проверяем, входит ли тест в сессии траектории (любого этапа)
         trajectory_test_result = await session.execute(
             select(session_tests.c.test_id).join(
                 LearningSession, LearningSession.id == session_tests.c.session_id
@@ -1593,7 +1613,7 @@ async def is_test_from_trajectory(session: AsyncSession, user_id: int, test_id: 
         return False
 
 
-async def check_and_notify_stage_completion(session: AsyncSession, user_id: int, test_id: int) -> str:
+async def check_and_notify_stage_completion(session: AsyncSession, user_id: int, test_id: int, bot=None) -> str:
     """
     Проверяет завершение этапа траектории и отправляет уведомление наставнику
     ТОЛЬКО для стажеров! Сотрудники не имеют траекторий.
@@ -1684,11 +1704,11 @@ async def check_and_notify_stage_completion(session: AsyncSession, user_id: int,
                             logger.info(f"Этап {current_stage_progress.stage_id} отмечен как завершенный для стажера {user_id}")
 
                             # Отправляем уведомление наставнику
-                            await send_stage_completion_notification(session, user_id, current_stage_progress.stage_id)
+                            await send_stage_completion_notification(session, user_id, current_stage_progress.stage_id, bot)
                             
                             # Возвращаем информацию о завершении этапа
                             stage_name = current_stage_progress.stage.name if hasattr(current_stage_progress, 'stage') else f"Этап {current_stage_progress.stage_id}"
-                            return f"\n\n✅ <b>Вы завершили {stage_name}!</b>\nОбратитесь к вашему наставнику, чтобы получить доступ к следующему этапу"
+                            return f"\n\n✅ <b>Ты завершил {stage_name}!</b>\nОбратись к своему наставнику, чтобы получить доступ к следующему этапу"
 
         return ""  # Этап не завершен
 
@@ -1755,9 +1775,8 @@ async def send_stage_completion_notification(session: AsyncSession, trainee_id: 
 
         # Отправляем уведомление наставнику
         if not bot:
-            from aiogram import Bot
-            from config import BOT_TOKEN
-            bot = Bot(token=BOT_TOKEN)
+            logger.warning("Bot instance not provided to send_stage_completion_notification")
+            return
         try:
             await bot.send_message(
                 mentor.tg_id,

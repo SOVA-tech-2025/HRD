@@ -1,4 +1,4 @@
-from aiogram import Router, F, Bot
+from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -81,7 +81,7 @@ async def process_full_name(message: Message, state: FSMContext):
     await state.set_state(RegistrationStates.waiting_for_phone)
 
 @router.message(RegistrationStates.waiting_for_phone, F.contact)
-async def process_contact(message: Message, state: FSMContext, session: AsyncSession, bot: Bot):
+async def process_contact(message: Message, state: FSMContext, session: AsyncSession, bot):
     phone_number = message.contact.phone_number
     
     is_valid, normalized_phone = validate_phone_number(phone_number)
@@ -243,7 +243,7 @@ async def process_contact(message: Message, state: FSMContext, session: AsyncSes
         await state.clear()
 
 @router.message(RegistrationStates.waiting_for_phone)
-async def process_phone_manually(message: Message, state: FSMContext, session: AsyncSession, bot: Bot):
+async def process_phone_manually(message: Message, state: FSMContext, session: AsyncSession, bot):
     is_valid, normalized_phone = validate_phone_number(message.text)
     
     if not is_valid:
@@ -403,7 +403,7 @@ async def process_phone_manually(message: Message, state: FSMContext, session: A
         await state.clear()
 
 @router.callback_query(RegistrationStates.waiting_for_admin_token, F.data == "admin_token:skip")
-async def process_skip_admin_token(callback: CallbackQuery, state: FSMContext, session: AsyncSession, bot: Bot):
+async def process_skip_admin_token(callback: CallbackQuery, state: FSMContext, session: AsyncSession, bot):
     """Обработка пропуска токена администратора (только для обычной регистрации)"""
     user_data = await state.get_data()
     
@@ -439,7 +439,7 @@ async def process_skip_admin_token(callback: CallbackQuery, state: FSMContext, s
     await callback.answer()
 
 @router.message(RegistrationStates.waiting_for_admin_token)
-async def process_admin_token(message: Message, state: FSMContext, session: AsyncSession, bot: Bot):
+async def process_admin_token(message: Message, state: FSMContext, session: AsyncSession, bot):
     """Обработка токена администратора"""
     user_data = await state.get_data()
     
@@ -563,7 +563,7 @@ async def process_admin_token(message: Message, state: FSMContext, session: Asyn
             log_user_action(message.from_user.id, message.from_user.username, "invalid admin token in normal flow")
 
 @router.callback_query(RegistrationStates.waiting_for_role, F.data.startswith("role:"))
-async def process_role_selection(callback: CallbackQuery, state: FSMContext, session: AsyncSession, bot: Bot):
+async def process_role_selection(callback: CallbackQuery, state: FSMContext, session: AsyncSession, bot):
     selected_role = callback.data.split(':')[1]
     
     user_data = await state.get_data()

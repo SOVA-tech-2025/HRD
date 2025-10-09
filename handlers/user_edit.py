@@ -27,7 +27,7 @@ from utils.validators import validate_full_name, validate_phone_number
 router = Router()
 
 
-@router.message(F.text == "Все пользователи")
+@router.message(F.text.in_(["Все пользователи", "Все пользователи 🚸"]))
 async def cmd_all_users(message: Message, session: AsyncSession, state: FSMContext):
     """Отображение фильтров для выбора пользователей"""
     # Проверяем авторизацию
@@ -1175,37 +1175,3 @@ async def process_return_to_menu(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     log_user_action(callback.from_user.id, "edit_return_to_menu", "Returned to main menu from editor")
 
-
-@router.callback_query(F.data == "main_menu", StateFilter(UserEditStates))
-async def callback_main_menu(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
-    """Обработчик возврата в главное меню"""
-    try:
-        # Получение пользователя
-        user = await get_user_by_tg_id(session, callback.from_user.id)
-        if not user:
-            await callback.message.edit_text("Вы не зарегистрированы в системе.")
-            await callback.answer()
-            await state.clear()
-            return
-        
-        # Получаем роли пользователя для определения клавиатуры
-        user_roles = await get_user_roles(session, user.id)
-        
-        if not user_roles:
-            await callback.message.edit_text("У тебя нет назначенных ролей. Обратись к рекрутеру.")
-            await callback.answer()
-            await state.clear()
-            return
-        
-        # Возвращаем в главное меню
-        await callback.message.edit_text("Вы вернулись в главное меню")
-        await state.clear()
-        await callback.answer()
-        
-        log_user_action(callback.from_user.id, "return_to_main_menu", "Returned to main menu from user edit")
-        
-    except Exception as e:
-        log_user_error(callback.from_user.id, "main_menu_error", str(e))
-        await callback.message.edit_text("Произошла ошибка. Попробуйте еще раз.")
-        await callback.answer()
-        await state.clear()

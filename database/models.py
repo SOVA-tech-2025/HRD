@@ -40,6 +40,7 @@ class User(Base):
     full_name = Column(String, nullable=False)
     phone_number = Column(String, unique=True, nullable=False)
     registration_date = Column(DateTime, default=datetime.now)
+    role_assigned_date = Column(DateTime, default=datetime.now)  # Дата назначения текущей роли
     is_active = Column(Boolean, default=True)
     is_activated = Column(Boolean, default=False)  # Активация рекрутером
     internship_object_id = Column(Integer, ForeignKey('objects.id'), nullable=True)  # Объект стажировки
