@@ -10,7 +10,7 @@ from database.db import (
     update_user_full_name, update_user_phone_number, update_user_role,
     update_user_group, update_user_internship_object, update_user_work_object,
     get_all_groups, get_all_objects, get_object_by_id, get_group_by_id, get_user_roles,
-    get_role_change_warnings
+    get_role_change_warnings, delete_user
 )
 from handlers.auth import check_auth
 from states.states import UserEditStates
@@ -19,12 +19,55 @@ from keyboards.keyboards import (
     get_role_selection_keyboard, get_group_selection_keyboard,
     get_object_selection_keyboard, get_users_filter_keyboard,
     get_group_filter_keyboard, get_object_filter_keyboard,
-    get_users_list_keyboard, get_user_info_keyboard
+    get_users_list_keyboard, get_user_info_keyboard,
+    get_user_deletion_confirmation_keyboard
 )
 from utils.logger import log_user_action, log_user_error
 from utils.validators import validate_full_name, validate_phone_number
 
 router = Router()
+
+
+async def show_user_info_detail(callback: CallbackQuery, user_id: int, session: AsyncSession, filter_type: str = "all"):
+    """Общая функция для отображения детальной информации о пользователе"""
+    user = await get_user_with_details(session, user_id)
+    if not user:
+        await callback.answer("Пользователь не найден", show_alert=True)
+        return False
+    
+    # Формируем информацию о пользователе
+    role_name = user.roles[0].name if user.roles else "Нет роли"
+    group_name = user.groups[0].name if user.groups else "Нет группы"
+    
+    text = (
+        f"🦸🏻‍♂️ <b>Пользователь:</b> {user.full_name}\n\n"
+        f"<b>Телефон:</b> {user.phone_number}\n"
+        f"<b>Username:</b> @{user.username if user.username else 'Не указан'}\n"
+        f"<b>Номер:</b> #{user.id}\n"
+        f"<b>Дата регистрации:</b> {user.registration_date.strftime('%d.%m.%Y %H:%M') if user.registration_date else 'Не указана'}\n\n"
+        f"━━━━━━━━━━━━\n\n"
+        f"🗂️ <b>Статус:</b>\n"
+        f"<b>Группа:</b> {group_name}\n"
+        f"<b>Роль:</b> {role_name}\n\n"
+        f"━━━━━━━━━━━━\n\n"
+        f"📍 <b>Объект:</b>\n"
+    )
+    
+    if role_name in ["Стажер", "Стажёр"]:
+        if user.internship_object:
+            text += f"<b>Стажировки:</b> {user.internship_object.name}\n"
+        else:
+            text += f"<b>Стажировки:</b> Не указан\n"
+    
+    if user.work_object:
+        text += f"<b>Работы:</b> {user.work_object.name}\n"
+    else:
+        text += f"<b>Работы:</b> Не указан\n"
+    
+    keyboard = get_user_info_keyboard(user_id, filter_type)
+    
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    return True
 
 
 @router.message(F.text.in_(["Все пользователи", "Все пользователи 🚸"]))
@@ -57,10 +100,9 @@ async def cmd_all_users(message: Message, session: AsyncSession, state: FSMConte
         return
         
     text = (
-        "👥 <b>УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ</b> 👥\n\n"
-        f"📊 Всего пользователей в системе: <b>{len(users)}</b>\n"
-        f"🗂️ Доступно групп: <b>{len(groups)}</b>\n"
-        f"📍 Доступно объектов: <b>{len(objects)}</b>\n\n"
+        f"<b>🚸 Всего пользователей в системе: {len(users)}</b>\n"
+        f"Доступно групп: {len(groups)}\n"
+        f"Доступно объектов: {len(objects)}\n\n"
         "Выберите способ фильтрации пользователей:"
     )
     
@@ -87,8 +129,7 @@ async def callback_filter_all_users(callback: CallbackQuery, state: FSMContext, 
             return
         
         text = (
-            f"👥 <b>ВСЕ ПОЛЬЗОВАТЕЛИ</b> 👥\n\n"
-            f"📊 Найдено пользователей: <b>{len(users)}</b>\n\n"
+            f"<b>Найдено пользователей: {len(users)}</b>\n\n"
             "Выберите пользователя для просмотра и редактирования:"
         )
         
@@ -120,7 +161,7 @@ async def callback_filter_by_groups(callback: CallbackQuery, state: FSMContext, 
         text = (
             f"🗂️ <b>ФИЛЬТР ПО ГРУППАМ</b> 🗂️\n\n"
             f"📊 Доступно групп: <b>{len(groups)}</b>\n\n"
-            "Выберите группу для просмотра её участников:"
+            "Выбери группу, чтобы посмотреть пользователей:"
         )
         
         keyboard = get_group_filter_keyboard(groups, 0, 5)
@@ -150,7 +191,7 @@ async def callback_filter_by_objects(callback: CallbackQuery, state: FSMContext,
         text = (
             f"📍 <b>ФИЛЬТР ПО ОБЪЕКТАМ</b> 📍\n\n"
             f"📊 Доступно объектов: <b>{len(objects)}</b>\n\n"
-            "Выберите объект для просмотра связанных с ним пользователей:"
+            "Выбери объект для просмотра связанных с ним пользователей:"
         )
         
         keyboard = get_object_filter_keyboard(objects, 0, 5)
@@ -250,48 +291,19 @@ async def callback_view_user(callback: CallbackQuery, state: FSMContext, session
         await callback.answer()
         
         user_id = int(callback.data.split(":")[1])
-        user = await get_user_with_details(session, user_id)
-        
-        if not user:
-            await callback.answer("Пользователь не найден", show_alert=True)
-            return
-        
-        # Формируем подробную информацию о пользователе
-        role_name = user.roles[0].name if user.roles else "Нет роли"
-        group_name = user.groups[0].name if user.groups else "Нет группы"
-        
-        text = (
-            f"👤 <b>ИНФОРМАЦИЯ О ПОЛЬЗОВАТЕЛЕ</b> 👤\n\n"
-            f"🧑 <b>ФИО:</b> {user.full_name}\n"
-            f"📞 <b>Телефон:</b> {user.phone_number}\n"
-            f"🆔 <b>Telegram ID:</b> {user.tg_id}\n"
-            f"👤 <b>Username:</b> @{user.username if user.username else 'Не указан'}\n"
-            f"📅 <b>Дата регистрации:</b> {user.registration_date.strftime('%d.%m.%Y %H:%M') if user.registration_date else 'Не указана'}\n"
-            f"👑 <b>Роль:</b> {role_name}\n"
-            f"🗂️ <b>Группа:</b> {group_name}\n"
-        )
-        
-        # Добавляем объект стажировки только для стажеров
-        if role_name == "Стажер" and user.internship_object:
-            text += f"📍 <b>Объект стажировки:</b> {user.internship_object.name}\n"
-            
-        # Объект работы
-        if user.work_object:
-            text += f"📍 <b>Объект работы:</b> {user.work_object.name}\n"
-        
-        # Статус активации
-        text += f"✅ <b>Активирован:</b> {'Да' if user.is_activated else 'Нет'}\n"
         
         data = await state.get_data()
         filter_type = data.get('filter_type', 'all')
         
-        keyboard = get_user_info_keyboard(user_id, filter_type)
+        # Используем общую функцию для отображения информации
+        success = await show_user_info_detail(callback, user_id, session, filter_type)
         
-        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-        await state.set_state(UserEditStates.viewing_user_info)
-        await state.update_data(viewing_user_id=user_id)
-        
-        log_user_action(callback.from_user.id, "view_user_info", f"User: {user.full_name} (ID: {user_id})")
+        if success:
+            await state.set_state(UserEditStates.viewing_user_info)
+            await state.update_data(viewing_user_id=user_id)
+            
+            user = await get_user_by_id(session, user_id)
+            log_user_action(callback.from_user.id, "view_user_info", f"User: {user.full_name if user else 'Unknown'} (ID: {user_id})")
         
     except Exception as e:
         await callback.answer("Произошла ошибка")
@@ -313,16 +325,37 @@ async def callback_edit_user(callback: CallbackQuery, state: FSMContext, session
         
         # Формируем меню редактора
         role_name = user.roles[0].name if user.roles else "Нет роли"
-        is_trainee = role_name == "Стажер"
+        group_name = user.groups[0].name if user.groups else "Нет группы"
+        is_trainee = role_name in ["Стажер", "Стажёр"]
         
         text = (
-            f"✏️ <b>РЕДАКТОР ПОЛЬЗОВАТЕЛЯ</b> ✏️\n\n"
-            f"🧑 <b>ФИО:</b> {user.full_name}\n"
-            f"📞 <b>Телефон:</b> {user.phone_number}\n"
-            f"👑 <b>Роль:</b> {role_name}\n"
-            f"🗂️ <b>Группа:</b> {user.groups[0].name if user.groups else 'Нет группы'}\n\n"
-            "Выберите параметр для изменения:"
+            f"🦸🏻‍♂️ <b>Пользователь:</b> {user.full_name}\n\n"
+            f"<b>Телефон:</b> {user.phone_number}\n"
+            f"<b>Username:</b> @{user.username if user.username else 'Не указан'}\n"
+            f"<b>Номер:</b> #{user.id}\n"
+            f"<b>Дата регистрации:</b> {user.registration_date.strftime('%d.%m.%Y %H:%M') if user.registration_date else 'Не указана'}\n\n"
+            f"━━━━━━━━━━━━\n\n"
+            f"🗂️ <b>Статус:</b>\n"
+            f"<b>Группа:</b> {group_name}\n"
+            f"<b>Роль:</b> {role_name}\n\n"
+            f"━━━━━━━━━━━━\n\n"
+            f"📍 <b>Объект:</b>\n"
         )
+        
+        # Добавляем объект стажировки только для стажеров
+        if role_name in ["Стажер", "Стажёр"]:
+            if user.internship_object:
+                text += f"<b>Стажировки:</b> {user.internship_object.name}\n"
+            else:
+                text += f"<b>Стажировки:</b> Не указан\n"
+            
+        # Объект работы
+        if user.work_object:
+            text += f"<b>Работы:</b> {user.work_object.name}\n"
+        else:
+            text += f"<b>Работы:</b> Не указан\n"
+        
+        text += "\n<b>Выберите параметр для изменения:</b>"
         
         keyboard = get_user_editor_keyboard(is_trainee)
         
@@ -544,7 +577,7 @@ async def show_user_editor(message: Message, session: AsyncSession,
 🗂️Группа: {group_name}"""
     
     # Добавляем объект стажировки только для стажеров
-    if role_name == "Стажер" and target_user.internship_object:
+    if role_name in ["Стажер", "Стажёр"] and target_user.internship_object:
         user_info += f"\n📍1️⃣Объект стажировки: {target_user.internship_object.name}"
         
     # Объект работы
@@ -556,7 +589,7 @@ async def show_user_editor(message: Message, session: AsyncSession,
     user_info += "\n\nКакую информацию вы хотите изменить?\nВыберите кнопкой ниже👇"
     
     # Получаем клавиатуру редактора
-    keyboard = get_user_editor_keyboard(role_name == "Стажер")
+    keyboard = get_user_editor_keyboard(role_name in ["Стажер", "Стажёр"])
     
     await message.answer(user_info, reply_markup=keyboard, parse_mode="HTML")
     await state.set_state(None)  # Сбрасываем состояние, ждем выбора действия
@@ -577,14 +610,15 @@ async def process_edit_full_name(callback: CallbackQuery, session: AsyncSession,
         await callback.answer("❌ Пользователь не найден")
         return
         
-    message_text = f"""Введите новое ФИО для пользователя:
+    message_text = f"""Введи новые <b>ФАМИЛИЯ И ИМЯ</b> для пользователя:
 
-🧑 ФИО: {target_user.full_name}
-📞 Телефон: {target_user.phone_number}
-🆔 Telegram ID: {target_user.tg_id}
-👤 Username: @{target_user.username if target_user.username else 'Не указан'}"""
+🧑 ФИО: {target_user.full_name}"""
     
-    await callback.message.edit_text(message_text)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="cancel_edit")]
+    ])
+    
+    await callback.message.edit_text(message_text, reply_markup=keyboard, parse_mode="HTML")
     await state.set_state(UserEditStates.waiting_for_new_full_name)
     await state.update_data(edit_type="full_name")
     await callback.answer()
@@ -642,14 +676,15 @@ async def process_edit_phone(callback: CallbackQuery, session: AsyncSession, sta
         await callback.answer("❌ Пользователь не найден")
         return
         
-    message_text = f"""Введите новый ТЕЛЕФОН для пользователя:
+    message_text = f"""Введи новый <b>ТЕЛЕФОН</b> для пользователя:
 
-🧑 ФИО: {target_user.full_name}
-📞 Телефон: {target_user.phone_number}
-🆔 Telegram ID: {target_user.tg_id}
-👤 Username: @{target_user.username if target_user.username else 'Не указан'}"""
+🧑 ФИО: {target_user.full_name}"""
     
-    await callback.message.edit_text(message_text)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="cancel_edit")]
+    ])
+    
+    await callback.message.edit_text(message_text, reply_markup=keyboard, parse_mode="HTML")
     await state.set_state(UserEditStates.waiting_for_new_phone)
     await state.update_data(edit_type="phone")
     await callback.answer()
@@ -711,20 +746,21 @@ async def process_edit_role(callback: CallbackQuery, session: AsyncSession, stat
         
     current_role = target_user.roles[0].name if target_user.roles else "Нет роли"
     
-    message_text = f"""Выберите новую роль для пользователя:
+    message_text = f"""Выбери новую <b>РОЛЬ</b> для пользователя:
 
-🧑 ФИО: {target_user.full_name}
-📞 Телефон: {target_user.phone_number}
-🆔 Telegram ID: {target_user.tg_id}
-👤 Username: @{target_user.username if target_user.username else 'Не указан'}
-📅 Дата регистрации: {target_user.registration_date.strftime('%d.%m.%Y %H:%M') if target_user.registration_date else 'Не указана'}
-👑 Роли: {current_role}"""
+🧑 ФИО: {target_user.full_name}"""
     
-    keyboard = get_role_selection_keyboard()
-    await callback.message.edit_text(message_text, reply_markup=keyboard)
+    keyboard = get_role_selection_keyboard(is_editing=True)
+    await callback.message.edit_text(message_text, reply_markup=keyboard, parse_mode="HTML")
     await state.set_state(UserEditStates.waiting_for_new_role)
     await state.update_data(edit_type="role", old_value=current_role)
     await callback.answer()
+
+
+@router.callback_query(UserEditStates.waiting_for_new_role, F.data == "cancel_edit")
+async def cancel_edit_role(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Отмена редактирования роли - возврат к редактору"""
+    await callback_cancel_edit(callback, state, session)
 
 
 @router.callback_query(UserEditStates.waiting_for_new_role, F.data.startswith("role:"))
@@ -751,15 +787,15 @@ async def process_new_role(callback: CallbackQuery, session: AsyncSession, state
     # Формируем предупреждения о последствиях смены роли
     warnings = await get_role_change_warnings(session, target_user.id, current_role, new_role)
     
-    confirmation_text = f"""⚠️<b>ИЗМЕНЕНИЕ РОЛИ</b>⚠️
+    confirmation_text = f"""🚩🚩🚩<b>ИЗМЕНЕНИЕ РОЛИ</b>🚩🚩🚩
 
-🧑 <b>ФИО:</b> {target_user.full_name}
-📞 <b>Телефон:</b> {target_user.phone_number}
-🆔 <b>Telegram ID:</b> {target_user.tg_id}
-👤 <b>Username:</b> @{target_user.username if target_user.username else 'Не указан'}
+<b>Пользователь:</b> {target_user.full_name}
+<b>Телефон:</b> {target_user.phone_number}
 
-👑 <b>Текущая роль:</b> {current_role}
-👑 <b>Новая роль:</b> {new_role}
+🏚️ <b>Текущая роль:</b> {current_role}
+🌱<b>Новая роль:</b> {new_role}
+
+━━━━━━━━━━━━
 
 {warnings}"""
     
@@ -795,14 +831,9 @@ async def process_edit_group(callback: CallbackQuery, session: AsyncSession, sta
         
     current_group = target_user.groups[0].name if target_user.groups else "Нет группы"
     
-    message_text = f"""Выберите новую группу для пользователя:
+    message_text = f"""Выбери новую <b>ГРУППУ</b> для пользователя:
 
-🧑 ФИО: {target_user.full_name}
-📞 Телефон: {target_user.phone_number}
-🆔 Telegram ID: {target_user.tg_id}
-👤 Username: @{target_user.username if target_user.username else 'Не указан'}
-📅 Дата регистрации: {target_user.registration_date.strftime('%d.%m.%Y %H:%M') if target_user.registration_date else 'Не указана'}
-🗂️Группа: {current_group}"""
+🧑 ФИО: {target_user.full_name}"""
     
     # Получаем все группы
     groups = await get_all_groups(session)
@@ -814,7 +845,7 @@ async def process_edit_group(callback: CallbackQuery, session: AsyncSession, sta
     
     keyboard = get_group_selection_keyboard(groups, 0)
     
-    await callback.message.edit_text(message_text, reply_markup=keyboard)
+    await callback.message.edit_text(message_text, reply_markup=keyboard, parse_mode="HTML")
     await state.set_state(UserEditStates.waiting_for_new_group)
     await state.update_data(edit_type="group", old_value=current_group)
     await callback.answer()
@@ -865,6 +896,10 @@ async def process_new_group(callback: CallbackQuery, session: AsyncSession, stat
         keyboard = get_group_selection_keyboard(groups, page)
         await callback.message.edit_reply_markup(reply_markup=keyboard)
         await callback.answer()
+    
+    elif callback.data == "cancel_edit":
+        # Обработка кнопки "Назад" - делегируем универсальному обработчику
+        await callback_cancel_edit(callback, state, session)
 
 
 @router.callback_query(F.data == "edit_internship_object")
@@ -884,16 +919,9 @@ async def process_edit_internship_object(callback: CallbackQuery, session: Async
         
     current_object = target_user.internship_object.name if target_user.internship_object else "Не назначен"
     
-    message_text = f"""Выберите новый 1️⃣Объект стажировки для пользователя:
+    message_text = f"""Выбери новый <b>ОБЪЕКТ СТАЖИРОВКИ</b> для пользователя:
 
-🧑 ФИО: {target_user.full_name}
-📞 Телефон: {target_user.phone_number}
-🆔 Telegram ID: {target_user.tg_id}
-👤 Username: @{target_user.username if target_user.username else 'Не указан'}
-📅 Дата регистрации: {target_user.registration_date.strftime('%d.%m.%Y %H:%M') if target_user.registration_date else 'Не указана'}
-👑 Роли: {target_user.roles[0].name if target_user.roles else 'Нет роли'}
-🗂️Группа: {target_user.groups[0].name if target_user.groups else 'Нет группы'}
-📍1️⃣Объект стажировки: {current_object}"""
+🧑 ФИО: {target_user.full_name}"""
     
     # Получаем все объекты
     objects = await get_all_objects(session)
@@ -905,7 +933,7 @@ async def process_edit_internship_object(callback: CallbackQuery, session: Async
     
     keyboard = get_object_selection_keyboard(objects, 0, 5, "internship")
     
-    await callback.message.edit_text(message_text, reply_markup=keyboard)
+    await callback.message.edit_text(message_text, reply_markup=keyboard, parse_mode="HTML")
     await state.set_state(UserEditStates.waiting_for_new_internship_object)
     await state.update_data(edit_type="internship_object", old_value=current_object)
     await callback.answer()
@@ -960,6 +988,10 @@ async def process_new_internship_object(callback: CallbackQuery, session: AsyncS
         keyboard = get_object_selection_keyboard(objects, page, 5, "internship")
         await callback.message.edit_reply_markup(reply_markup=keyboard)
         await callback.answer()
+    
+    elif callback.data == "cancel_edit":
+        # Обработка кнопки "Назад" - делегируем универсальному обработчику
+        await callback_cancel_edit(callback, state, session)
 
 
 @router.callback_query(F.data == "edit_work_object")
@@ -978,18 +1010,10 @@ async def process_edit_work_object(callback: CallbackQuery, session: AsyncSessio
         return
         
     current_object = target_user.work_object.name if target_user.work_object else "Не назначен"
-    current_role = target_user.roles[0].name if target_user.roles else "Нет роли"
     
-    message_text = f"""Выберите новый 2️⃣Объект работы для пользователя:
+    message_text = f"""Выбери новый <b>ОБЪЕКТ РАБОТЫ</b> для пользователя:
 
-🧑 ФИО: {target_user.full_name}
-📞 Телефон: {target_user.phone_number}
-🆔 Telegram ID: {target_user.tg_id}
-👤 Username: @{target_user.username if target_user.username else 'Не указан'}
-📅 Дата регистрации: {target_user.registration_date.strftime('%d.%m.%Y %H:%M') if target_user.registration_date else 'Не указана'}
-👑 Роли: {current_role}
-🗂️Группа: {target_user.groups[0].name if target_user.groups else 'Нет группы'}
-📍2️⃣Объект работы: {current_object}"""
+🧑 ФИО: {target_user.full_name}"""
     
     # Получаем все объекты
     objects = await get_all_objects(session)
@@ -1001,7 +1025,7 @@ async def process_edit_work_object(callback: CallbackQuery, session: AsyncSessio
     
     keyboard = get_object_selection_keyboard(objects, 0, 5, "work")
     
-    await callback.message.edit_text(message_text, reply_markup=keyboard)
+    await callback.message.edit_text(message_text, reply_markup=keyboard, parse_mode="HTML")
     await state.set_state(UserEditStates.waiting_for_new_work_object)
     await state.update_data(edit_type="work_object", old_value=current_object)
     await callback.answer()
@@ -1058,6 +1082,10 @@ async def process_new_work_object(callback: CallbackQuery, session: AsyncSession
         keyboard = get_object_selection_keyboard(objects, page, 5, "work")
         await callback.message.edit_reply_markup(reply_markup=keyboard)
         await callback.answer()
+    
+    elif callback.data == "cancel_edit":
+        # Обработка кнопки "Назад" - делегируем универсальному обработчику
+        await callback_cancel_edit(callback, state, session)
 
 
 @router.callback_query(UserEditStates.waiting_for_change_confirmation, F.data == "confirm_change")
@@ -1113,33 +1141,50 @@ async def process_confirm_change(callback: CallbackQuery, session: AsyncSession,
             role_name = target_user.roles[0].name if target_user.roles else "Нет роли"
             group_name = target_user.groups[0].name if target_user.groups else "Нет группы"
             
-            success_message = f"""✅Вы изменили данные пользователя:
+            success_message = f"""✅ <b>Данные изменены</b>
 
-✏️<b>РЕДАКТОР ПОЛЬЗОВАТЕЛЯ</b>✏️
+🦸🏻‍♂️ <b>Пользователь:</b> {target_user.full_name}
 
-🧑 ФИО: {target_user.full_name}
-📞 Телефон: {target_user.phone_number}
-🆔 Telegram ID: {target_user.tg_id}
-👤 Username: @{target_user.username if target_user.username else 'Не указан'}
-📅 Дата регистрации: {target_user.registration_date.strftime('%d.%m.%Y %H:%M') if target_user.registration_date else 'Не указана'}
-👑 Роли: {role_name}
-🗂️Группа: {group_name}"""
+<b>Телефон:</b> {target_user.phone_number}
+<b>Username:</b> @{target_user.username if target_user.username else 'Не указан'}
+<b>Номер:</b> #{target_user.id}
+<b>Дата регистрации:</b> {target_user.registration_date.strftime('%d.%m.%Y %H:%M') if target_user.registration_date else 'Не указана'}
+
+━━━━━━━━━━━━
+
+🗂️ <b>Статус:</b>
+<b>Группа:</b> {group_name}
+<b>Роль:</b> {role_name}
+
+━━━━━━━━━━━━
+
+📍 <b>Объект:</b>
+"""
             
             # Добавляем объект стажировки только для стажеров
-            if role_name == "Стажер" and target_user.internship_object:
-                success_message += f"\n📍1️⃣Объект стажировки: {target_user.internship_object.name}"
+            if role_name in ["Стажер", "Стажёр"]:
+                if target_user.internship_object:
+                    success_message += f"<b>Стажировки:</b> {target_user.internship_object.name}\n"
+                else:
+                    success_message += f"<b>Стажировки:</b> Не указан\n"
                 
             # Объект работы
             if target_user.work_object:
-                success_message += f"\n📍2️⃣Объект работы: {target_user.work_object.name}"
+                success_message += f"<b>Работы:</b> {target_user.work_object.name}\n"
+            else:
+                success_message += f"<b>Работы:</b> Не указан\n"
                 
-            success_message += f"\n🎱Номер пользователя: {target_user.id}"
-            success_message += "\n\nКакую информацию вы хотите изменить?\nВыберите кнопкой ниже👇"
+            success_message += "\n<b>Выберите параметр для изменения:</b>"
             
             # Получаем клавиатуру редактора
-            keyboard = get_user_editor_keyboard(role_name == "Стажер")
+            keyboard = get_user_editor_keyboard(role_name in ["Стажер", "Стажёр"])
             
             await callback.message.edit_text(success_message, reply_markup=keyboard, parse_mode="HTML")
+            
+            # Устанавливаем правильное состояние и данные для корректной работы кнопки "Назад"
+            await state.set_state(UserEditStates.viewing_user_info)
+            await state.update_data(editing_user_id=editing_user_id, viewing_user_id=editing_user_id)
+            
             log_user_action(callback.from_user.id, f"edit_user_{edit_type}", 
                           f"Changed {edit_type} for user {editing_user_id}")
     else:
@@ -1160,18 +1205,289 @@ async def process_confirm_change(callback: CallbackQuery, session: AsyncSession,
 
 @router.callback_query(UserEditStates.waiting_for_change_confirmation, F.data == "cancel_change")
 async def process_cancel_change(callback: CallbackQuery, session: AsyncSession, state: FSMContext):
-    """Отмена изменений"""
-    await callback.message.edit_text("❌ ВЫ ОТМЕНИЛИ РЕДАКТИРОВАНИЕ ПОЛЬЗОВАТЕЛЯ")
-    await state.clear()
-    await callback.answer()
-    log_user_action(callback.from_user.id, "cancel_user_edit", "Cancelled user editing")
+    """Отмена изменений - возврат к редактору"""
+    try:
+        data = await state.get_data()
+        editing_user_id = data.get('editing_user_id')
+        
+        if not editing_user_id:
+            await callback.answer("Пользователь не найден")
+            return
+        
+        # Возвращаемся к редактору пользователя
+        await callback_cancel_edit(callback, state, session)
+        log_user_action(callback.from_user.id, "cancel_change", f"Returned to editor for user {editing_user_id}")
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "cancel_change_error", str(e))
 
 
-@router.callback_query(F.data == "edit_return_to_menu")
-async def process_return_to_menu(callback: CallbackQuery, state: FSMContext):
-    """Возврат в главное меню из редактора"""
-    await callback.message.edit_text("Вы вернулись в главное меню")
-    await state.clear()
-    await callback.answer()
-    log_user_action(callback.from_user.id, "edit_return_to_menu", "Returned to main menu from editor")
+@router.callback_query(F.data == "delete_user", UserEditStates.viewing_user_info)
+async def callback_delete_user(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Начало процесса удаления пользователя"""
+    try:
+        data = await state.get_data()
+        user_id = data.get("viewing_user_id")
+        
+        user = await get_user_by_id(session, user_id)
+        if not user:
+            await callback.answer("Пользователь не найден")
+            return
+        
+        warning_text = (
+            f"⚠️ <b>ПРЕДУПРЕЖДЕНИЕ</b> ⚠️\n\n"
+            f"Вы собираетесь ПОЛНОСТЬЮ УДАЛИТЬ пользователя:\n"
+            f"👤 <b>{user.full_name}</b>\n"
+            f"📞 {user.phone_number}\n"
+            f"🆔 #{user.id}\n\n"
+            f"⚠️ <b>ПОСЛЕДСТВИЯ УДАЛЕНИЯ:</b>\n\n"
+            f"<b>ДЛЯ ПОЛЬЗОВАТЕЛЯ:</b>\n"
+            f"• Аккаунт будет УДАЛЕН из системы\n"
+            f"• При входе потребуется повторная регистрация\n"
+            f"• ВСЕ прогресс и результаты будут ПОТЕРЯНЫ\n\n"
+            f"<b>ДЛЯ СИСТЕМЫ:</b>\n"
+            f"• Результаты тестов - УДАЛЕНЫ\n"
+            f"• Результаты аттестаций - УДАЛЕНЫ\n"
+            f"• Назначенные траектории - УДАЛЕНЫ\n"
+            f"• Связи с наставниками - УДАЛЕНЫ\n"
+            f"• История прогресса - УДАЛЕНА\n\n"
+            f"ℹ️ <b>ВАЖНО:</b>\n"
+            f"• Созданные им тесты, траектории, группы, объекты ОСТАНУТСЯ в системе\n"
+            f"• Это действие НЕОБРАТИМО\n\n"
+            f"<b>Ты уверен, что хочешь удалить этого пользователя?</b>"
+        )
+        
+        await callback.message.edit_text(
+            warning_text,
+            reply_markup=get_user_deletion_confirmation_keyboard(user_id),
+            parse_mode="HTML"
+        )
+        await callback.answer()
+        
+    except Exception as e:
+        await callback.answer("Ошибка при подготовке удаления")
+        log_user_error(callback.from_user.id, "delete_user_error", str(e))
 
+
+@router.callback_query(F.data.startswith("confirm_delete_user:"))
+async def callback_confirm_delete_user(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Подтверждение удаления пользователя"""
+    try:
+        user_id = int(callback.data.split(":")[1])
+        
+        user = await get_user_by_id(session, user_id)
+        if not user:
+            await callback.answer("Пользователь не найден")
+            return
+        
+        user_name = user.full_name
+        
+        # Сохраняем filter_type перед удалением и очисткой состояния
+        data = await state.get_data()
+        filter_type = data.get('filter_type', 'all')
+        
+        # Выполняем удаление
+        success = await delete_user(session, user_id)
+        
+        if success:
+            await callback.message.edit_text(
+                f"✅ <b>Пользователь успешно удален</b>\n\n"
+                f"👤 {user_name}\n"
+                f"🆔 #{user_id}\n\n"
+                f"Все данные пользователя удалены из системы.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="⬅️ Назад к фильтрам", callback_data="back_to_filters")],
+                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+                ])
+            )
+            # Очищаем состояние, но сохраняем информацию для возврата
+            await state.clear()
+            await state.set_state(UserEditStates.waiting_for_filter_selection)
+            log_user_action(callback.from_user.id, "user_deleted", f"Deleted user {user_id}: {user_name}")
+        else:
+            await callback.message.edit_text(
+                f"❌ <b>Ошибка удаления</b>\n\n"
+                f"Не удалось удалить пользователя {user_name}.\n"
+                f"Попробуйте позже или обратитесь к администратору.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="⬅️ Назад к просмотру", callback_data=f"back_to_view_after_error:{user_id}")],
+                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+                ])
+            )
+            # Устанавливаем состояние для корректной работы кнопки "Назад"
+            await state.set_state(UserEditStates.viewing_user_info)
+            await state.update_data(viewing_user_id=user_id, filter_type=filter_type)
+        
+        await callback.answer()
+        
+    except (ValueError, IndexError):
+        await callback.answer("Ошибка при удалении пользователя")
+        log_user_error(callback.from_user.id, "confirm_delete_user_error", f"Invalid data: {callback.data}")
+
+
+@router.callback_query(F.data.startswith("cancel_delete_user:"))
+async def callback_cancel_delete_user(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Отмена удаления пользователя - возврат к редактору"""
+    try:
+        user_id = int(callback.data.split(":")[1])
+        
+        # Получаем детальную информацию о пользователе для редактора
+        user = await get_user_by_id(session, user_id)
+        if not user:
+            await callback.answer("Пользователь не найден")
+            return
+        
+        roles = await get_user_roles(session, user.id)
+        role_name = roles[0].name if roles else "Не назначена"
+        group_name = user.groups[0].name if user.groups else "Не назначена"
+        is_trainee = role_name in ["Стажер", "Стажёр"]
+        
+        # Формируем текст для редактора
+        text = (
+            f"🦸🏻‍♂️ <b>Пользователь:</b> {user.full_name}\n\n"
+            f"<b>Телефон:</b> {user.phone_number}\n"
+            f"<b>Username:</b> @{user.username if user.username else 'Не указан'}\n"
+            f"<b>Номер:</b> #{user.id}\n"
+            f"<b>Дата регистрации:</b> {user.registration_date.strftime('%d.%m.%Y %H:%M') if user.registration_date else 'Не указана'}\n\n"
+            f"━━━━━━━━━━━━\n\n"
+            f"🗂️ <b>Статус:</b>\n"
+            f"<b>Группа:</b> {group_name}\n"
+            f"<b>Роль:</b> {role_name}\n\n"
+            f"━━━━━━━━━━━━\n\n"
+            f"📍 <b>Объект:</b>\n"
+        )
+        
+        if is_trainee:
+            if user.internship_object:
+                text += f"<b>Стажировки:</b> {user.internship_object.name}\n"
+            else:
+                text += f"<b>Стажировки:</b> Не указан\n"
+        
+        if user.work_object:
+            text += f"<b>Работы:</b> {user.work_object.name}\n"
+        else:
+            text += f"<b>Работы:</b> Не указан\n"
+        
+        text += "\n<b>Выберите параметр для изменения:</b>"
+        
+        await callback.message.edit_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=get_user_editor_keyboard(is_trainee)
+        )
+        await callback.answer("Удаление отменено")
+        
+    except (ValueError, IndexError):
+        await callback.answer("Ошибка при отмене")
+        log_user_error(callback.from_user.id, "cancel_delete_user_error", f"Invalid data: {callback.data}")
+
+
+@router.callback_query(F.data == "back_to_view_user", UserEditStates.viewing_user_info)
+async def callback_back_to_view_user(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Возврат к просмотру информации о пользователе из редактора"""
+    try:
+        data = await state.get_data()
+        user_id = data.get("viewing_user_id")
+        
+        if not user_id:
+            await callback.answer("Пользователь не найден")
+            return
+        
+        filter_type = data.get('filter_type', 'all')
+        
+        # Используем общую функцию для отображения информации
+        success = await show_user_info_detail(callback, user_id, session, filter_type)
+        if success:
+            await callback.answer()
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "back_to_view_user_error", str(e))
+
+
+@router.callback_query(F.data.startswith("back_to_view_after_error:"))
+async def callback_back_to_view_after_error(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Возврат к просмотру пользователя после ошибки удаления"""
+    try:
+        user_id = int(callback.data.split(":")[1])
+        
+        data = await state.get_data()
+        filter_type = data.get('filter_type', 'all')
+        
+        # Используем общую функцию для отображения информации
+        success = await show_user_info_detail(callback, user_id, session, filter_type)
+        if success:
+            await callback.answer()
+        
+    except (ValueError, IndexError):
+        await callback.answer("Ошибка")
+        log_user_error(callback.from_user.id, "back_to_view_after_error_error", f"Invalid data: {callback.data}")
+
+
+@router.callback_query(F.data == "cancel_edit")
+async def callback_cancel_edit(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Отмена редактирования - возврат к редактору пользователя"""
+    try:
+        data = await state.get_data()
+        editing_user_id = data.get('editing_user_id')
+        
+        if not editing_user_id:
+            await callback.answer("Ошибка: пользователь не найден")
+            return
+        
+        # Получаем информацию о пользователе
+        target_user = await get_user_with_details(session, editing_user_id)
+        if not target_user:
+            await callback.answer("❌ Пользователь не найден")
+            return
+        
+        # Формируем текст с информацией о пользователе
+        role_name = target_user.roles[0].name if target_user.roles else "Нет роли"
+        group_name = target_user.groups[0].name if target_user.groups else "Нет группы"
+        
+        text = (
+            f"🦸🏻‍♂️ <b>Пользователь:</b> {target_user.full_name}\n\n"
+            f"<b>Телефон:</b> {target_user.phone_number}\n"
+            f"<b>Username:</b> @{target_user.username if target_user.username else 'Не указан'}\n"
+            f"<b>Номер:</b> #{target_user.id}\n"
+            f"<b>Дата регистрации:</b> {target_user.registration_date.strftime('%d.%m.%Y %H:%M') if target_user.registration_date else 'Не указана'}\n\n"
+            f"━━━━━━━━━━━━\n\n"
+            f"🗂️ <b>Статус:</b>\n"
+            f"<b>Группа:</b> {group_name}\n"
+            f"<b>Роль:</b> {role_name}\n\n"
+            f"━━━━━━━━━━━━\n\n"
+            f"📍 <b>Объект:</b>\n"
+        )
+        
+        # Добавляем объекты в зависимости от роли
+        if role_name in ["Стажер", "Стажёр"]:
+            if target_user.internship_object:
+                text += f"<b>Стажировки:</b> {target_user.internship_object.name}\n"
+            else:
+                text += f"<b>Стажировки:</b> Не указан\n"
+        
+        if target_user.work_object:
+            text += f"<b>Работы:</b> {target_user.work_object.name}\n"
+        else:
+            text += f"<b>Работы:</b> Не указан\n"
+        
+        text += "\n<b>Выбери параметр для изменения:</b>"
+        
+        is_trainee = role_name in ["Стажер", "Стажёр"]
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_user_editor_keyboard(is_trainee),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(UserEditStates.viewing_user_info)
+        await callback.answer()
+        log_user_action(callback.from_user.id, "cancel_edit", f"User: {editing_user_id}")
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "cancel_edit_error", str(e))

@@ -828,7 +828,21 @@ async def process_test_selection(callback: CallbackQuery, state: FSMContext, ses
     is_employee = "Сотрудник" in role_names
     
     # Проверяем роль пользователя для определения интерфейса
-    if (is_trainee or is_employee or (is_mentor and has_access and context == 'taking')):
+    # ИСКЛЮЧЕНИЕ: Если наставник пришел из меню "Тесты стажеров" (context != 'taking'), 
+    # всегда показываем интерфейс управления, даже если у него есть доступ к тесту
+    # Для наставников: если context != 'taking', всегда показываем управление
+    if is_mentor and context != 'taking':
+        # Наставник из меню "Тесты стажеров" - показываем интерфейс управления
+        can_edit = await check_user_permission(session, user.id, "edit_tests")
+        user_role = "creator" if can_edit else "mentor"
+        
+        await callback.message.edit_text(
+            test_info,
+            parse_mode="HTML",
+            reply_markup=get_test_actions_keyboard(test_id, user_role)
+        )
+        await callback.answer()
+    elif (is_trainee or is_employee or (is_mentor and has_access and context == 'taking')):
         # Для стажёров, сотрудников и наставников с доступом - интерфейс прохождения теста
         # Проверяем доступ к конкретному тесту
         
@@ -894,7 +908,7 @@ async def process_test_selection(callback: CallbackQuery, state: FSMContext, ses
         await state.update_data(selected_test_id=test_id)
         await state.set_state(TestTakingStates.waiting_for_test_start)
     else:
-        # Для наставников и рекрутеров - показываем меню управления
+        # Для рекрутеров и других ролей - показываем меню управления
         can_edit = await check_user_permission(session, user.id, "edit_tests")
         user_role = "creator" if can_edit else "mentor"
         
@@ -903,8 +917,7 @@ async def process_test_selection(callback: CallbackQuery, state: FSMContext, ses
             parse_mode="HTML",
             reply_markup=get_test_actions_keyboard(test_id, user_role)
         )
-        
-    await callback.answer()
+        await callback.answer()
     
     log_user_action(
         callback.from_user.id, 

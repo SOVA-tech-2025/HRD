@@ -901,7 +901,7 @@ async def finish_test(message: Message, state: FSMContext, session: AsyncSession
             stages_progress = await get_trainee_stage_progress(session, trainee_path.id)
 
             progress_info = f"\n\n🏆<b>Твой прогресс</b>\n"
-            progress_info += f"⏺️<b>Название траектории:</b> {trainee_path.learning_path.name}\n"
+            progress_info += f"📚<b>Название траектории:</b> {trainee_path.learning_path.name}\n\n"
 
             for stage_progress in stages_progress:
                 stage = stage_progress.stage
@@ -924,11 +924,11 @@ async def finish_test(message: Message, state: FSMContext, session: AsyncSession
                             break
                 
                 if all_sessions_completed and sessions_progress:
-                    stage_icon = "🟢"  # Все сессии пройдены
+                    stage_icon = "✅"  # Все сессии пройдены
                 elif stage_progress.is_opened:
                     stage_icon = "🟡"  # Этап открыт
                 else:
-                    stage_icon = "⏺️"  # Этап закрыт
+                    stage_icon = "⛔️"  # Этап закрыт
                     
                 progress_info += f"{stage_icon}<b>Этап {stage.order_number}:</b> {stage.name}\n"
 
@@ -943,13 +943,13 @@ async def finish_test(message: Message, state: FSMContext, session: AsyncSession
                                 break
                         
                         if all_tests_passed:
-                            session_icon = "🟢"  # Все тесты пройдены
+                            session_icon = "✅"  # Все тесты пройдены
                         elif stage_progress.is_opened:
                             session_icon = "🟡"  # Этап открыт, сессия доступна
                         else:
-                            session_icon = "⏺️"  # Этап закрыт
+                            session_icon = "⛔️"  # Этап закрыт
                     else:
-                        session_icon = "⏺️"  # Нет тестов
+                        session_icon = "⛔️"  # Нет тестов
                         
                     progress_info += f"{session_icon}<b>Сессия {session_progress.session.order_number}:</b> {session_progress.session.name}\n"
 
@@ -958,11 +958,11 @@ async def finish_test(message: Message, state: FSMContext, session: AsyncSession
                         # Определяем статус теста
                         test_result = await get_user_test_result(session, user.id, test_item.id)
                         if test_result and test_result.is_passed:
-                            test_icon = "🟢"  # Тест пройден
+                            test_icon = "✅"  # Тест пройден
                         elif stage_progress.is_opened:
                             test_icon = "🟡"  # Этап открыт, тест доступен
                         else:
-                            test_icon = "⏺️"  # Этап закрыт
+                            test_icon = "⛔️"  # Этап закрыт
                         test_number = len([t for t in session_progress.session.tests if t.id <= test_item.id])
                         # Добавляем процент для пройденных тестов
                         percentage_text = ""
@@ -970,14 +970,17 @@ async def finish_test(message: Message, state: FSMContext, session: AsyncSession
                             percentage = (test_result.score / test_result.max_possible_score) * 100
                             percentage_text = f" - {percentage:.0f}%"
                         progress_info += f"{test_icon}<b>Тест {test_number}:</b> {test_item.name}{percentage_text}\n"
+                
+                # Добавляем пустую строку после этапа
+                progress_info += "\n"
 
             # Добавляем аттестацию с правильным статусом
             attestation = trainee_path.learning_path.attestation
             if attestation:
                 attestation_status = await get_trainee_attestation_status(session, user.id, attestation.id)
-                progress_info += f"🔍{attestation_status}<b>Аттестация:</b> {attestation.name}\n\n"
+                progress_info += f"🏁<b>Аттестация:</b> {attestation.name} {attestation_status}\n\n"
             else:
-                progress_info += f"🔍⏺️<b>Аттестация:</b> Не указана\n\n"
+                progress_info += f"🏁<b>Аттестация:</b> Не указана ⛔️\n\n"
 
             # Уведомление о завершении этапа отправляется через check_and_notify_stage_completion
             # Здесь только показываем прогресс без дублированного уведомления
@@ -1827,41 +1830,44 @@ async def callback_trajectory_from_test(callback: CallbackQuery, state: FSMConte
             f"🧑 <b>ФИО:</b> {user.full_name}\n"
             f"👑 <b>Роли:</b> {', '.join([role.name for role in user.roles]) if user.roles else 'Не указаны'}\n"
             f"🗂️<b>Группа:</b> {', '.join([group.name for group in user.groups]) if user.groups else 'Не указана'}\n"
-            f"📍<b>1️⃣Объект стажировки:</b> {user.internship_object.name if user.internship_object else 'Не указан'}\n"
-            f"📍<b>2️⃣Объект работы:</b> {user.work_object.name if user.work_object else 'Не указан'}\n\n"
-            f"⏺️<b>Название траектории:</b> {trainee_path.learning_path.name if trainee_path.learning_path else 'Не найдена'}\n"
+        f"📍<b>1️⃣Объект стажировки:</b> {user.internship_object.name if user.internship_object else 'Не указан'}\n"
+        f"📍<b>2️⃣Объект работы:</b> {user.work_object.name if user.work_object else 'Не указан'}\n\n"
+        f"📚<b>Название траектории:</b> {trainee_path.learning_path.name if trainee_path.learning_path else 'Не найдена'}\n\n"
         )
 
         # Формируем информацию об этапах
         stages_info = ""
         for stage_progress in stages_progress:
             stage = stage_progress.stage
-            status_icon = "🟢" if stage_progress.is_completed else ("🟡" if stage_progress.is_opened else "⏺️")
+            status_icon = "✅" if stage_progress.is_completed else ("🟡" if stage_progress.is_opened else "⛔️")
             stages_info += f"{status_icon}<b>Этап {stage.order_number}:</b> {stage.name}\n"
 
             # Получаем информацию о сессиях
             sessions_progress = await get_stage_session_progress(session, stage_progress.id)
             for session_progress in sessions_progress:
-                session_status_icon = "🟢" if session_progress.is_completed else ("🟡" if session_progress.is_opened else "⏺️")
+                session_status_icon = "✅" if session_progress.is_completed else ("🟡" if session_progress.is_opened else "⛔️")
                 stages_info += f"{session_status_icon}<b>Сессия {session_progress.session.order_number}:</b> {session_progress.session.name}\n"
 
                 # Показываем тесты в сессии
                 for test in session_progress.session.tests:
                     test_result = await get_user_test_result(session, user.id, test.id)
                     if test_result and test_result.is_passed:
-                        test_status_icon = "🟢"
+                        test_status_icon = "✅"
                     else:
-                        test_status_icon = "⏺️"
+                        test_status_icon = "⛔️"
                     stages_info += f"{test_status_icon}<b>Тест {len([t for t in session_progress.session.tests if t.id <= test.id])}:</b> {test.name}\n"
+            
+            # Добавляем пустую строку после этапа
+            stages_info += "\n"
 
         # Добавляем информацию об аттестации с правильным статусом
         if trainee_path.learning_path.attestation:
             attestation_status = await get_trainee_attestation_status(
                 session, user.id, trainee_path.learning_path.attestation.id
             )
-            stages_info += f"🔍{attestation_status}<b>Аттестация:</b> {trainee_path.learning_path.attestation.name}\n\n"
+            stages_info += f"🏁<b>Аттестация:</b> {trainee_path.learning_path.attestation.name} {attestation_status}\n\n"
         else:
-            stages_info += f"🔍⏺️<b>Аттестация:</b> Не указана\n\n"
+            stages_info += f"🏁<b>Аттестация:</b> Не указана ⛔️\n\n"
 
         available_stages = [sp for sp in stages_progress if sp.is_opened and not sp.is_completed]
 

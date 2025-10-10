@@ -11,7 +11,7 @@ from database.db import (
     get_attestation_by_id, check_attestation_in_use, delete_attestation, 
     get_all_active_tests, create_test, add_question_to_test,
     get_all_groups, check_user_permission, get_user_by_tg_id, get_user_roles,
-    get_trajectories_using_attestation
+    get_trajectories_using_attestation, get_trajectory_usage_info
 )
 from handlers.auth import check_auth
 from states.states import LearningPathStates, AttestationStates
@@ -25,7 +25,8 @@ from keyboards.keyboards import (
     get_trajectory_attestation_confirmation_keyboard, get_trajectory_final_confirmation_keyboard, 
     get_attestations_main_keyboard, get_attestation_creation_start_keyboard, 
     get_attestation_questions_keyboard, get_group_selection_keyboard, 
-    get_main_menu_keyboard, get_keyboard_by_role
+    get_main_menu_keyboard, get_keyboard_by_role, get_trajectory_selection_keyboard,
+    get_trajectory_deletion_confirmation_keyboard
 )
 from utils.logger import log_user_action, log_user_error
 from utils.validators import validate_name
@@ -67,7 +68,8 @@ async def cmd_learning_paths(message: Message, state: FSMContext, session: Async
         text = ("🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n\n"
                 "В данном меню вы можете:\n\n"
                 "1 ➕Создать траекторию обучения\n"
-                "2 ✏️Изменить траекторию обучения")
+                "2 ✏️Изменить траекторию обучения\n"
+                "3 🗑️Удалить траекторию обучения")
         
         await message.answer(
             text,
@@ -2363,6 +2365,270 @@ async def callback_confirm_delete_attestation(callback: CallbackQuery, state: FS
     except Exception as e:
         await callback.answer("Произошла ошибка")
         log_user_error(callback.from_user.id, "confirm_delete_attestation_error", str(e))
+
+
+@router.callback_query(F.data == "back_to_trajectories_main", AttestationStates.main_menu)
+async def callback_back_to_trajectories_main_from_attestations(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Возврат к главному меню траекторий из аттестаций"""
+    try:
+        await callback.answer()
+        
+        # Показываем главное меню траекторий
+        text = ("🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n\n"
+                "В данном меню вы можете:\n\n"
+                "1 ➕Создать траекторию обучения\n"
+                "2 ✏️Изменить траекторию обучения\n"
+                "3 🗑️Удалить траекторию обучения")
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_learning_paths_main_keyboard(),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.main_menu)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "back_to_trajectories_main_from_attestations_error", str(e))
+
+
+# ================== УДАЛЕНИЕ ТРАЕКТОРИЙ ==================
+
+@router.callback_query(F.data == "delete_trajectory", LearningPathStates.main_menu)
+async def callback_delete_trajectory(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик кнопки удаления траектории"""
+    try:
+        await callback.answer()
+        
+        # Получаем все траектории
+        trajectories = await get_all_learning_paths(session)
+        
+        if not trajectories:
+            await callback.message.edit_text(
+                "🗑️ <b>Удаление траекторий</b>\n\n"
+                "В системе нет траекторий для удаления.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_trajectories_main")]
+                ])
+            )
+            return
+        
+        # Показываем список траекторий для выбора
+        text = "🗑️ <b>Удаление траекторий</b>\n\n"
+        text += "Выберите траекторию для удаления:\n\n"
+        
+        for i, trajectory in enumerate(trajectories, 1):
+            text += f"{i}. {trajectory.name}\n"
+        
+        await callback.message.edit_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=get_trajectory_selection_keyboard(trajectories)
+        )
+        
+        await state.set_state(LearningPathStates.trajectory_deletion)
+        log_user_action(callback.from_user.id, "opened_trajectory_deletion", "Открыто меню удаления траекторий")
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "delete_trajectory_error", str(e))
+
+
+@router.callback_query(F.data.startswith("select_trajectory_to_delete:"), LearningPathStates.trajectory_deletion)
+async def callback_select_trajectory_to_delete(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик выбора траектории для удаления"""
+    try:
+        await callback.answer()
+        
+        trajectory_id = int(callback.data.split(":")[1])
+        trajectory = await get_learning_path_by_id(session, trajectory_id)
+        
+        if not trajectory:
+            await callback.message.edit_text(
+                "❌ <b>Ошибка</b>\n\n"
+                "Траектория не найдена.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_trajectory_selection")]
+                ])
+            )
+            return
+        
+        # Собираем информацию об использовании траектории
+        usage_info = await get_trajectory_usage_info(session, trajectory_id)
+        
+        # Формируем предупреждающее сообщение
+        warning_text = f"⚠️ <b>ПРЕДУПРЕЖДЕНИЕ</b> ⚠️\n\n"
+        warning_text += f"<b>Траектория:</b> {trajectory.name}\n\n"
+        
+        if usage_info['total_users'] > 0:
+            warning_text += f"⚠️ <b>ВНИМАНИЕ! Эта траектория активно используется:</b>\n\n"
+            warning_text += f"👥 <b>Стажеры:</b> {usage_info['trainees_count']} чел.\n"
+            warning_text += f"📊 <b>Всего пользователей:</b> {usage_info['total_users']} чел.\n\n"
+            
+            if usage_info['trainees']:
+                warning_text += "<b>Список затронутых стажеров:</b>\n"
+                for trainee in usage_info['trainees'][:10]:  # Показываем только первых 10
+                    warning_text += f"• {trainee.full_name}\n"
+                if len(usage_info['trainees']) > 10:
+                    warning_text += f"... и еще {len(usage_info['trainees']) - 10} стажеров\n"
+                warning_text += "\n"
+        
+        warning_text += "⚠️ <b>ПОСЛЕДСТВИЯ УДАЛЕНИЯ:</b>\n\n"
+        warning_text += "📚 <b>Для стажеров:</b>\n"
+        warning_text += "• ❌ РЕЗУЛЬТАТЫ ТЕСТОВ ТРАЕКТОРИИ БУДУТ ПОТЕРЯНЫ\n"
+        warning_text += "• ❌ НЕ СМОГУТ ПРОЙТИ АТТЕСТАЦИЮ ПО ЭТОЙ ТРАЕКТОРИИ\n"
+        warning_text += "• ❌ ПОТЕРЯЮТ ДОСТУП К МАТЕРИАЛАМ ЭТОЙ ТРАЕКТОРИИ\n"
+        warning_text += "• ❌ ПРОГРЕСС ПО ЭТОЙ ТРАЕКТОРИИ БУДЕТ СБРОШЕН\n"
+        warning_text += "• ✅ ТЕСТЫ ОСТАНУТСЯ В СИСТЕМЕ (можно использовать в других траекториях)\n\n"
+        
+        warning_text += "👨‍🏫 <b>Для наставников:</b>\n"
+        warning_text += "• ❌ НЕ СМОГУТ УПРАВЛЯТЬ ПРОГРЕССОМ ПО ЭТОЙ ТРАЕКТОРИИ\n"
+        warning_text += "• ❌ ПОТЕРЯЮТ ДОСТУП К МАТЕРИАЛАМ ЭТОЙ ТРАЕКТОРИИ\n"
+        warning_text += "• ❌ НЕ СМОГУТ ОТСЛЕЖИВАТЬ ОБУЧЕНИЕ ПО ЭТОЙ ТРАЕКТОРИИ\n\n"
+        
+        warning_text += "🗂️ <b>Системные изменения:</b>\n"
+        warning_text += "• ❌ ЭТАПЫ И СЕССИИ ТРАЕКТОРИИ БУДУТ УДАЛЕНЫ\n"
+        warning_text += "• ❌ СВЯЗИ ТЕСТОВ С ТРАЕКТОРИЕЙ БУДУТ УДАЛЕНЫ\n"
+        warning_text += "• ❌ РЕЗУЛЬТАТЫ И СТАТИСТИКА ПО ТРАЕКТОРИИ БУДУТ ПОТЕРЯНЫ\n"
+        warning_text += "• ❌ СВЯЗИ АТТЕСТАЦИИ С ТРАЕКТОРИЕЙ БУДУТ УДАЛЕНЫ\n"
+        warning_text += "• ✅ ТЕСТЫ И ВОПРОСЫ ОСТАНУТСЯ В СИСТЕМЕ\n"
+        warning_text += "• ✅ АТТЕСТАЦИИ ОСТАНУТСЯ В СИСТЕМЕ\n\n"
+        
+        warning_text += "ℹ️ <b>ВАЖНО:</b>\n"
+        warning_text += "• ✅ Пользователи останутся в системе\n"
+        warning_text += "• ✅ Роли пользователей не изменятся\n"
+        warning_text += "• ✅ Наставничество сохранится\n"
+        warning_text += "• ✅ Другие траектории не пострадают\n\n"
+        
+        warning_text += "⚠️ <b>ЭТО ДЕЙСТВИЕ НЕОБРАТИМО!</b>\n"
+        warning_text += "После удаления восстановить траекторию и данные будет невозможно.\n\n"
+        warning_text += "❓ <b>Вы ДЕЙСТВИТЕЛЬНО хотите удалить эту траекторию?</b>"
+        
+        await callback.message.edit_text(
+            warning_text,
+            parse_mode="HTML",
+            reply_markup=get_trajectory_deletion_confirmation_keyboard(trajectory_id)
+        )
+        
+        log_user_action(callback.from_user.id, "selected_trajectory_for_deletion", f"trajectory_id: {trajectory_id}")
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "select_trajectory_to_delete_error", str(e))
+
+
+@router.callback_query(F.data.startswith("confirm_trajectory_deletion:"), LearningPathStates.trajectory_deletion)
+async def callback_confirm_trajectory_deletion(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик подтверждения удаления траектории"""
+    try:
+        await callback.answer()
+        
+        trajectory_id = int(callback.data.split(":")[1])
+        trajectory = await get_learning_path_by_id(session, trajectory_id)
+        
+        if not trajectory:
+            await callback.message.edit_text(
+                "❌ <b>Ошибка</b>\n\n"
+                "Траектория не найдена.",
+                parse_mode="HTML"
+            )
+            return
+        
+        # Удаляем траекторию
+        success = await delete_learning_path(session, trajectory_id)
+        
+        if success:
+            await callback.message.edit_text(
+                f"✅ <b>Траектория удалена</b>\n\n"
+                f"Траектория '{trajectory.name}' успешно удалена из системы.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="⬅️ К списку траекторий", callback_data="back_to_trajectories_main")]
+                ])
+            )
+            log_user_action(callback.from_user.id, "deleted_trajectory", f"trajectory_id: {trajectory_id}, name: {trajectory.name}")
+        else:
+            await callback.message.edit_text(
+                f"❌ <b>Ошибка удаления</b>\n\n"
+                f"Не удалось удалить траекторию '{trajectory.name}'.\n"
+                f"Попробуйте позже или обратитесь к администратору.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_trajectory_selection")]
+                ])
+            )
+            log_user_error(callback.from_user.id, "trajectory_deletion_failed", f"trajectory_id: {trajectory_id}")
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "confirm_trajectory_deletion_error", str(e))
+
+
+@router.callback_query(F.data == "back_to_trajectory_selection", LearningPathStates.trajectory_deletion)
+async def callback_back_to_trajectory_selection(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Возврат к выбору траектории для удаления"""
+    try:
+        await callback.answer()
+        
+        # Получаем все траектории
+        trajectories = await get_all_learning_paths(session)
+        
+        if not trajectories:
+            await callback.message.edit_text(
+                "🗑️ <b>Удаление траекторий</b>\n\n"
+                "В системе нет траекторий для удаления.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_trajectories_main")]
+                ])
+            )
+            return
+        
+        # Показываем список траекторий для выбора
+        text = "🗑️ <b>Удаление траекторий</b>\n\n"
+        text += "Выберите траекторию для удаления:\n\n"
+        
+        for i, trajectory in enumerate(trajectories, 1):
+            text += f"{i}. {trajectory.name}\n"
+        
+        await callback.message.edit_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=get_trajectory_selection_keyboard(trajectories)
+        )
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "back_to_trajectory_selection_error", str(e))
+
+
+@router.callback_query(F.data == "back_to_trajectories_main")
+async def callback_back_to_trajectories_main_universal(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Универсальный возврат к главному меню траекторий"""
+    try:
+        await callback.answer()
+        
+        # Показываем главное меню траекторий
+        text = ("🗺️<b>РЕДАКТОР ТРАЕКТОРИЙ</b>🗺️\n\n"
+                "В данном меню вы можете:\n\n"
+                "1 ➕Создать траекторию обучения\n"
+                "2 ✏️Изменить траекторию обучения\n"
+                "3 🗑️Удалить траекторию обучения")
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=get_learning_paths_main_keyboard(),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(LearningPathStates.main_menu)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "back_to_trajectories_main_universal_error", str(e))
 
 
 # ================== ОБЩИЕ CALLBACKS ==================

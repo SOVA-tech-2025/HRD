@@ -3,19 +3,20 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime
 
 from database.db import (
     get_all_users, get_user_by_id, get_all_roles, 
     add_user_role, remove_user_role, get_user_roles, get_all_trainees,
     get_user_by_tg_id, check_user_permission, get_trainee_mentor,
-    get_user_test_results
+    get_user_test_results, get_test_by_id
 )
 from keyboards.keyboards import (
     get_user_selection_keyboard, get_user_action_keyboard, 
     get_role_change_keyboard, get_confirmation_keyboard
 )
 from states.states import AdminStates
-from utils.logger import log_user_action, log_user_error
+from utils.logger import log_user_action, log_user_error, logger
 from handlers.auth import check_auth
 
 router = Router()
@@ -405,27 +406,227 @@ async def cmd_trainees(message: Message, state: FSMContext, session: AsyncSessio
     if not await check_admin_permission(message, state, session, permission="view_trainee_list"):
         return
     
+    await show_trainees_list(message, session, page=0)
+
+
+@router.message(F.text.in_(["Список Стажеров", "Стажеры 🐣"]))
+async def button_trainees(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработчик кнопки просмотра списка Стажеров"""
+    if not await check_admin_permission(message, state, session, permission="view_trainee_list"):
+        return
+    
+    await show_trainees_list(message, session, page=0)
+
+
+async def show_trainees_list(message: Message, session: AsyncSession, page: int = 0):
+    """Показать список стажеров с пагинацией"""
+    from keyboards.keyboards import get_trainees_list_keyboard
+    
     trainees = await get_all_trainees(session)
     
     if not trainees:
         await message.answer("В системе пока нет зарегистрированных Стажеров.")
         return
 
-    trainees_list = "\n".join([
-        f"{i+1}. {trainee.full_name} (@{trainee.username or 'нет юзернейма'})"
-        for i, trainee in enumerate(trainees)
-    ])
-    
     await message.answer(
-        f"📋 <b>Список Стажеров</b>\n\n{trainees_list}\n\n"
-        "Для управления Стажерами используйте команду /manage_users",
-        parse_mode="HTML"
+        "📋 <b>Список стажеров:</b>",
+        parse_mode="HTML",
+        reply_markup=get_trainees_list_keyboard(trainees, page=page)
     )
     
     log_user_action(message.from_user.id, message.from_user.username, "viewed trainees list")
 
 
-@router.message(F.text.in_(["Список Стажеров", "Стажеры 🐣"]))
-async def button_trainees(message: Message, state: FSMContext, session: AsyncSession):
-    """Обработчик кнопки просмотра списка Стажеров"""
-    await cmd_trainees(message, state, session) 
+@router.callback_query(F.data.startswith("trainees_page:"))
+async def callback_trainees_page(callback: CallbackQuery, session: AsyncSession):
+    """Обработчик пагинации списка стажеров"""
+    try:
+        from keyboards.keyboards import get_trainees_list_keyboard
+        
+        page = int(callback.data.split(":")[1])
+        trainees = await get_all_trainees(session)
+        
+        if not trainees:
+            await callback.message.edit_text("В системе пока нет зарегистрированных Стажеров.")
+            await callback.answer()
+            return
+
+        await callback.message.edit_text(
+            "📋 <b>Список стажеров:</b>",
+            parse_mode="HTML",
+            reply_markup=get_trainees_list_keyboard(trainees, page=page)
+        )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Ошибка обработки пагинации стажеров: {e}")
+        await callback.answer("Ошибка при загрузке страницы", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("view_trainee:"))
+async def callback_view_trainee(callback: CallbackQuery, session: AsyncSession):
+    """Обработчик просмотра детальной информации о стажере"""
+    try:
+        trainee_id = int(callback.data.split(":")[1])
+        await show_trainee_detail(callback, session, trainee_id)
+    except Exception as e:
+        logger.error(f"Ошибка просмотра стажера: {e}")
+        await callback.answer("Ошибка при загрузке информации о стажере", show_alert=True)
+
+
+@router.callback_query(F.data == "back_to_recruiter_trainees")
+async def callback_back_to_recruiter_trainees(callback: CallbackQuery, session: AsyncSession):
+    """Обработчик возврата к списку стажеров"""
+    try:
+        from keyboards.keyboards import get_trainees_list_keyboard
+        
+        trainees = await get_all_trainees(session)
+        
+        if not trainees:
+            await callback.message.edit_text("В системе пока нет зарегистрированных Стажеров.")
+            await callback.answer()
+            return
+
+        await callback.message.edit_text(
+            "📋 <b>Список стажеров:</b>",
+            parse_mode="HTML",
+            reply_markup=get_trainees_list_keyboard(trainees, page=0)
+        )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Ошибка возврата к списку стажеров: {e}")
+        await callback.answer("Ошибка при загрузке списка", show_alert=True)
+
+
+async def show_trainee_detail(callback: CallbackQuery, session: AsyncSession, trainee_id: int):
+    """Показать детальную информацию о стажере"""
+    from keyboards.keyboards import get_trainee_detail_keyboard
+    from database.db import get_trainee_learning_path
+    
+    # Получаем информацию о стажере
+    trainee = await get_user_by_id(session, trainee_id)
+    if not trainee:
+        await callback.answer("Стажер не найден", show_alert=True)
+        return
+    
+    # Получаем траекторию стажера
+    trainee_path = await get_trainee_learning_path(session, trainee_id)
+    trajectory_name = trainee_path.learning_path.name if trainee_path else "не выбрано"
+    
+    # Формируем сообщение согласно ТЗ
+    message_text = f"🦸🏻‍♂️ <b>Стажер:</b> {trainee.full_name}\n"
+    message_text += f"<b>Траектория:</b> {trajectory_name}\n\n"
+    message_text += f"<b>Телефон:</b> {trainee.phone_number}\n"
+    message_text += f"<b>Username:</b> @{trainee.username or 'нет юзернейма'}\n"
+    message_text += f"<b>Номер:</b> #{trainee.id}\n"
+    message_text += f"<b>Дата регистрации:</b> {trainee.registration_date.strftime('%d.%m.%Y %H:%M')}\n\n"
+    message_text += "━━━━━━━━━━━━\n\n"
+    message_text += "🗂️ <b>Статус:</b>\n"
+    message_text += f"<b>Группа:</b> {trainee.groups[0].name if trainee.groups else 'Не назначена'}\n"
+    message_text += f"<b>Роль:</b> {trainee.roles[0].name if trainee.roles else 'Не назначена'}\n\n"
+    message_text += "━━━━━━━━━━━━\n\n"
+    message_text += "📍 <b>Объект:</b>\n"
+    if trainee.roles and trainee.roles[0].name == "Стажер":
+        message_text += f"<b>Стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
+    message_text += f"<b>Работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}"
+    
+    await callback.message.edit_text(
+        message_text,
+        parse_mode="HTML",
+        reply_markup=get_trainee_detail_keyboard(trainee_id)
+    )
+    
+    log_user_action(callback.from_user.id, callback.from_user.username, "viewed trainee detail", {"trainee_id": trainee_id})
+
+
+@router.callback_query(F.data.startswith("view_trainee_progress:"))
+async def callback_view_trainee_progress(callback: CallbackQuery, session: AsyncSession):
+    """Обработчик просмотра прогресса стажера"""
+    try:
+        trainee_id = int(callback.data.split(":")[1])
+        await show_trainee_progress(callback, session, trainee_id)
+    except Exception as e:
+        logger.error(f"Ошибка просмотра прогресса стажера: {e}")
+        await callback.answer("Ошибка при загрузке прогресса стажера", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("back_to_trainee_detail:"))
+async def callback_back_to_trainee_detail(callback: CallbackQuery, session: AsyncSession):
+    """Обработчик возврата к детальному просмотру стажера"""
+    try:
+        trainee_id = int(callback.data.split(":")[1])
+        await show_trainee_detail(callback, session, trainee_id)
+    except Exception as e:
+        logger.error(f"Ошибка возврата к детальному просмотру стажера: {e}")
+        await callback.answer("Ошибка при загрузке информации о стажере", show_alert=True)
+
+
+async def show_trainee_progress(callback: CallbackQuery, session: AsyncSession, trainee_id: int):
+    """Показать прогресс стажера"""
+    from keyboards.keyboards import get_trainee_progress_keyboard
+    from database.db import get_user_test_results, get_test_by_id
+    
+    # Получаем информацию о стажере
+    trainee = await get_user_by_id(session, trainee_id)
+    if not trainee:
+        await callback.answer("Стажер не найден", show_alert=True)
+        return
+    
+    # Получаем результаты тестов
+    test_results = await get_user_test_results(session, trainee_id)
+    
+    # Рассчитываем количество дней в статусе стажера
+    days_as_trainee = (datetime.now() - trainee.role_assigned_date).days
+    
+    # Формируем сообщение согласно ТЗ
+    message_text = f"🦸🏻‍♂️<b>Стажер:</b> {trainee.full_name}\n\n"
+    message_text += f"<b>Телефон:</b> {trainee.phone_number}\n"
+    message_text += f"<b>В статусе стажера:</b> {days_as_trainee} дней\n"
+    message_text += f"<b>Объект стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
+    message_text += f"<b>Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n"
+    message_text += "━━━━━━━━━━━━\n\n"
+    message_text += "📊 <b>Общая статистика</b>\n"
+    
+    # Подсчитываем статистику тестов
+    total_tests = len(test_results)
+    passed_tests = sum(1 for result in test_results if result.is_passed)
+    success_rate = (passed_tests / total_tests * 100) if total_tests > 0 else 0.0
+    
+    message_text += f"• <b>Пройдено тестов:</b> {passed_tests}/{total_tests}\n"
+    message_text += f"• <b>Процент успеха:</b> {success_rate:.1f}%\n\n"
+    
+    message_text += "🧾 <b>Детальные результаты</b>\n"
+    
+    if test_results:
+        for result in test_results:
+            # Получаем информацию о тесте
+            test = await get_test_by_id(session, result.test_id)
+            test_name = test.name if test else "Неизвестный тест"
+            
+            # Рассчитываем процент
+            percentage = (result.score / result.max_possible_score * 100) if result.max_possible_score > 0 else 0.0
+            
+            # Статус
+            status = "пройден" if result.is_passed else "не пройден"
+            
+            # Время выполнения
+            if result.start_time and result.end_time:
+                time_spent = int((result.end_time - result.start_time).total_seconds())
+                time_str = f"{time_spent} сек"
+            else:
+                time_str = "неизвестно"
+            
+            message_text += f"<b>Тест:</b> {test_name}\n"
+            message_text += f"• <b>Баллы:</b> {result.score:.1f}/{result.max_possible_score:.1f} ({percentage:.1f}%)\n"
+            message_text += f"• <b>Статус:</b> {status}\n"
+            message_text += f"• <b>Дата:</b> {result.created_date.strftime('%d.%m.%Y %H:%M')}\n"
+            message_text += f"• <b>Время:</b> {time_str}\n\n"
+    else:
+        message_text += "Нет пройденных тестов\n\n"
+    
+    await callback.message.edit_text(
+        message_text,
+        parse_mode="HTML",
+        reply_markup=get_trainee_progress_keyboard(trainee_id)
+    )
+    
+    log_user_action(callback.from_user.id, callback.from_user.username, "viewed trainee progress", {"trainee_id": trainee_id}) 

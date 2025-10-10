@@ -19,7 +19,7 @@ def get_contact_keyboard() -> ReplyKeyboardMarkup:
     return keyboard
 
 
-def get_role_selection_keyboard() -> InlineKeyboardMarkup:
+def get_role_selection_keyboard(is_editing: bool = False) -> InlineKeyboardMarkup:
     import os
     allow_auto_role = os.getenv("ALLOW_AUTO_ROLE_ASSIGNMENT", "false").lower() == "true"
     default_role = os.getenv("DEFAULT_ROLE", "Стажер")
@@ -47,7 +47,11 @@ def get_role_selection_keyboard() -> InlineKeyboardMarkup:
         if not (allow_auto_role and role_name == default_role):
             keyboard_buttons.append([InlineKeyboardButton(text=display_name, callback_data=f"role:{role_name}")])
     
-    keyboard_buttons.append([InlineKeyboardButton(text="Отмена", callback_data="cancel_registration")])
+    # В режиме редактирования показываем "Назад", иначе "Отмена"
+    if is_editing:
+        keyboard_buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="cancel_edit")])
+    else:
+        keyboard_buttons.append([InlineKeyboardButton(text="Отмена", callback_data="cancel_registration")])
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
     return keyboard
@@ -75,7 +79,6 @@ def get_recruiter_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="Мой профиль 🦸🏻‍♂️")],
             [KeyboardButton(text="Рассылка ✈️")],
             [KeyboardButton(text="Тесты 📄")],
-            [KeyboardButton(text="Назначить наставника")],
             [KeyboardButton(text="Наставники 🦉")],
             [KeyboardButton(text="Стажеры 🐣")],
             [KeyboardButton(text="Группы 🗂️")],
@@ -125,9 +128,10 @@ def get_manager_keyboard() -> ReplyKeyboardMarkup:
     """Меню для руководителя - проведение аттестаций стажеров (обновлено для Task 7 + Knowledge Base)"""
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="Аттестация")],
-            [KeyboardButton(text="База знаний")],
-            [KeyboardButton(text="Помощь")]
+            [KeyboardButton(text="Мой профиль 🦸🏻‍♂️")],
+            [KeyboardButton(text="Аттестация ✔️")],
+            [KeyboardButton(text="База знаний 📁")],
+            [KeyboardButton(text="Помощь ❓")]
         ],
         resize_keyboard=True
     )
@@ -946,6 +950,7 @@ def get_group_selection_keyboard(groups: list, page: int = 0, per_page: int = 5)
         )
         keyboard.append([page_info])
     
+    keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="cancel_edit")])
     keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -1088,7 +1093,8 @@ def get_object_selection_keyboard(objects: list, page: int = 0, per_page: int = 
     if navigation_row:
         keyboard.append(navigation_row)
     
-    # Кнопка возврата в главное меню
+    # Кнопка возврата к редактору и главное меню
+    keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="cancel_edit")])
     keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -1153,7 +1159,7 @@ def get_object_delete_confirmation_keyboard(object_id: int) -> InlineKeyboardMar
 def get_user_editor_keyboard(is_trainee: bool = False) -> InlineKeyboardMarkup:
     """Клавиатура для редактора пользователя"""
     keyboard = [
-        [InlineKeyboardButton(text="ФИО", callback_data="edit_full_name")],
+        [InlineKeyboardButton(text="Имя", callback_data="edit_full_name")],
         [InlineKeyboardButton(text="Телефон", callback_data="edit_phone")],
         [InlineKeyboardButton(text="Роль", callback_data="edit_role")],
         [InlineKeyboardButton(text="Группу", callback_data="edit_group")]
@@ -1161,11 +1167,22 @@ def get_user_editor_keyboard(is_trainee: bool = False) -> InlineKeyboardMarkup:
     
     # Добавляем объект стажировки только для стажеров
     if is_trainee:
-        keyboard.append([InlineKeyboardButton(text="1️⃣Объект стажировки", callback_data="edit_internship_object")])
+        keyboard.append([InlineKeyboardButton(text="Объект стажировки", callback_data="edit_internship_object")])
     
-    keyboard.append([InlineKeyboardButton(text="2️⃣Объект работы", callback_data="edit_work_object")])
-    keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="edit_return_to_menu")])
+    keyboard.append([InlineKeyboardButton(text="Объект работы", callback_data="edit_work_object")])
+    keyboard.append([InlineKeyboardButton(text="🗑️ Удалить пользователя", callback_data="delete_user")])
+    keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_view_user")])
+    keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
     
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_user_deletion_confirmation_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура подтверждения удаления пользователя"""
+    keyboard = [
+        [InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"confirm_delete_user:{user_id}")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"cancel_delete_user:{user_id}")]
+    ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
@@ -1173,7 +1190,7 @@ def get_edit_confirmation_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура для подтверждения изменений"""
     keyboard = [
         [InlineKeyboardButton(text="✅ Изменить", callback_data="confirm_change")],
-        [InlineKeyboardButton(text="❌ Отменить", callback_data="cancel_change")]
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="cancel_change")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -1185,6 +1202,7 @@ def get_learning_paths_main_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton(text="➕Создать", callback_data="create_trajectory")],
         [InlineKeyboardButton(text="👁️Просмотреть", callback_data="edit_trajectory")],
+        [InlineKeyboardButton(text="🗑️ Удалить", callback_data="delete_trajectory")],
         [InlineKeyboardButton(text="🔍Аттестации", callback_data="manage_attestations")],
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
     ]
@@ -1341,6 +1359,7 @@ def get_attestations_main_keyboard(attestations: list) -> InlineKeyboardMarkup:
             callback_data=f"view_attestation:{attestation.id}"
         )])
     
+    keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_trajectories_main")])
     keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -1486,7 +1505,7 @@ def get_user_info_keyboard(user_id: int, filter_type: str = "all") -> InlineKeyb
     """Клавиатура для просмотра информации о пользователе"""
     keyboard = [
         [InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"edit_user:{user_id}")],
-        [InlineKeyboardButton(text="↩️ Назад к списку", callback_data=f"back_to_users:{filter_type}")]
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_to_users:{filter_type}")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -1775,4 +1794,170 @@ def get_fallback_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="fallback_back")]
     ]
-    return InlineKeyboardMarkup(inline_keyboard=keyboard) 
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+# =================================
+# КЛАВИАТУРЫ ДЛЯ РАБОТЫ СО СТАЖЕРАМИ (РЕКРУТЕР)
+# =================================
+
+def get_trainees_list_keyboard(trainees: list, page: int = 0, per_page: int = 5) -> InlineKeyboardMarkup:
+    """Клавиатура со списком стажеров с пагинацией для рекрутера"""
+    keyboard = []
+    
+    # Пагинация
+    start_index = page * per_page
+    end_index = start_index + per_page
+    page_trainees = trainees[start_index:end_index]
+    
+    # Кнопки стажеров
+    for trainee in page_trainees:
+        button = InlineKeyboardButton(
+            text=f"{trainee.full_name}",
+            callback_data=f"view_trainee:{trainee.id}"
+        )
+        keyboard.append([button])
+    
+    # Навигационные кнопки
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"trainees_page:{page-1}"))
+    
+    total_pages = (len(trainees) + per_page - 1) // per_page
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton(text="Вперед ➡️", callback_data=f"trainees_page:{page+1}"))
+    
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+    
+    # Информация о страницах
+    if total_pages > 1:
+        page_info = InlineKeyboardButton(
+            text=f"📄 {page + 1}/{total_pages}",
+            callback_data="page_info"
+        )
+        keyboard.append([page_info])
+    
+    # Кнопка главного меню
+    keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_trainee_detail_keyboard(trainee_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура для детального просмотра стажера"""
+    keyboard = [
+        [InlineKeyboardButton(text="📊 Просмотреть прогресс", callback_data=f"view_trainee_progress:{trainee_id}")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_recruiter_trainees")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_trainee_progress_keyboard(trainee_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура для просмотра прогресса стажера"""
+    keyboard = [
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_to_trainee_detail:{trainee_id}")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_trajectory_selection_keyboard(trajectories: list) -> InlineKeyboardMarkup:
+    """Клавиатура для выбора траектории для удаления"""
+    keyboard = []
+    
+    for trajectory in trajectories:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"🗑️ {trajectory.name}",
+                callback_data=f"select_trajectory_to_delete:{trajectory.id}"
+            )
+        ])
+    
+    keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_trajectories_main")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_trajectory_deletion_confirmation_keyboard(trajectory_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура подтверждения удаления траектории"""
+    keyboard = [
+        [InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"confirm_trajectory_deletion:{trajectory_id}")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="back_to_trajectory_selection")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_mentors_main_keyboard() -> InlineKeyboardMarkup:
+    """Главное меню наставников для рекрутера"""
+    keyboard = [
+        [InlineKeyboardButton(text="👥 Список наставников", callback_data="view_all_mentors")],
+        [InlineKeyboardButton(text="👨‍🏫 Назначить наставника", callback_data="mentor_assignment_management")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_mentor_assignment_management_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для управления назначениями наставников"""
+    keyboard = [
+        [InlineKeyboardButton(text="➕ Назначить наставника", callback_data="assign_mentor")],
+        [InlineKeyboardButton(text="👥 Просмотреть назначения", callback_data="view_mentor_assignments")],
+        [InlineKeyboardButton(text="🔄 Переназначить наставника", callback_data="reassign_mentor")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_mentors_menu")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_trainees_with_mentors_keyboard(trainees: list) -> InlineKeyboardMarkup:
+    """Клавиатура для выбора стажера с наставником для переназначения"""
+    keyboard = []
+    
+    for trainee in trainees:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"👤 {trainee.full_name}",
+                callback_data=f"select_trainee_for_reassign:{trainee.id}"
+            )
+        ])
+    
+    keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="mentor_assignment_management")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_mentors_pagination_keyboard(mentors: list, page: int = 0, per_page: int = 5) -> InlineKeyboardMarkup:
+    """Клавиатура для пагинации списка наставников"""
+    keyboard = []
+    
+    # Добавляем кнопки наставников для текущей страницы
+    start_idx = page * per_page
+    end_idx = start_idx + per_page
+    page_mentors = mentors[start_idx:end_idx]
+    
+    for mentor in page_mentors:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"👤 {mentor.full_name}",
+                callback_data=f"view_mentor_detail:{mentor.id}"
+            )
+        ])
+    
+    # Добавляем кнопки пагинации
+    total_pages = (len(mentors) + per_page - 1) // per_page
+    pagination_buttons = []
+    
+    if page > 0:
+        pagination_buttons.append(InlineKeyboardButton(text="⬅️", callback_data=f"mentors_page:{page-1}"))
+    
+    if page < total_pages - 1:
+        pagination_buttons.append(InlineKeyboardButton(text="➡️", callback_data=f"mentors_page:{page+1}"))
+    
+    if pagination_buttons:
+        keyboard.append(pagination_buttons)
+    
+    # Кнопка "Назад" к подменю наставников
+    keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_mentors_menu")])
+    keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)

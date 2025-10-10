@@ -40,7 +40,7 @@ async def format_trajectory_info(user, trainee_path=None, header="ВЫБОР Э�
         f"🗂️<b>Группа:</b> {', '.join([group.name for group in user.groups]) if user.groups else 'Не указана'}\n"
         f"📍<b>1️⃣Объект стажировки:</b> {user.internship_object.name if user.internship_object else 'Не указан'}\n"
         f"📍<b>2️⃣Объект работы:</b> {user.work_object.name if user.work_object else 'Не указан'}\n\n"
-        f"⏺️<b>Название траектории:</b> {trainee_path.learning_path.name if trainee_path.learning_path else 'Не найдена'}\n"
+        f"📚<b>Название траектории:</b> {trainee_path.learning_path.name if trainee_path.learning_path else 'Не найдена'}\n\n"
     )
 
 
@@ -123,11 +123,11 @@ async def cmd_trajectory(message: Message, state: FSMContext, session: AsyncSess
                             break
             
             if all_sessions_completed and sessions_progress_for_stage:
-                status_icon = "🟢"  # Все сессии пройдены
+                status_icon = "✅"  # Все сессии пройдены
             elif stage_progress.is_opened:
                 status_icon = "🟡"  # Этап открыт
             else:
-                status_icon = "⏺️"  # Этап закрыт
+                status_icon = "⛔️"  # Этап закрыт
 
             stages_info += f"{status_icon}<b>Этап {stage.order_number}:</b> {stage.name}\n"
 
@@ -146,13 +146,13 @@ async def cmd_trajectory(message: Message, state: FSMContext, session: AsyncSess
                                 break
                     
                     if all_tests_passed and stage_progress.is_opened:
-                        session_status_icon = "🟢"  # Все тесты пройдены (только если этап открыт)
+                        session_status_icon = "✅"  # Все тесты пройдены (только если этап открыт)
                     elif stage_progress.is_opened:
                         session_status_icon = "🟡"  # Этап открыт, сессия доступна
                     else:
-                        session_status_icon = "⏺️"  # Этап закрыт
+                        session_status_icon = "⛔️"  # Этап закрыт
                 else:
-                    session_status_icon = "⏺️"  # Нет тестов
+                    session_status_icon = "⛔️"  # Нет тестов
                 stages_info += f"{session_status_icon}<b>Сессия {session_progress.session.order_number}:</b> {session_progress.session.name}\n"
 
                 # Показываем тесты в сессии
@@ -161,12 +161,15 @@ async def cmd_trajectory(message: Message, state: FSMContext, session: AsyncSess
                     test_result = await get_user_test_result(session, user.id, test.id)
                     # ИСПРАВЛЕНИЕ: показываем зеленый только если этап открыт И тест пройден
                     if test_result and test_result.is_passed and stage_progress.is_opened:
-                        test_status_icon = "🟢"  # Тест пройден (только если этап открыт)
+                        test_status_icon = "✅"  # Тест пройден (только если этап открыт)
                     elif stage_progress.is_opened:
                         test_status_icon = "🟡"  # Этап открыт, тест доступен
                     else:
-                        test_status_icon = "⏺️"  # Этап закрыт
+                        test_status_icon = "⛔️"  # Этап закрыт
                     stages_info += f"{test_status_icon}<b>Тест {len([t for t in session_progress.session.tests if t.id <= test.id])}:</b> {test.name}\n"
+            
+            # Добавляем пустую строку после этапа
+            stages_info += "\n"
 
         # Добавляем информацию об аттестации
         stages_info += await format_attestation_status(session, user.id, trainee_path)
@@ -268,11 +271,11 @@ async def callback_trajectory_command(callback: CallbackQuery, state: FSMContext
                             break
             
             if all_sessions_completed and sessions_progress:
-                stage_status_icon = "🟢"  # Все сессии пройдены
+                stage_status_icon = "✅"  # Все сессии пройдены
             elif stage_progress.is_opened:
                 stage_status_icon = "🟡"  # Этап открыт
             else:
-                stage_status_icon = "⏺️"  # Этап закрыт
+                stage_status_icon = "⛔️"  # Этап закрыт
 
             stages_info += f"{stage_status_icon}<b>Этап {stage.order_number}:</b> {stage.name}\n"
 
@@ -293,13 +296,13 @@ async def callback_trajectory_command(callback: CallbackQuery, state: FSMContext
                                 break
                     
                     if all_tests_passed and stage_progress.is_opened:
-                        session_status_icon = "🟢"  # Все тесты пройдены (только если этап открыт)
+                        session_status_icon = "✅"  # Все тесты пройдены (только если этап открыт)
                     elif stage_progress.is_opened:
                         session_status_icon = "🟡"  # Этап открыт, сессия доступна
                     else:
-                        session_status_icon = "⏺️"  # Этап закрыт
+                        session_status_icon = "⛔️"  # Этап закрыт
                 else:
-                    session_status_icon = "⏺️"  # Нет тестов
+                    session_status_icon = "⛔️"  # Нет тестов
                 stages_info += f"{session_status_icon}<b>Сессия {session_progress.session.order_number}:</b> {session_progress.session.name}\n"
 
                 # Показываем тесты в сессии
@@ -308,12 +311,15 @@ async def callback_trajectory_command(callback: CallbackQuery, state: FSMContext
                     test_result = await get_user_test_result(session, user.id, test.id)
                     # ИСПРАВЛЕНИЕ: показываем зеленый только если этап открыт И тест пройден
                     if test_result and test_result.is_passed and stage_progress.is_opened:
-                        test_status_icon = "🟢"  # Тест пройден (только если этап открыт)
+                        test_status_icon = "✅"  # Тест пройден (только если этап открыт)
                     elif stage_progress.is_opened:
                         test_status_icon = "🟡"  # Этап открыт, тест доступен
                     else:
-                        test_status_icon = "⏺️"  # Этап закрыт
+                        test_status_icon = "⛔️"  # Этап закрыт
                     stages_info += f"{test_status_icon}<b>Тест {len([t for t in session_progress.session.tests if t.id <= test.id])}:</b> {test.name}\n"
+            
+            # Добавляем пустую строку после этапа
+            stages_info += "\n"
 
         # Добавляем информацию об аттестации
         stages_info += await format_attestation_status(session, user.id, trainee_path)
@@ -419,11 +425,11 @@ async def callback_select_stage(callback: CallbackQuery, state: FSMContext, sess
                             break
             
             if all_sessions_completed and stage_sessions_progress:
-                stage_icon = "🟢"  # Все сессии пройдены
+                stage_icon = "✅"  # Все сессии пройдены
             elif sp.is_opened:
                 stage_icon = "🟡"  # Этап открыт
             else:
-                stage_icon = "⏺️"  # Этап закрыт
+                stage_icon = "⛔️"  # Этап закрыт
                 
             full_trajectory_info += f"{stage_icon}<b>Этап {sp.stage.order_number}:</b> {sp.stage.name}\n"
 
@@ -438,13 +444,13 @@ async def callback_select_stage(callback: CallbackQuery, state: FSMContext, sess
                             break
                     
                     if all_tests_passed:
-                        session_icon = "🟢"  # Все тесты пройдены
+                        session_icon = "✅"  # Все тесты пройдены
                     elif sp.is_opened:
                         session_icon = "🟡"  # Этап открыт, сессия доступна
                     else:
-                        session_icon = "⏺️"  # Этап закрыт
+                        session_icon = "⛔️"  # Этап закрыт
                 else:
-                    session_icon = "⏺️"  # Нет тестов
+                    session_icon = "⛔️"  # Нет тестов
                     
                 full_trajectory_info += f"{session_icon}<b>Сессия {session_progress.session.order_number}:</b> {session_progress.session.name}\n"
 
@@ -454,13 +460,16 @@ async def callback_select_stage(callback: CallbackQuery, state: FSMContext, sess
                     test_result = await get_user_test_result(session, user.id, test.id)
                     # ИСПРАВЛЕНИЕ: показываем зеленый только если этап открыт И тест пройден
                     if test_result and test_result.is_passed and sp.is_opened:
-                        test_icon = "🟢"  # Тест пройден (только если этап открыт)
+                        test_icon = "✅"  # Тест пройден (только если этап открыт)
                     elif sp.is_opened:
                         test_icon = "🟡"  # Этап открыт, тест доступен
                     else:
-                        test_icon = "⏺️"  # Этап закрыт
+                        test_icon = "⛔️"  # Этап закрыт
                     test_number = len([t for t in session_progress.session.tests if t.id <= test.id])
                     full_trajectory_info += f"{test_icon}<b>Тест {test_number}:</b> {test.name}\n"
+            
+            # Добавляем пустую строку после этапа
+            full_trajectory_info += "\n"
 
         # Добавляем аттестацию
         attestation = trainee_path.learning_path.attestation if trainee_path.learning_path else None
@@ -570,11 +579,11 @@ async def callback_select_session(callback: CallbackQuery, state: FSMContext, se
                             break
             
             if all_sessions_completed and stage_sessions_progress:
-                stage_icon = "🟢"  # Все сессии пройдены
+                stage_icon = "✅"  # Все сессии пройдены
             elif sp.is_opened:
                 stage_icon = "🟡"  # Этап открыт
             else:
-                stage_icon = "⏺️"  # Этап закрыт
+                stage_icon = "⛔️"  # Этап закрыт
                 
             full_trajectory_info += f"{stage_icon}<b>Этап {sp.stage.order_number}:</b> {sp.stage.name}\n"
 
@@ -593,13 +602,13 @@ async def callback_select_session(callback: CallbackQuery, state: FSMContext, se
                                     break
                         
                         if all_tests_passed and sp.is_opened:
-                            session_icon = "🟢"  # Все тесты пройдены (только если этап открыт)
+                            session_icon = "✅"  # Все тесты пройдены (только если этап открыт)
                         elif sp.is_opened:
                             session_icon = "🟡"  # Этап открыт, сессия доступна
                         else:
-                            session_icon = "⏺️"  # Этап закрыт
+                            session_icon = "⛔️"  # Этап закрыт
                     else:
-                        session_icon = "⏺️"  # Нет тестов
+                        session_icon = "⛔️"  # Нет тестов
                         
                     full_trajectory_info += f"{session_icon}<b>Сессия {session_progress.session.order_number}:</b> {session_progress.session.name}\n"
 
@@ -609,17 +618,20 @@ async def callback_select_session(callback: CallbackQuery, state: FSMContext, se
                             # Определяем статус теста
                             test_result = await get_user_test_result(session, user.id, test.id)
                             if test_result and test_result.is_passed:
-                                test_icon = "🟢"  # Тест пройден
+                                test_icon = "✅"  # Тест пройден
                             elif sp.is_opened:
                                 test_icon = "🟡"  # Этап открыт, тест доступен
                             else:
-                                test_icon = "⏺️"  # Этап закрыт
+                                test_icon = "⛔️"  # Этап закрыт
                             test_number = len([t for t in session_progress.session.tests if t.id <= test.id])
                             full_trajectory_info += f"{test_icon}<b>Тест {test_number}:</b> {test.name}\n"
                     else:
                         full_trajectory_info += "   📝 Тесты не найдены\n"
                 else:
-                    full_trajectory_info += "⏺️<b>Сессия:</b> Данные не загружены\n"
+                    full_trajectory_info += "⛔️<b>Сессия:</b> Данные не загружены\n"
+            
+            # Добавляем пустую строку после этапа
+            full_trajectory_info += "\n"
 
         # Добавляем аттестацию
         attestation = trainee_path.learning_path.attestation if trainee_path.learning_path else None
@@ -791,11 +803,11 @@ async def callback_back_to_session(callback: CallbackQuery, state: FSMContext, s
                             break
             
             if all_sessions_completed and stage_sessions_progress:
-                stage_icon = "🟢"  # Все сессии пройдены
+                stage_icon = "✅"  # Все сессии пройдены
             elif sp.is_opened:
                 stage_icon = "🟡"  # Этап открыт
             else:
-                stage_icon = "⏺️"  # Этап закрыт
+                stage_icon = "⛔️"  # Этап закрыт
                 
             full_trajectory_info += f"{stage_icon}<b>Этап {sp.stage.order_number}:</b> {sp.stage.name}\n"
 
@@ -810,13 +822,13 @@ async def callback_back_to_session(callback: CallbackQuery, state: FSMContext, s
                             break
                     
                     if all_tests_passed:
-                        session_icon = "🟢"  # Все тесты пройдены
+                        session_icon = "✅"  # Все тесты пройдены
                     elif sp.is_opened:
                         session_icon = "🟡"  # Этап открыт, сессия доступна
                     else:
-                        session_icon = "⏺️"  # Этап закрыт
+                        session_icon = "⛔️"  # Этап закрыт
                 else:
-                    session_icon = "⏺️"  # Нет тестов
+                    session_icon = "⛔️"  # Нет тестов
                     
                 full_trajectory_info += f"{session_icon}<b>Сессия {session_progress.session.order_number}:</b> {session_progress.session.name}\n"
 
@@ -826,13 +838,16 @@ async def callback_back_to_session(callback: CallbackQuery, state: FSMContext, s
                     test_result = await get_user_test_result(session, user.id, test.id)
                     # ИСПРАВЛЕНИЕ: показываем зеленый только если этап открыт И тест пройден
                     if test_result and test_result.is_passed and sp.is_opened:
-                        test_icon = "🟢"  # Тест пройден (только если этап открыт)
+                        test_icon = "✅"  # Тест пройден (только если этап открыт)
                     elif sp.is_opened:
                         test_icon = "🟡"  # Этап открыт, тест доступен
                     else:
-                        test_icon = "⏺️"  # Этап закрыт
+                        test_icon = "⛔️"  # Этап закрыт
                     test_number = len([t for t in session_progress.session.tests if t.id <= test.id])
                     full_trajectory_info += f"{test_icon}<b>Тест {test_number}:</b> {test.name}\n"
+            
+            # Добавляем пустую строку после этапа
+            full_trajectory_info += "\n"
 
         # Добавляем аттестацию
         attestation = trainee_path.learning_path.attestation if trainee_path.learning_path else None
@@ -994,12 +1009,12 @@ async def format_attestation_status(session, user_id, trainee_path):
             attestation_status = await get_trainee_attestation_status(
                 session, user_id, trainee_path.learning_path.attestation.id
             )
-            return f"🔍{attestation_status}<b>Аттестация:</b> {trainee_path.learning_path.attestation.name}\n\n"
+            return f"🏁<b>Аттестация:</b> {trainee_path.learning_path.attestation.name} {attestation_status}\n\n"
         else:
-            return f"🔍⏺️<b>Аттестация:</b> Не указана\n\n"
+            return f"🏁<b>Аттестация:</b> Не указана ⛔️\n\n"
     except Exception as e:
         log_user_error(user_id, "format_attestation_status_error", str(e))
-        return f"🔍⏺️<b>Аттестация:</b> Ошибка загрузки\n\n"
+        return f"🏁<b>Аттестация:</b> Ошибка загрузки ⛔️\n\n"
 
 
 async def format_attestation_status_simple(session, user_id, attestation):
@@ -1007,12 +1022,12 @@ async def format_attestation_status_simple(session, user_id, attestation):
     try:
         if attestation:
             attestation_status = await get_trainee_attestation_status(session, user_id, attestation.id)
-            return f"🔍{attestation_status}<b>Аттестация:</b> {attestation.name}\n\n"
+            return f"🏁<b>Аттестация:</b> {attestation.name} {attestation_status}\n\n"
         else:
-            return f"🔍⏺️<b>Аттестация:</b> Не указана\n\n"
+            return f"🏁<b>Аттестация:</b> Не указана ⛔️\n\n"
     except Exception as e:
         log_user_error(user_id, "format_attestation_status_simple_error", str(e))
-        return f"🔍⏺️<b>Аттестация:</b> Ошибка загрузки\n\n"
+        return f"🏁<b>Аттестация:</b> Ошибка загрузки ⛔️\n\n"
 
 
 @router.callback_query(F.data == "contact_mentor")

@@ -27,7 +27,7 @@ router = Router()
 # Обработчики для Task 7: ЛК руководителя для управления аттестациями
 # ===============================
 
-@router.message(F.text == "Аттестация")
+@router.message(F.text.in_(["Аттестация", "Аттестация ✔️"]))
 async def cmd_manager_attestations(message: Message, state: FSMContext, session: AsyncSession):
     """Обработчик кнопки 'Аттестация' в ЛК руководителя (ТЗ шаг 1-4)"""
     try:
@@ -82,7 +82,7 @@ async def cmd_manager_attestations(message: Message, state: FSMContext, session:
             # Добавляем информацию о стажере согласно ТЗ
             message_text += (
                 f"🧑 <b>ФИО:</b> {trainee.full_name}\n"
-                f"🔍⏺️<b>Аттестация:</b> {attestation.name}\n"
+                f"🏁<b>Аттестация:</b> {attestation.name} ⛔️\n"
                 f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n"
                 f"🟢<b>Дата:</b> {assignment.scheduled_date or ''}\n"
                 f"🟢<b>Время:</b> {assignment.scheduled_time or ''}\n\n"
@@ -141,7 +141,7 @@ async def callback_select_trainee_attestation(callback: CallbackQuery, state: FS
             "🔍<b>Аттестация🔍</b>\n"
             "🙋‍♂️<b>Управление стажёром</b>\n\n"
             f"🧑 <b>ФИО:</b> {trainee.full_name}\n"
-            f"🔍⏺️<b>Аттестация:</b> {attestation.name}\n"
+            f"🏁<b>Аттестация:</b> {attestation.name} ⛔️\n"
             f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n"
             f"🟢<b>Дата:</b> {assignment.scheduled_date or ''}\n"
             f"🟢<b>Время:</b> {assignment.scheduled_time or ''}"
@@ -189,7 +189,7 @@ async def callback_change_attestation_date(callback: CallbackQuery, state: FSMCo
             "🔍<b>Аттестация🔍</b>\n"
             "🙋‍♂️<b>Управление стажёром</b>\n\n"
             f"🧑 <b>ФИО:</b> {trainee.full_name}\n"
-            f"🔍⏺️<b>Аттестация:</b> {attestation.name}\n"
+            f"🏁<b>Аттестация:</b> {attestation.name} ⛔️\n"
             f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n"
             "🟡<b>Дата:</b> \n"
             "🟡<b>Время:</b>\n\n"
@@ -235,7 +235,7 @@ async def process_new_date(message: Message, state: FSMContext, session: AsyncSe
             "🔍<b>Аттестация🔍</b>\n"
             "🙋‍♂️<b>Управление стажёром</b>\n\n"
             f"🧑 <b>ФИО:</b> {trainee.full_name}\n"
-            f"🔍⏺️<b>Аттестация:</b> {attestation.name}\n"
+            f"🏁<b>Аттестация:</b> {attestation.name} ⛔️\n"
             f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n"
             f"🟢<b>Дата:</b> {new_date}\n"
             "🟡<b>Время:</b>\n"
@@ -279,7 +279,7 @@ async def process_new_time(message: Message, state: FSMContext, session: AsyncSe
             "🔍<b>Аттестация🔍</b>\n"
             "🙋‍♂️<b>Управление стажёром</b>\n\n"
             f"🧑 <b>ФИО:</b> {trainee.full_name}\n"
-            f"🔍⏺️<b>Аттестация:</b> {attestation.name}\n"
+            f"🏁<b>Аттестация:</b> {attestation.name} ⛔️\n"
             f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n"
             f"🟢<b>Дата:</b> {new_date}\n"
             f"🟢<b>Время:</b> {new_time}\n\n"
@@ -351,7 +351,7 @@ async def callback_save_new_schedule(callback: CallbackQuery, state: FSMContext,
             "🔍<b>Аттестация🔍</b>\n"
             "🙋‍♂️<b>Управление стажёром</b>\n\n"
             f"🧑 <b>ФИО:</b> {trainee.full_name}\n"
-            f"🔍⏺️<b>Аттестация:</b> {assignment.attestation.name}\n"
+            f"🏁<b>Аттестация:</b> {assignment.attestation.name} ⛔️\n"
             f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n"
             f"🟢<b>Дата:</b> {assignment.scheduled_date}\n"
             f"🟢<b>Время:</b> {assignment.scheduled_time}"
@@ -400,7 +400,7 @@ async def callback_start_attestation(callback: CallbackQuery, state: FSMContext,
             "🔍<b>Аттестация🔍</b>\n"
             "🚀<b>Старт🚀</b>\n\n"
             f"🧑 <b>ФИО:</b> {trainee.full_name}\n"
-            f"🔍⏺️<b>Аттестация:</b> {attestation.name}\n"
+            f"🏁<b>Аттестация:</b> {attestation.name} ⛔️\n"
             f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n"
             f"🟢<b>Дата:</b> {assignment.scheduled_date or ''}\n"
             f"🟢<b>Время:</b> {assignment.scheduled_time or ''}\n\n"
@@ -621,7 +621,7 @@ async def show_attestation_results_message(message: Message, state: FSMContext, 
                 f"🧑 <b>ФИО:</b> {trainee.full_name}\n"
                 f"🏁<b>Проходной балл:</b> {attestation.passing_score}\n"
                 f"🎯<b>Набрано баллов:</b> {total_score}\n"
-                f"🔍⏺️<b>Аттестация:</b> {attestation.name}\n"
+                f"🏁<b>Аттестация:</b> {attestation.name} ✅\n"
                 f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n"
                 f"🟢<b>Дата:</b> {assignment.scheduled_date or ''}\n"
                 f"🟢<b>Время:</b> {assignment.scheduled_time or ''}"
@@ -644,7 +644,7 @@ async def show_attestation_results_message(message: Message, state: FSMContext, 
                 f"🧑 <b>ФИО:</b> {trainee.full_name}\n"
                 f"🏁<b>Проходной балл:</b> {attestation.passing_score}\n"
                 f"🎯<b>Набрано баллов:</b> {total_score}\n"
-                f"🔍⏺️<b>Аттестация:</b> {attestation.name}\n"
+                f"🏁<b>Аттестация:</b> {attestation.name} ⛔️\n"
                 f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n"
                 f"🟢<b>Дата:</b> {assignment.scheduled_date or ''}\n"
                 f"🟢<b>Время:</b> {assignment.scheduled_time or ''}"
@@ -693,7 +693,7 @@ async def send_schedule_change_notification_to_trainee(session: AsyncSession, bo
 
         notification_text = (
             "❗️<b>Изменены дата и время аттестации</b>\n\n"
-            f"🔍⏺️<b>Аттестация:</b> {attestation.name}\n"
+            f"🏁<b>Аттестация:</b> {attestation.name} ⛔️\n"
             f"🟢<b>Руководитель:</b> {manager.full_name}\n"
             f"👤 <b>Username:</b> @{manager.username or 'не указан'}\n"
             f"🟢<b>Дата:</b> {assignment.scheduled_date}\n"
@@ -718,7 +718,7 @@ async def send_attestation_success_notification(session: AsyncSession, bot, trai
             "✅<b>Аттестация успешно пройдена</b>\n\n"
             f"🏁<b>Проходной балл:</b> {passing_score}\n"
             f"🎯<b>Набрано баллов:</b> {score}\n"
-            f"🔍✅<b>Аттестация:</b> {attestation.name}\n"
+            f"🏁<b>Аттестация:</b> {attestation.name} ✅\n"
             f"🟢<b>Руководитель:</b> {manager_name}\n"
             f"👤 <b>Username:</b> @{manager_username or 'не указан'}\n"
             f"🟢<b>Дата:</b> {date or ''}\n"
@@ -749,7 +749,7 @@ async def send_attestation_failure_notification(session: AsyncSession, bot, trai
             "❌<b>Аттестация провалена❌</b>\n\n"
             f"🏁<b>Проходной балл:</b> {passing_score}\n"
             f"🎯<b>Набрано баллов:</b> {score}\n"
-            f"🔍⏺️<b>Аттестация:</b> {attestation.name}\n"
+            f"🏁<b>Аттестация:</b> {attestation.name} ⛔️\n"
             f"🟢<b>Руководитель:</b> {manager_name}\n"
             f"👤 <b>Username:</b> @{manager_username or 'не указан'}\n"
             f"🟢<b>Дата:</b> {date or ''}\n"

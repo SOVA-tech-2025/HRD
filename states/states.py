@@ -202,6 +202,9 @@ class LearningPathStates(StatesGroup):
     # Редактирование существующих траекторий
     waiting_for_trajectory_selection = State()
     editing_trajectory = State()
+    
+    # Удаление траекторий
+    trajectory_deletion = State()
 
 
 class AttestationStates(StatesGroup):

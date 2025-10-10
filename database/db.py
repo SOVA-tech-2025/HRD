@@ -3344,7 +3344,7 @@ async def get_role_change_warnings(session: AsyncSession, user_id: int, old_role
             active_paths = trainee_path_result.scalars().all()
             
             if active_paths:
-                warnings.append("🔴 <b>ПОТЕРЯ ДАННЫХ:</b> Активные траектории обучения будут деактивированы")
+                warnings.append("❌<b>ПОТЕРЯ ДАННЫХ:</b> Активные траектории обучения будут деактивированы")
             
             # Проверяем наставничество
             mentorship_result = await session.execute(
@@ -3357,7 +3357,7 @@ async def get_role_change_warnings(session: AsyncSession, user_id: int, old_role
             
             if active_mentorship:
                 mentor = await get_user_by_id(session, active_mentorship.mentor_id)
-                warnings.append(f"🔴 <b>ПОТЕРЯ НАСТАВНИКА:</b> Связь с наставником {mentor.full_name} будет деактивирована")
+                warnings.append(f"❌<b>ПОТЕРЯ НАСТАВНИКА:</b> Связь с наставником {mentor.full_name} будет деактивирована")
             
             # Проверяем доступ к тестам
             test_access_result = await session.execute(
@@ -3369,7 +3369,7 @@ async def get_role_change_warnings(session: AsyncSession, user_id: int, old_role
             active_test_access = test_access_result.scalars().all()
             
             if active_test_access:
-                warnings.append(f"🔴 <b>ПОТЕРЯ ДОСТУПА:</b> Доступ к {len(active_test_access)} тестам стажера будет отозван")
+                warnings.append(f"❌<b>ПОТЕРЯ ДОСТУПА:</b> Доступ к {len(active_test_access)} тестам стажера будет отозван")
             
             # Проверяем аттестации
             attestations_result = await session.execute(
@@ -3381,7 +3381,7 @@ async def get_role_change_warnings(session: AsyncSession, user_id: int, old_role
             active_attestations = attestations_result.scalars().all()
             
             if active_attestations:
-                warnings.append(f"🔴 <b>ПОТЕРЯ АТТЕСТАЦИЙ:</b> {len(active_attestations)} назначенных аттестаций будут деактивированы")
+                warnings.append(f"❌<b>ПОТЕРЯ АТТЕСТАЦИЙ:</b> {len(active_attestations)} назначенных аттестаций будут деактивированы")
         
         # Предупреждения при смене роли С "Наставник"
         if old_role == "Наставник":
@@ -3400,13 +3400,13 @@ async def get_role_change_warnings(session: AsyncSession, user_id: int, old_role
                     trainee = await get_user_by_id(session, mentorship.trainee_id)
                     trainee_names.append(trainee.full_name)
                 
-                warnings.append(f"🔴 <b>КРИТИЧНО:</b> {len(active_mentorships)} стажеров останутся без наставника:")
+                warnings.append(f"❌<b>КРИТИЧНО:</b> {len(active_mentorships)} стажеров останутся без наставника:")
                 warnings.append(f"   • {', '.join(trainee_names)}")
                 warnings.append("   • Потребуется назначение нового наставника!")
         
         # Предупреждения при смене роли НА "Стажер"
         if new_role == "Стажер":
-            warnings.append("🟡 <b>ТРЕБУЕТСЯ:</b> После смены роли назначьте наставника и траекторию")
+            warnings.append("⚠️<b>ТРЕБУЕТСЯ:</b> После смены роли назначьте наставника и траекторию")
         
         # Предупреждения о потере прав доступа
         role_permissions_info = {
@@ -3421,18 +3421,18 @@ async def get_role_change_warnings(session: AsyncSession, user_id: int, old_role
         new_permissions = role_permissions_info.get(new_role, [])
         
         if old_permissions:
-            warnings.append(f"📤 <b>ПОТЕРЯ ФУНКЦИЙ:</b> {', '.join(old_permissions)}")
+            warnings.append(f"❌<b>ПОТЕРЯ ФУНКЦИЙ:</b> {', '.join(old_permissions)}")
         if new_permissions:
-            warnings.append(f"📥 <b>НОВЫЕ ФУНКЦИИ:</b> {', '.join(new_permissions)}")
+            warnings.append(f"✅<b>НОВЫЕ ФУНКЦИИ:</b> {', '.join(new_permissions)}")
         
         if warnings:
-            return "⚠️ <b>ПОСЛЕДСТВИЯ СМЕНЫ РОЛИ:</b>\n\n" + "\n".join(warnings) + "\n\n❗️ <b>Подтвердите изменение:</b>"
+            return "<b>ПОСЛЕДСТВИЯ СМЕНЫ РОЛИ:</b>\n\n" + "\n".join(warnings) + "\n\n<b>Подтвердите изменение:</b>"
         else:
-            return "✅ <b>Безопасная смена роли</b>\n\n❗️ <b>Подтвердите изменение:</b>"
+            return "✅ <b>Безопасная смена роли</b>\n\n<b>Подтвердите изменение:</b>"
             
     except Exception as e:
         logger.error(f"Ошибка получения предупреждений о смене роли: {e}")
-        return "⚠️ <b>Ошибка анализа последствий</b>\n\n❗️ <b>Подтвердите изменение:</b>"
+        return "⚠️ <b>Ошибка анализа последствий</b>\n\n<b>Подтвердите изменение:</b>"
 
 
 async def cleanup_duplicate_attestations(session: AsyncSession, user_id: int) -> int:
@@ -4215,8 +4215,8 @@ async def get_learning_paths_by_group(session: AsyncSession, group_id: int) -> L
         return []
 
 
-async def delete_learning_path(session: AsyncSession, path_id: int) -> bool:
-    """Удаление траектории обучения (мягкое удаление)"""
+async def deactivate_learning_path(session: AsyncSession, path_id: int) -> bool:
+    """Деактивация траектории обучения (мягкое удаление)"""
     try:
         update_stmt = update(LearningPath).where(
             LearningPath.id == path_id
@@ -5946,7 +5946,7 @@ async def check_all_stages_completed(session: AsyncSession, trainee_id: int) -> 
 
 
 async def get_trainee_attestation_status(session: AsyncSession, trainee_id: int, attestation_id: int) -> str:
-    """Получение статуса аттестации стажера: ⏺️ - не назначена, 🟡 - назначена, 🟢 - пройдена"""
+    """Получение статуса аттестации стажера: ⛔️ - не назначена, 🟡 - назначена, ✅ - пройдена"""
     try:
         # Проверяем назначена ли аттестация
         assignment_result = await session.execute(
@@ -5958,18 +5958,18 @@ async def get_trainee_attestation_status(session: AsyncSession, trainee_id: int,
         assignment = assignment_result.scalar_one_or_none()
         
         if not assignment:
-            return "⏺️"  # Не назначена
+            return "⛔️"  # Не назначена
             
         if assignment.status == "completed":
-            return "🟢"  # Пройдена
+            return "✅"  # Пройдена
         elif assignment.status in ["assigned", "in_progress"]:
             return "🟡"  # Назначена
         else:
-            return "⏺️"  # Провалена или отменена
+            return "⛔️"  # Провалена или отменена
             
     except Exception as e:
         logger.error(f"Ошибка получения статуса аттестации: {e}")
-        return "⏺️"
+        return "⛔️"
 
 
 # ===============================
@@ -6502,4 +6502,414 @@ async def fix_knowledge_base_permissions(session: AsyncSession) -> bool:
 
     except Exception as e:
         logger.error(f"Ошибка исправления прав доступа к базе знаний: {e}")
+        return False
+
+
+async def get_trajectory_usage_info(session: AsyncSession, trajectory_id: int) -> dict:
+    """Получение информации об использовании траектории"""
+    try:
+        from database.models import User, TraineeLearningPath
+        
+        # Получаем всех стажеров, использующих эту траекторию
+        trainees_result = await session.execute(
+            select(User)
+            .join(TraineeLearningPath, User.id == TraineeLearningPath.trainee_id)
+            .where(TraineeLearningPath.learning_path_id == trajectory_id)
+        )
+        trainees = trainees_result.scalars().all()
+        
+        # Получаем общее количество пользователей
+        total_users_result = await session.execute(
+            select(func.count(TraineeLearningPath.trainee_id))
+            .where(TraineeLearningPath.learning_path_id == trajectory_id)
+        )
+        total_users = total_users_result.scalar() or 0
+        
+        return {
+            'trainees': trainees,
+            'trainees_count': len(trainees),
+            'total_users': total_users
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка получения информации об использовании траектории {trajectory_id}: {e}")
+        return {
+            'trainees': [],
+            'trainees_count': 0,
+            'total_users': 0
+        }
+
+
+async def delete_learning_path(session: AsyncSession, trajectory_id: int) -> bool:
+    """Удаление траектории обучения"""
+    try:
+        from database.models import TraineeLearningPath, TraineeStageProgress, TraineeSessionProgress, TestResult, Test, TraineeTestAccess, LearningSession, LearningStage, AttestationResult, AttestationQuestionResult, TraineeAttestation, LearningPath, session_tests
+        
+        # Получаем траекторию
+        trajectory = await get_learning_path_by_id(session, trajectory_id)
+        if not trajectory:
+            return False
+        
+        # Удаляем все связанные данные в правильном порядке
+        
+        # 1. Удаляем прогресс сессий стажеров
+        await session.execute(
+            delete(TraineeSessionProgress)
+            .where(TraineeSessionProgress.stage_progress_id.in_(
+                select(TraineeStageProgress.id)
+                .select_from(TraineeStageProgress)
+                .join(TraineeLearningPath, TraineeStageProgress.trainee_path_id == TraineeLearningPath.id)
+                .where(TraineeLearningPath.learning_path_id == trajectory_id)
+            ))
+        )
+        
+        # 2. Удаляем прогресс этапов стажеров
+        await session.execute(
+            delete(TraineeStageProgress)
+            .where(TraineeStageProgress.trainee_path_id.in_(
+                select(TraineeLearningPath.id)
+                .select_from(TraineeLearningPath)
+                .where(TraineeLearningPath.learning_path_id == trajectory_id)
+            ))
+        )
+        
+        # 3. Удаляем прогресс стажеров по траектории
+        await session.execute(
+            delete(TraineeLearningPath)
+            .where(TraineeLearningPath.learning_path_id == trajectory_id)
+        )
+        
+        # 4. Удаляем только результаты тестов траектории (тесты остаются в системе)
+        await session.execute(
+            delete(TestResult)
+            .where(TestResult.test_id.in_(
+                select(Test.id)
+                .select_from(Test)
+                .join(LearningSession, Test.id == LearningSession.id)
+                .join(LearningStage, LearningSession.stage_id == LearningStage.id)
+                .where(LearningStage.learning_path_id == trajectory_id)
+            ))
+        )
+        
+        # 5. Удаляем доступы к тестам траектории (тесты остаются в системе)
+        await session.execute(
+            delete(TraineeTestAccess)
+            .where(TraineeTestAccess.test_id.in_(
+                select(Test.id)
+                .select_from(Test)
+                .join(LearningSession, Test.id == LearningSession.id)
+                .join(LearningStage, LearningSession.stage_id == LearningStage.id)
+                .where(LearningStage.learning_path_id == trajectory_id)
+            ))
+        )
+        
+        # 6. Удаляем только связи тестов с сессиями (тесты остаются в системе)
+        await session.execute(
+            delete(session_tests)
+            .where(session_tests.c.session_id.in_(
+                select(LearningSession.id)
+                .select_from(LearningSession)
+                .join(LearningStage, LearningSession.stage_id == LearningStage.id)
+                .where(LearningStage.learning_path_id == trajectory_id)
+            ))
+        )
+        
+        # 7. Удаляем сессии этапов
+        await session.execute(
+            delete(LearningSession)
+            .where(LearningSession.stage_id.in_(
+                select(LearningStage.id)
+                .select_from(LearningStage)
+                .where(LearningStage.learning_path_id == trajectory_id)
+            ))
+        )
+        
+        # 8. Удаляем этапы траектории
+        await session.execute(
+            delete(LearningStage)
+            .where(LearningStage.learning_path_id == trajectory_id)
+        )
+        
+        # 9. Удаляем только связи с аттестацией (аттестация остается в системе)
+        if trajectory.attestation_id:
+            attestation_id = trajectory.attestation_id
+            
+            # 9.1. Удаляем результаты ответов на вопросы аттестации
+            await session.execute(
+                delete(AttestationQuestionResult)
+                .where(AttestationQuestionResult.attestation_result_id.in_(
+                    select(AttestationResult.id)
+                    .select_from(AttestationResult)
+                    .where(AttestationResult.attestation_id == attestation_id)
+                ))
+            )
+            
+            # 9.2. Удаляем результаты аттестации
+            await session.execute(
+                delete(AttestationResult)
+                .where(AttestationResult.attestation_id == attestation_id)
+            )
+            
+            # 9.3. Удаляем назначения аттестаций стажерам
+            await session.execute(
+                delete(TraineeAttestation)
+                .where(TraineeAttestation.attestation_id == attestation_id)
+            )
+            
+            # 9.4. Обнуляем ссылку на аттестацию в траектории (аттестация остается в системе)
+            await session.execute(
+                update(LearningPath)
+                .where(LearningPath.id == trajectory_id)
+                .values(attestation_id=None)
+            )
+        
+        # 10. Удаляем саму траекторию
+        await session.execute(
+            delete(LearningPath)
+            .where(LearningPath.id == trajectory_id)
+        )
+        
+        # Подтверждаем транзакцию
+        await session.commit()
+        
+        logger.info(f"Траектория {trajectory_id} успешно удалена")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Ошибка удаления траектории {trajectory_id}: {e}")
+        return False
+
+
+async def delete_user(session: AsyncSession, user_id: int) -> bool:
+    """
+    Полное удаление пользователя и ВСЕХ связанных данных
+    
+    Args:
+        session: Сессия БД
+        user_id: ID пользователя для удаления
+        
+    Returns:
+        bool: True если успешно, False при ошибке
+    """
+    try:
+        from database.models import (
+            User, TestResult, Mentorship, TraineeLearningPath, TraineeStageProgress,
+            TraineeSessionProgress, AttestationResult, AttestationQuestionResult,
+            TraineeAttestation, TraineeManager, TraineeTestAccess, Test, TestQuestion,
+            Attestation, AttestationQuestion, LearningPath, LearningStage, LearningSession,
+            KnowledgeFolder, KnowledgeMaterial, Group, Object, user_roles, user_groups,
+            user_objects, session_tests
+        )
+        
+        # Проверяем существование пользователя
+        user = await get_user_by_id(session, user_id)
+        if not user:
+            logger.error(f"Пользователь {user_id} не найден")
+            return False
+        
+        logger.info(f"Начинаем удаление пользователя {user_id}: {user.full_name}")
+        
+        # 1. Удаляем AttestationQuestionResult (по attestation_result_id из AttestationResult)
+        await session.execute(
+            delete(AttestationQuestionResult)
+            .where(AttestationQuestionResult.attestation_result_id.in_(
+                select(AttestationResult.id)
+                .select_from(AttestationResult)
+                .where(
+                    (AttestationResult.trainee_id == user_id) |
+                    (AttestationResult.manager_id == user_id)
+                )
+            ))
+        )
+        logger.info(f"Удалены AttestationQuestionResult для пользователя {user_id}")
+        
+        # 2. Удаляем AttestationResult
+        await session.execute(
+            delete(AttestationResult)
+            .where(
+                (AttestationResult.trainee_id == user_id) |
+                (AttestationResult.manager_id == user_id)
+            )
+        )
+        logger.info(f"Удалены AttestationResult для пользователя {user_id}")
+        
+        # 3. Удаляем TraineeSessionProgress (через TraineeLearningPath)
+        await session.execute(
+            delete(TraineeSessionProgress)
+            .where(TraineeSessionProgress.stage_progress_id.in_(
+                select(TraineeStageProgress.id)
+                .select_from(TraineeStageProgress)
+                .join(TraineeLearningPath, TraineeStageProgress.trainee_path_id == TraineeLearningPath.id)
+                .where(
+                    (TraineeLearningPath.trainee_id == user_id) |
+                    (TraineeLearningPath.assigned_by_id == user_id)
+                )
+            ))
+        )
+        logger.info(f"Удалены TraineeSessionProgress для пользователя {user_id}")
+        
+        # 4. Удаляем TraineeStageProgress (через TraineeLearningPath)
+        await session.execute(
+            delete(TraineeStageProgress)
+            .where(TraineeStageProgress.trainee_path_id.in_(
+                select(TraineeLearningPath.id)
+                .select_from(TraineeLearningPath)
+                .where(
+                    (TraineeLearningPath.trainee_id == user_id) |
+                    (TraineeLearningPath.assigned_by_id == user_id)
+                )
+            ))
+        )
+        logger.info(f"Удалены TraineeStageProgress для пользователя {user_id}")
+        
+        # 5. Удаляем TraineeLearningPath
+        await session.execute(
+            delete(TraineeLearningPath)
+            .where(
+                (TraineeLearningPath.trainee_id == user_id) |
+                (TraineeLearningPath.assigned_by_id == user_id)
+            )
+        )
+        logger.info(f"Удалены TraineeLearningPath для пользователя {user_id}")
+        
+        # 6. Удаляем TraineeAttestation
+        await session.execute(
+            delete(TraineeAttestation)
+            .where(
+                (TraineeAttestation.trainee_id == user_id) |
+                (TraineeAttestation.manager_id == user_id) |
+                (TraineeAttestation.assigned_by_id == user_id)
+            )
+        )
+        logger.info(f"Удалены TraineeAttestation для пользователя {user_id}")
+        
+        # 7. Удаляем TraineeManager
+        await session.execute(
+            delete(TraineeManager)
+            .where(
+                (TraineeManager.trainee_id == user_id) |
+                (TraineeManager.manager_id == user_id) |
+                (TraineeManager.assigned_by_id == user_id)
+            )
+        )
+        logger.info(f"Удалены TraineeManager для пользователя {user_id}")
+        
+        # 8. Удаляем TraineeTestAccess
+        await session.execute(
+            delete(TraineeTestAccess)
+            .where(
+                (TraineeTestAccess.trainee_id == user_id) |
+                (TraineeTestAccess.granted_by_id == user_id)
+            )
+        )
+        logger.info(f"Удалены TraineeTestAccess для пользователя {user_id}")
+        
+        # 9. Удаляем TestResult
+        await session.execute(
+            delete(TestResult)
+            .where(TestResult.user_id == user_id)
+        )
+        logger.info(f"Удалены TestResult для пользователя {user_id}")
+        
+        # 10. Удаляем Mentorship
+        await session.execute(
+            delete(Mentorship)
+            .where(
+                (Mentorship.mentor_id == user_id) |
+                (Mentorship.trainee_id == user_id) |
+                (Mentorship.assigned_by_id == user_id)
+            )
+        )
+        logger.info(f"Удалены Mentorship для пользователя {user_id}")
+        
+        # 11. Обнуляем created_by_id для Test (тесты остаются в системе)
+        await session.execute(
+            update(Test)
+            .where(Test.creator_id == user_id)
+            .values(creator_id=None)
+        )
+        logger.info(f"Обнулен creator_id для тестов пользователя {user_id}")
+        
+        # 12. Обнуляем created_by_id для Attestation (аттестации остаются в системе)
+        await session.execute(
+            update(Attestation)
+            .where(Attestation.created_by_id == user_id)
+            .values(created_by_id=None)
+        )
+        logger.info(f"Обнулен created_by_id для аттестаций пользователя {user_id}")
+        
+        # 13. Обнуляем created_by_id для LearningPath (траектории остаются в системе)
+        await session.execute(
+            update(LearningPath)
+            .where(LearningPath.created_by_id == user_id)
+            .values(created_by_id=None)
+        )
+        logger.info(f"Обнулен created_by_id для траекторий пользователя {user_id}")
+        
+        # 14. Обнуляем created_by_id для KnowledgeMaterial (материалы остаются в системе)
+        await session.execute(
+            update(KnowledgeMaterial)
+            .where(KnowledgeMaterial.created_by_id == user_id)
+            .values(created_by_id=None)
+        )
+        logger.info(f"Обнулен created_by_id для материалов пользователя {user_id}")
+        
+        # 15. Обнуляем created_by_id для KnowledgeFolder (папки остаются в системе)
+        await session.execute(
+            update(KnowledgeFolder)
+            .where(KnowledgeFolder.created_by_id == user_id)
+            .values(created_by_id=None)
+        )
+        logger.info(f"Обнулен created_by_id для папок знаний пользователя {user_id}")
+        
+        # 16. Обнуляем created_by_id для Object (объекты остаются в системе)
+        await session.execute(
+            update(Object)
+            .where(Object.created_by_id == user_id)
+            .values(created_by_id=None)
+        )
+        logger.info(f"Обнулен created_by_id для объектов пользователя {user_id}")
+        
+        # 17. Обнуляем created_by_id для Group (группы остаются в системе)
+        await session.execute(
+            update(Group)
+            .where(Group.created_by_id == user_id)
+            .values(created_by_id=None)
+        )
+        logger.info(f"Обнулен created_by_id для групп пользователя {user_id}")
+        
+        # 18. Удаляем many-to-many связи
+        await session.execute(
+            delete(user_roles)
+            .where(user_roles.c.user_id == user_id)
+        )
+        logger.info(f"Удалены user_roles для пользователя {user_id}")
+        
+        await session.execute(
+            delete(user_groups)
+            .where(user_groups.c.user_id == user_id)
+        )
+        logger.info(f"Удалены user_groups для пользователя {user_id}")
+        
+        await session.execute(
+            delete(user_objects)
+            .where(user_objects.c.user_id == user_id)
+        )
+        logger.info(f"Удалены user_objects для пользователя {user_id}")
+        
+        # 19. Удаляем самого пользователя
+        await session.execute(
+            delete(User)
+            .where(User.id == user_id)
+        )
+        logger.info(f"Удален сам пользователь {user_id}")
+        
+        # Подтверждаем транзакцию
+        await session.commit()
+        
+        logger.info(f"Пользователь {user_id} успешно удален со всеми связанными данными")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Ошибка удаления пользователя {user_id}: {e}")
         return False
