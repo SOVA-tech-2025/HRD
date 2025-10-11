@@ -707,7 +707,7 @@ def get_test_selection_for_taking_keyboard(tests: list) -> InlineKeyboardMarkup:
         )
         keyboard.append([button])
     
-    keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
+    keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -1399,6 +1399,9 @@ def get_users_filter_keyboard(groups: list, objects: list) -> InlineKeyboardMark
     if objects:
         keyboard.append([InlineKeyboardButton(text="📍 Фильтр по объектам", callback_data="filter_by_objects")])
     
+    # Поиск по ФИО
+    keyboard.append([InlineKeyboardButton(text="🔍 Поиск по ФИО", callback_data="search_all_users")])
+    
     # Кнопка главного меню
     keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
     
@@ -1497,6 +1500,49 @@ def get_users_list_keyboard(users: list, page: int = 0, per_page: int = 5, filte
     
     # Кнопка назад
     keyboard.append([InlineKeyboardButton(text="↩️ Назад к фильтрам", callback_data="back_to_filters")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_new_users_list_keyboard(users: list, page: int = 0, per_page: int = 5) -> InlineKeyboardMarkup:
+    """Клавиатура списка новых (неактивированных) пользователей с пагинацией"""
+    keyboard = []
+    total_users = len(users)
+    start_idx = page * per_page
+    end_idx = start_idx + per_page
+    
+    # Добавляем кнопки пользователей для текущей страницы
+    for user in users[start_idx:end_idx]:
+        registration_date = user.registration_date.strftime('%d.%m.%Y') if user.registration_date else "Неизвестно"
+        button_text = f"{user.full_name} ({registration_date})"
+        keyboard.append([
+            InlineKeyboardButton(
+                text=button_text,
+                callback_data=f"activate_user:{user.id}"
+            )
+        ])
+    
+    # Навигационные кнопки
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton(text="⬅️", callback_data=f"new_users_page:{page - 1}"))
+    
+    if end_idx < total_users:
+        nav_row.append(InlineKeyboardButton(text="➡️", callback_data=f"new_users_page:{page + 1}"))
+    
+    if nav_row:
+        keyboard.append(nav_row)
+    
+    # Показываем номер страницы
+    if total_users > per_page:
+        total_pages = (total_users + per_page - 1) // per_page
+        keyboard.append([InlineKeyboardButton(
+            text=f"📄 Страница {page + 1}/{total_pages}",
+            callback_data="noop"
+        )])
+    
+    # Кнопка поиска
+    keyboard.append([InlineKeyboardButton(text="🔍 Поиск по ФИО", callback_data="search_new_users")])
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 

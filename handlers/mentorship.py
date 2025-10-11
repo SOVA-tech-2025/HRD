@@ -1090,24 +1090,18 @@ async def callback_assign_trajectory(callback: CallbackQuery, session: AsyncSess
         learning_path = await get_learning_path_by_id(session, learning_path_id)
         stages = await get_learning_path_stages(session, learning_path_id)
 
+        # Вычисляем количество дней в статусе стажера
+        days_as_trainee = (datetime.now() - trainee.role_assigned_date).days
+        days_word = get_days_word(days_as_trainee)
+        
         # Формируем сообщение согласно ТЗ
         trainee_info = (
-            f"🦸🏻‍♂️ <b>Стажер:</b> {trainee.full_name}\n"
-            f"<b>Траектория:</b> {learning_path.name}\n\n\n"
+            f"🦸🏻‍♂️<b>Стажер:</b> {trainee.full_name}\n\n"
             f"<b>Телефон:</b> {trainee.phone_number}\n"
-            f"<b>Username:</b> @{trainee.username or 'не указан'}\n"
-            f"<b>Номер:</b> #{trainee_id}\n"
-            f"<b>Дата регистрации:</b> {trainee.registration_date.strftime('%d.%m.%Y %H:%M')}\n\n\n"
-            "━━━━━━━━━━━━\n\n\n"
-            "🗂️ <b>Статус:</b>\n"
-            f"<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
-            f"<b>Роль:</b> {', '.join([role.name for role in trainee.roles])}\n\n\n"
-            "━━━━━━━━━━━━\n\n\n"
-            "📍 <b>Объект:</b>\n"
-            f"<b>Стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
-            f"<b>Работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n\n"
-            "🗺️<b>Управление траекторией</b>\n\n"
-            f"📚<b>Название траектории:</b> {learning_path.name}\n\n"
+            f"<b>В статусе стажера:</b> {days_as_trainee} {days_word}\n"
+            f"<b>Объект стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
+            f"<b>Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n"
+            "━━━━━━━━━━━━\n\n"
         )
 
         # Добавляем информацию об этапах
@@ -3385,26 +3379,21 @@ async def update_stages_management_interface(callback: CallbackQuery, session: A
 
         trainee = await get_user_by_id(session, trainee_id)
         
+        # Вычисляем количество дней в статусе стажера
+        days_as_trainee = (datetime.now() - trainee.role_assigned_date).days
+        days_word = get_days_word(days_as_trainee)
+        
         # Получаем результаты тестов для правильной индикации
         test_results = await get_user_test_results(session, trainee_id)
         
         # Формируем полную информацию согласно ТЗ шаг 6
         header_info = (
-            f"🦸🏻‍♂️ <b>Стажер:</b> {trainee.full_name}\n"
-            f"<b>Траектория:</b> {trainee_path.learning_path.name if trainee_path else 'не выбрана'}\n\n\n"
+            f"🦸🏻‍♂️<b>Стажер:</b> {trainee.full_name}\n\n"
             f"<b>Телефон:</b> {trainee.phone_number}\n"
-            f"<b>Username:</b> @{trainee.username or 'не указан'}\n"
-            f"<b>Номер:</b> #{trainee_id}\n"
-            f"<b>Дата регистрации:</b> {trainee.registration_date.strftime('%d.%m.%Y %H:%M')}\n\n\n"
-            "━━━━━━━━━━━━\n\n\n"
-            "🗂️ <b>Статус:</b>\n"
-            f"<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
-            f"<b>Роль:</b> {', '.join([role.name for role in trainee.roles])}\n\n\n"
-            "━━━━━━━━━━━━\n\n\n"
-            "📍 <b>Объект:</b>\n"
-            f"<b>Стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
-            f"<b>Работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n\n"
-            "🗺️<b>Управление траекторией</b>\n\n"
+            f"<b>В статусе стажера:</b> {days_as_trainee} {days_word}\n"
+            f"<b>Объект стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
+            f"<b>Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n"
+            "━━━━━━━━━━━━\n\n"
         )
         
         # Добавляем полную траекторию согласно ТЗ

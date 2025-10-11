@@ -3090,6 +3090,76 @@ async def get_users_by_object(session: AsyncSession, object_id: int) -> List[Use
         return []
 
 
+async def search_activated_users_by_name(session: AsyncSession, query: str) -> List[User]:
+    """
+    Поиск активированных пользователей по ФИО (частичное совпадение, case-insensitive)
+    
+    Args:
+        session: Сессия БД
+        query: Поисковый запрос
+    
+    Returns:
+        Список найденных пользователей с полной информацией
+    """
+    try:
+        search_pattern = f"%{query}%"
+        
+        result = await session.execute(
+            select(User)
+            .options(
+                selectinload(User.roles),
+                selectinload(User.groups),
+                selectinload(User.internship_object),
+                selectinload(User.work_object)
+            )
+            .where(
+                User.is_activated == True,
+                User.full_name.ilike(search_pattern)
+            )
+            .order_by(User.full_name)
+        )
+        users = result.scalars().all()
+        
+        logger.info(f"Поиск активированных пользователей по запросу '{query}': найдено {len(users)}")
+        return list(users)
+        
+    except Exception as e:
+        logger.error(f"Ошибка поиска активированных пользователей по запросу '{query}': {e}")
+        return []
+
+
+async def search_unactivated_users_by_name(session: AsyncSession, query: str) -> List[User]:
+    """
+    Поиск неактивированных пользователей по ФИО (частичное совпадение, case-insensitive)
+    
+    Args:
+        session: Сессия БД
+        query: Поисковый запрос
+    
+    Returns:
+        Список найденных неактивированных пользователей
+    """
+    try:
+        search_pattern = f"%{query}%"
+        
+        result = await session.execute(
+            select(User)
+            .where(
+                User.is_activated == False,
+                User.full_name.ilike(search_pattern)
+            )
+            .order_by(User.registration_date.desc())
+        )
+        users = result.scalars().all()
+        
+        logger.info(f"Поиск неактивированных пользователей по запросу '{query}': найдено {len(users)}")
+        return list(users)
+        
+    except Exception as e:
+        logger.error(f"Ошибка поиска неактивированных пользователей по запросу '{query}': {e}")
+        return []
+
+
 async def update_user_full_name(session: AsyncSession, user_id: int, new_full_name: str, 
                                recruiter_id: int, bot=None) -> bool:
     """Обновление ФИО пользователя"""

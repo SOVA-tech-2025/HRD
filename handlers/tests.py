@@ -410,7 +410,7 @@ async def process_materials_choice(callback: CallbackQuery, state: FSMContext):
     
     if choice == "yes":
         await callback.message.edit_text(
-            "📎 Отправьте ссылку на материалы для изучения, PDF документ или нажмите 'Пропустить':",
+            "📎 Отправьте ссылку на материалы для изучения, документ, изображение или нажмите 'Пропустить'",
             reply_markup=get_test_materials_keyboard()
         )
     elif choice == "skip":
@@ -426,10 +426,37 @@ async def process_materials_choice(callback: CallbackQuery, state: FSMContext):
 async def process_materials_input(message: Message, state: FSMContext):
     """Обработка ввода материалов"""
     if message.document:
+        # Проверяем поддерживаемые типы
+        allowed_mimes = {
+            'application/pdf',
+            'application/msword',  # .doc
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  # .docx
+            'application/vnd.ms-excel',  # .xls
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',  # .xlsx
+            'application/vnd.ms-powerpoint',  # .ppt
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',  # .pptx
+            'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+            'text/plain',  # .txt
+            'application/rtf',  # .rtf
+            'application/vnd.oasis.opendocument.text'  # .odt
+        }
+        
+        if message.document.mime_type not in allowed_mimes:
+            await message.answer(
+                "❌ Неподдерживаемый формат файла.",
+                reply_markup=get_test_materials_keyboard()
+            )
+            return
+        
         # Пользователь отправил документ
         file_info = f"Файл: {message.document.file_name}"
         await state.update_data(material_link=file_info, material_file_id=message.document.file_id)
         await message.answer(f"✅ Документ '{message.document.file_name}' добавлен к тесту.")
+    elif message.photo:
+        # Пользователь отправил фото
+        photo_file_id = message.photo[-1].file_id
+        await state.update_data(material_link="Изображение", material_file_id=photo_file_id)
+        await message.answer("✅ Изображение добавлено к тесту.")
     elif message.text:
         # Пользователь отправил текст
         if message.text.lower() == 'пропустить':
@@ -439,7 +466,7 @@ async def process_materials_input(message: Message, state: FSMContext):
     else:
         # Неподдерживаемый тип сообщения
         await message.answer(
-            "❌ Пожалуйста, отправьте ссылку на материалы, PDF документ или нажмите кнопку 'Пропустить'.",
+            "❌ Пожалуйста, отправьте ссылку на материалы, документ, изображение или нажмите кнопку 'Пропустить'.",
             reply_markup=get_test_materials_keyboard()
         )
         return
@@ -1937,7 +1964,7 @@ async def process_edit_test_materials(callback: CallbackQuery, state: FSMContext
     
     await callback.message.edit_text(
         f"Текущие материалы: {test.material_link or 'не указаны'}\n\n"
-        "📎 Отправьте новую ссылку, документ или нажмите кнопку 'Удалить':",
+        "📎 Отправьте новую ссылку, документ, изображение или нажмите кнопку 'Удалить'",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🗑️ Удалить материалы", callback_data="edit_materials:delete")],
@@ -1978,6 +2005,27 @@ async def save_new_materials(message: Message, state: FSMContext, session: Async
     update_data = {}
     
     if message.document:
+        # Проверяем поддерживаемые типы
+        allowed_mimes = {
+            'application/pdf',
+            'application/msword',  # .doc
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  # .docx
+            'application/vnd.ms-excel',  # .xls
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',  # .xlsx
+            'application/vnd.ms-powerpoint',  # .ppt
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',  # .pptx
+            'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+            'text/plain',  # .txt
+            'application/rtf',  # .rtf
+            'application/vnd.oasis.opendocument.text'  # .odt
+        }
+        
+        if message.document.mime_type not in allowed_mimes:
+            await message.answer(
+                "❌ Неподдерживаемый формат файла."
+            )
+            return
+        
         # Пользователь отправил документ
         file_info = f"Файл: {message.document.file_name}"
         update_data = {
@@ -1985,6 +2033,14 @@ async def save_new_materials(message: Message, state: FSMContext, session: Async
             "material_file_path": message.document.file_id
         }
         await message.answer(f"✅ Документ '{message.document.file_name}' добавлен к тесту.")
+    elif message.photo:
+        # Пользователь отправил фото
+        photo_file_id = message.photo[-1].file_id
+        update_data = {
+            "material_link": "Изображение",
+            "material_file_path": photo_file_id
+        }
+        await message.answer("✅ Изображение добавлено к тесту.")
     elif message.text:
         # Пользователь отправил текст
         if message.text.lower() == 'удалить':
@@ -2000,7 +2056,7 @@ async def save_new_materials(message: Message, state: FSMContext, session: Async
     else:
         # Неподдерживаемый тип сообщения
         await message.answer(
-            "❌ Пожалуйста, отправьте ссылку на материалы, документ или напишите 'удалить'."
+            "❌ Пожалуйста, отправьте ссылку на материалы, документ, изображение или напишите 'удалить'."
         )
         return
     

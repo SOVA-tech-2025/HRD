@@ -132,6 +132,9 @@ class UserActivationStates(StatesGroup):
     # Выбор пользователя для активации
     waiting_for_user_selection = State()
     
+    # Поиск пользователей
+    waiting_for_search_query = State()
+    
     # Workflow назначения параметров
     waiting_for_role_selection = State()
     waiting_for_group_selection = State()
@@ -148,6 +151,9 @@ class UserEditStates(StatesGroup):
     waiting_for_filter_selection = State()
     waiting_for_user_selection = State()
     viewing_user_info = State()
+    
+    # Поиск пользователей
+    waiting_for_search_query = State()
     
     # Старый способ (для совместимости)
     waiting_for_user_number = State()
@@ -267,7 +273,7 @@ class KnowledgeBaseStates(StatesGroup):
     
     # Добавление материала в папку
     waiting_for_material_name = State()
-    waiting_for_material_content = State()  # PDF файл или ссылка
+    waiting_for_material_content = State()  # файл или ссылка
     waiting_for_material_description = State()
     waiting_for_material_photos = State()  # Необязательные фотографии
     confirming_material_save = State()

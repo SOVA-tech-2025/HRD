@@ -112,6 +112,72 @@ async def cmd_trajectory_tests(message: Message, state: FSMContext, session: Asy
     
     log_user_action(message.from_user.id, message.from_user.username, "opened trajectory tests")
 
+
+async def format_my_tests_display(
+    session: AsyncSession,
+    user,
+    available_tests: list
+) -> tuple[str, InlineKeyboardMarkup]:
+    """
+    Универсальная функция для форматирования списка "Мои тесты"
+    
+    Args:
+        session: Сессия БД
+        user: Объект пользователя
+        available_tests: Список доступных тестов
+    
+    Returns:
+        tuple: (текст сообщения, клавиатура)
+    """
+    # Определяем роль пользователя
+    user_roles = await get_user_roles(session, user.id)
+    role_names = [role.name for role in user_roles]
+    is_trainee = "Стажер" in role_names
+    is_mentor = "Наставник" in role_names
+    is_employee = "Сотрудник" in role_names
+    
+    # Формируем список тестов
+    tests_list = []
+    for i, test in enumerate(available_tests, 1):
+        test_result = await get_user_test_result(session, user.id, test.id)
+        if test_result and test_result.is_passed:
+            status = f"Пройден ({test_result.score}/{test_result.max_possible_score} баллов) 🏆"
+        else:
+            status = "Доступен для прохождения ✅"
+        
+        tests_list.append(
+            f"<b>{i}. {test.name}</b>\n"
+            f"   Порог: {int(test.threshold_score)}/{int(test.max_score)} баллов\n"
+            f"   Статус: {status}\n"
+            f"   Описание: {test.description or 'Описание не указано'}"
+        )
+    
+    tests_display = "\n\n".join(tests_list)
+    
+    # Определяем заголовок роли
+    if is_trainee:
+        role_title = "👤 <b>Стажер:</b>"
+    elif is_mentor:
+        role_title = "👨‍🏫 <b>Наставник:</b>"
+    elif is_employee:
+        role_title = "👨‍💼 <b>Сотрудник:</b>"
+    else:
+        role_title = "👤 <b>Пользователь:</b>"
+    
+    # Формируем итоговое сообщение
+    message_text = (
+        f"📋 <b>Мои тесты</b>\n\n"
+        f"{role_title} {user.full_name}\n"
+        f"📊 <b>Всего тестов:</b> {len(available_tests)}\n\n"
+        f"{tests_display}\n\n"
+        "Выбери тест для прохождения:"
+    )
+    
+    keyboard = get_test_selection_for_taking_keyboard(available_tests)
+    
+    return message_text, keyboard
+
+
 @router.message(F.text.in_(["Мои тесты 📋"]))
 async def cmd_trainee_broadcast_tests(message: Message, state: FSMContext, session: AsyncSession):
     """Обработчик команды 'Мои тесты 📋' для стажеров и наставников - тесты от рекрутера + индивидуальные от наставника"""
@@ -133,40 +199,14 @@ async def cmd_trainee_broadcast_tests(message: Message, state: FSMContext, sessi
             await message.answer("❌ У вас нет прав для прохождения тестов.")
             return
         
-        # Определяем роль пользователя для адаптации сообщений
-        user_roles = await get_user_roles(session, user.id)
-        role_names = [role.name for role in user_roles]
-        is_trainee = "Стажер" in role_names
-        is_mentor = "Наставник" in role_names
-        is_employee = "Сотрудник" in role_names
-            
         # Получаем тесты ВМЕСТЕ: от рекрутера через рассылку + индивидуальные от наставника (исключая тесты траектории)
         available_tests = await get_employee_tests_from_recruiter(session, user.id, exclude_completed=False)
         
         if not available_tests:
-            # Адаптируем сообщение в зависимости от роли
-            if is_trainee:
-                no_tests_message = (
-                    "❌ Пока новых тестов нет\n"
-                    "Когда появятся, тебе придёт уведомление"
-                )
-            elif is_mentor:
-                no_tests_message = (
-                    "❌ Пока новых тестов нет\n"
-                    "Когда появятся, тебе придёт уведомление"
-                )
-            elif is_employee:
-                no_tests_message = (
-                    "❌ Пока новых тестов нет\n"
-                    "Когда появятся, тебе придёт уведомление"
-                )
-            else:
-                no_tests_message = (
-                    "❌ Пока новых тестов нет\n"
-                    "Когда появятся, тебе придёт уведомление"
-                )
-            
-            # Добавляем кнопку "Главное меню" для всех ролей
+            no_tests_message = (
+                "❌ Пока новых тестов нет\n"
+                "Когда появятся, тебе придёт уведомление"
+            )
             await message.answer(
                 no_tests_message, 
                 parse_mode="HTML",
@@ -175,60 +215,22 @@ async def cmd_trainee_broadcast_tests(message: Message, state: FSMContext, sessi
                 ])
             )
             return
-            
-        # Формируем список доступных тестов (включая пройденные для пересдачи)
-        tests_list = []
-        for i, test in enumerate(available_tests, 1):
-            # Получаем результат последнего прохождения
-            test_result = await get_user_test_result(session, user.id, test.id)
-            if test_result and test_result.is_passed:
-                status = f"✅ Пройден ({test_result.score}/{test_result.max_possible_score} баллов)"
-                action_text = "Пересдать для улучшения результата"
-            else:
-                status = "📋 Доступен для прохождения"
-                action_text = "Пройти тест"
-            
-            tests_list.append(
-                f"<b>{i}. {test.name}</b>\n"
-                f"   📊 Статус: {status}\n"
-                f"   📝 {test.description or 'Описание не указано'}\n"
-                f"   🎯 Действие: {action_text}"
-            )
         
-        tests_display = "\n\n".join(tests_list)
-        
-        # Адаптируем заголовок в зависимости от роли
-        if is_trainee:
-            role_title = "👤 <b>Стажер:</b>"
-        elif is_mentor:
-            role_title = "👨‍🏫 <b>Наставник:</b>"
-        elif is_employee:
-            role_title = "👨‍💼 <b>Сотрудник:</b>"
-        else:
-            role_title = "👤 <b>Пользователь:</b>"
+        # Используем универсальную функцию для форматирования
+        message_text, keyboard = await format_my_tests_display(session, user, available_tests)
         
         await message.answer(
-            f"📋 <b>Мои тесты</b>\n\n"
-            f"{role_title} {user.full_name}\n"
-            f"📊 <b>Всего тестов:</b> {len(available_tests)}\n\n"
-            f"{tests_display}\n\n"
-            "Выбери тест для прохождения:",
-            reply_markup=get_test_selection_for_taking_keyboard(available_tests),
+            message_text,
+            reply_markup=keyboard,
             parse_mode="HTML"
         )
         
         # КРИТИЧЕСКИ ВАЖНО: Устанавливаем контекст "taking" для наставника и сотрудника
         await state.update_data(test_context='taking')
+        await state.set_state(TestTakingStates.waiting_for_test_selection)
         
-        # Логирование в зависимости от роли
-        if is_trainee:
-            log_user_action(user.tg_id, "my_tests_viewed", f"Стажер просмотрел индивидуальные тесты: {len(available_tests)}")
-        elif is_mentor:
-            log_user_action(user.tg_id, "my_tests_viewed", f"Наставник просмотрел тесты от рекрутера: {len(available_tests)}")
-        elif is_employee:
-            log_user_action(user.tg_id, "my_tests_viewed", f"Сотрудник просмотрел тесты от рекрутера: {len(available_tests)}")
-        else:
-            log_user_action(user.tg_id, "my_tests_viewed", f"Пользователь просмотрел тесты: {len(available_tests)}")
+        # Логирование
+        log_user_action(user.tg_id, "my_tests_viewed", f"Просмотрел мои тесты: {len(available_tests)}")
 
     except Exception as e:
         await message.answer("Произошла ошибка при получении списка тестов")
@@ -1180,35 +1182,11 @@ async def process_back_to_test_list(callback: CallbackQuery, state: FSMContext, 
         # МОИ ТЕСТЫ (индивидуальные) - для стажеров, сотрудников и наставников
         available_tests = await get_employee_tests_from_recruiter(session, user.id, exclude_completed=False)
         
-        # Определяем роль пользователя для адаптации сообщений
-        user_roles = await get_user_roles(session, user.id)
-        role_names = [role.name for role in user_roles]
-        is_trainee = "Стажер" in role_names
-        is_mentor = "Наставник" in role_names
-        is_employee = "Сотрудник" in role_names
-        
         if not available_tests:
-            if is_trainee:
-                no_tests_message = (
-                    "❌ Пока новых тестов нет\n"
-                    "Когда появятся, тебе придёт уведомление"
-                )
-            elif is_mentor:
-                no_tests_message = (
-                    "❌ Пока новых тестов нет\n"
-                    "Когда появятся, тебе придёт уведомление"
-                )
-            elif is_employee:
-                no_tests_message = (
-                    "❌ Пока новых тестов нет\n"
-                    "Когда появятся, тебе придёт уведомление"
-                )
-            else:
-                no_tests_message = (
-                    "❌ Пока новых тестов нет\n"
-                    "Когда появятся, тебе придёт уведомление"
-                )
-            
+            no_tests_message = (
+                "❌ Пока новых тестов нет\n"
+                "Когда появятся, тебе придёт уведомление"
+            )
             await callback.message.edit_text(
                 no_tests_message, 
                 parse_mode="HTML",
@@ -1219,40 +1197,13 @@ async def process_back_to_test_list(callback: CallbackQuery, state: FSMContext, 
             await callback.answer()
             return
         
-        tests_list = []
-        for i, test in enumerate(available_tests, 1):
-            test_result = await get_user_test_result(session, user.id, test.id)
-            if test_result and test_result.is_passed:
-                status = f"✅ Пройден ({test_result.score}/{test_result.max_possible_score} баллов)"
-            else:
-                status = "📋 Доступен"
-            
-            tests_list.append(
-                f"<b>{i}. {test.name}</b>\n"
-                f"   📊 {status}\n"
-                f"   📝 {test.description or 'Описание не указано'}"
-            )
-        
-        tests_display = "\n\n".join(tests_list)
-        
-        # Адаптируем заголовок под роль
-        if is_employee:
-            role_title = "👨‍💼 <b>Сотрудник:</b>"
-        elif is_mentor:
-            role_title = "👨‍🏫 <b>Наставник:</b>"
-        elif is_trainee:
-            role_title = "👤 <b>Стажер:</b>"
-        else:
-            role_title = "👤 <b>Пользователь:</b>"
+        # Используем универсальную функцию для форматирования
+        message_text, keyboard = await format_my_tests_display(session, user, available_tests)
         
         await callback.message.edit_text(
-            f"📋 <b>Мои тесты</b>\n\n"
-            f"{role_title} {user.full_name}\n"
-            f"📊 <b>Всего тестов:</b> {len(available_tests)}\n\n"
-            f"{tests_display}\n\n"
-            "Выбери тест для прохождения:",
+            message_text,
             parse_mode="HTML",
-            reply_markup=get_test_selection_for_taking_keyboard(available_tests)
+            reply_markup=keyboard
         )
         
         # КРИТИЧЕСКИ ВАЖНО: Устанавливаем контекст "taking" для возврата
@@ -1510,30 +1461,18 @@ async def process_my_broadcast_tests_shortcut(callback: CallbackQuery, state: FS
         await callback.answer()
         return
     
-    tests_list = []
-    for i, test in enumerate(available_tests, 1):
-        test_result = await get_user_test_result(session, user.id, test.id)
-        if test_result and test_result.is_passed:
-            status = f"✅ Пройден ({test_result.score}/{test_result.max_possible_score} баллов)"
-        else:
-            status = "📋 Доступен"
-        
-        tests_list.append(
-            f"<b>{i}. {test.name}</b>\n"
-            f"   📊 {status}\n"
-            f"   📝 {test.description or 'Описание не указано'}"
-        )
-    
-    tests_display = "\n\n".join(tests_list)
+    # Используем универсальную функцию для форматирования
+    message_text, keyboard = await format_my_tests_display(session, user, available_tests)
     
     await callback.message.edit_text(
-        f"📋 <b>Мои тесты</b>\n\n"
-        f"У тебя есть <b>{len(available_tests)}</b> индивидуальных тестов:\n\n"
-        f"{tests_display}\n\n"
-        "Выбери тест для прохождения:",
+        message_text,
         parse_mode="HTML",
-        reply_markup=get_test_selection_for_taking_keyboard(available_tests)
+        reply_markup=keyboard
     )
+    
+    # КРИТИЧЕСКИ ВАЖНО: Устанавливаем контекст и состояние
+    await state.update_data(test_context='taking')
+    await state.set_state(TestTakingStates.waiting_for_test_selection)
     
     await callback.answer()
     log_user_action(callback.from_user.id, callback.from_user.username, "opened broadcast tests from notification")

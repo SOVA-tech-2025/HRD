@@ -78,7 +78,13 @@ async def download_and_save_file(bot, file_id: str, filename: str, max_file_size
         original_extension = Path(filename).suffix.lower()
 
         # Разрешенные расширения для безопасности
-        allowed_extensions = {'.pdf', '.doc', '.docx', '.txt', '.rtf', '.odt'}
+        allowed_extensions = {
+            '.pdf', '.doc', '.docx', 
+            '.xls', '.xlsx', 
+            '.ppt', '.pptx',
+            '.jpg', '.jpeg', '.png', '.gif', '.webp',
+            '.txt', '.rtf', '.odt'
+        }
 
         if original_extension not in allowed_extensions:
             logger.error(f"Недопустимое расширение файла: {original_extension}")
@@ -389,7 +395,21 @@ async def process_material_content(message: Message, state: FSMContext, session:
         # Обрабатываем документ или текст
         if message.document:
             # Проверяем тип файла и размер
-            if message.document.mime_type == "application/pdf":
+            allowed_mimes = {
+                'application/pdf',
+                'application/msword',  # .doc
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  # .docx
+                'application/vnd.ms-excel',  # .xls
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',  # .xlsx
+                'application/vnd.ms-powerpoint',  # .ppt
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation',  # .pptx
+                'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+                'text/plain',  # .txt
+                'application/rtf',  # .rtf
+                'application/vnd.oasis.opendocument.text'  # .odt
+            }
+            
+            if message.document.mime_type in allowed_mimes:
                 # Проверяем размер файла (50MB лимит)
                 max_size = 50 * 1024 * 1024  # 50MB
                 if message.document.file_size > max_size:
@@ -402,20 +422,35 @@ async def process_material_content(message: Message, state: FSMContext, session:
 
                 if saved_file_path:
                     material_content = saved_file_path
-                    material_type = "pdf"
+                    # Определяем тип материала по расширению
+                    ext = Path(message.document.file_name).suffix.lower()
+                    if ext in {'.jpg', '.jpeg', '.png', '.gif', '.webp'}:
+                        material_type = "image"
+                    elif ext in {'.xls', '.xlsx'}:
+                        material_type = "excel"
+                    elif ext in {'.ppt', '.pptx'}:
+                        material_type = "presentation"
+                    elif ext in {'.doc', '.docx'}:
+                        material_type = "document"
+                    else:
+                        material_type = "pdf"
                     await message.answer("✅ Документ успешно загружен и сохранен!")
                 else:
                     await message.answer("❌ Ошибка при загрузке документа. Проверьте размер файла и тип.")
                     return
             else:
-                await message.answer("❌ Поддерживаются только PDF файлы")
+                await message.answer(
+                    "❌ Неподдерживаемый формат файла."
+                )
                 return
         elif message.text:
             # Ссылка
             material_content = message.text.strip()
             material_type = "link"
         else:
-            await message.answer("❌ Отправьте PDF документ или ссылку")
+            await message.answer(
+                "❌ Отправьте документ, изображение или ссылку"
+            )
             return
 
         # Обновляем состояние
@@ -834,7 +869,7 @@ async def callback_view_material(callback: CallbackQuery, state: FSMContext, ses
             return
             
         # Формируем отображение содержимого
-        content_display = material.content if material.material_type == "link" else "PDF документ"
+        content_display = material.content if material.material_type == "link" else "Файл"
         description_display = material.description if material.description else "Описание не указано"
         photos_display = ""
         if material.photos and len(material.photos) > 0:
@@ -894,8 +929,8 @@ async def callback_view_material(callback: CallbackQuery, state: FSMContext, ses
                 parse_mode="HTML"
             )
 
-        # Затем отправляем PDF файл
-        if material.material_type == "pdf":
+        # Затем отправляем файл
+        if material.material_type != "link" and material.material_type != "photo":
             try:
                 # Определяем полный путь к файлу
                 base_dir = Path(__file__).parent.parent  # Корень проекта
@@ -923,7 +958,7 @@ async def callback_view_material(callback: CallbackQuery, state: FSMContext, ses
                         text=f"⚠️ Файл {material.name} не найден на сервере."
                     )
             except Exception as file_error:
-                logger.error(f"Ошибка отправки PDF файла {material.name}: {file_error}")
+                logger.error(f"Ошибка отправки файла {material.name}: {file_error}")
                 await callback.bot.send_message(
                     chat_id=callback.message.chat.id,
                     text=f"⚠️ Ошибка при отправке файла {material.name}."
@@ -965,8 +1000,8 @@ async def callback_delete_material(callback: CallbackQuery, state: FSMContext, s
         if material.material_type == "link":
             content_display = material.content  # Показываем сам URL для ссылок
         else:
-            # Для PDF файлов показываем имя файла и информацию о том, что это документ
-            filename = Path(material.content).name if material.content else "Документ"
+            # Для файлов показываем имя файла
+            filename = Path(material.content).name if material.content else "Файл"
             content_display = f"📎 {filename}"
 
         description_display = material.description if material.description else "Описание не указано"
@@ -1030,8 +1065,8 @@ async def callback_delete_material(callback: CallbackQuery, state: FSMContext, s
                 parse_mode="HTML"
             )
 
-        # Затем отправляем PDF файл (если это PDF)
-        if material.material_type == "pdf":
+        # Затем отправляем файл (если это не ссылка)
+        if material.material_type != "link" and material.material_type != "photo":
             try:
                 # Определяем полный путь к файлу
                 base_dir = Path(__file__).parent.parent  # Корень проекта
@@ -1059,7 +1094,7 @@ async def callback_delete_material(callback: CallbackQuery, state: FSMContext, s
                         text=f"⚠️ Файл {material.name} не найден на сервере."
                     )
             except Exception as file_error:
-                logger.error(f"Ошибка отправки PDF файла {material.name}: {file_error}")
+                logger.error(f"Ошибка отправки файла {material.name}: {file_error}")
                 await callback.bot.send_message(
                     chat_id=callback.message.chat.id,
                     text=f"⚠️ Ошибка при отправке файла {material.name}."
@@ -1105,7 +1140,7 @@ async def callback_confirm_delete_material(callback: CallbackQuery, state: FSMCo
         folder_name = material.folder.name
         material_name = material.name
         material_number = material.order_number
-        content_display = material.content if material.material_type == "link" else "PDF документ"
+        content_display = material.content if material.material_type == "link" else "Файл"
         description_display = material.description if material.description else "Описание не указано"
         
         # Удаляем материал
@@ -1767,8 +1802,8 @@ async def callback_employee_view_material(callback: CallbackQuery, state: FSMCon
         if material.material_type == "link":
             content_display = f"🔗 <a href='{material.content}'>Открыть ссылку</a>"
         else:
-            # Для PDF файлов отправляем файл и показываем информацию
-            content_display = "📎 Документ прикреплен ниже"
+            # Для файлов отправляем файл и показываем информацию
+            content_display = "📎 Файл прикреплен ниже"
 
         description_display = material.description if material.description else "Описание не указано"
 
@@ -1821,8 +1856,8 @@ async def callback_employee_view_material(callback: CallbackQuery, state: FSMCon
                 parse_mode="HTML"
             )
 
-        # Затем отправляем PDF файл
-        if material.material_type == "pdf":
+        # Затем отправляем файл
+        if material.material_type != "link" and material.material_type != "photo":
             try:
                 # Определяем полный путь к файлу
                 base_dir = Path(__file__).parent.parent  # Корень проекта
@@ -1850,7 +1885,7 @@ async def callback_employee_view_material(callback: CallbackQuery, state: FSMCon
                         text=f"⚠️ Файл {material.name} не найден на сервере. Обратитесь к администратору."
                     )
             except Exception as file_error:
-                logger.error(f"Ошибка отправки PDF файла {material.name}: {file_error}")
+                logger.error(f"Ошибка отправки файла {material.name}: {file_error}")
                 await callback.bot.send_message(
                     chat_id=callback.message.chat.id,
                     text=f"⚠️ Ошибка при отправке файла {material.name}. Попробуйте позже."

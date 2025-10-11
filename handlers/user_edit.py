@@ -10,7 +10,7 @@ from database.db import (
     update_user_full_name, update_user_phone_number, update_user_role,
     update_user_group, update_user_internship_object, update_user_work_object,
     get_all_groups, get_all_objects, get_object_by_id, get_group_by_id, get_user_roles,
-    get_role_change_warnings, delete_user
+    get_role_change_warnings, delete_user, search_activated_users_by_name
 )
 from handlers.auth import check_auth
 from states.states import UserEditStates
@@ -284,6 +284,107 @@ async def callback_filter_object(callback: CallbackQuery, state: FSMContext, ses
         log_user_error(callback.from_user.id, "filter_object_error", str(e))
 
 
+# ===================== ОБРАБОТЧИКИ ПОИСКА ПО ФИО =====================
+
+@router.callback_query(F.data == "search_all_users", UserEditStates.waiting_for_filter_selection)
+async def callback_start_search_all_users(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Начать поиск пользователей по ФИО"""
+    try:
+        await callback.answer()
+        
+        await callback.message.edit_text(
+            "🔍 <b>Поиск пользователей</b>\n\n"
+            "Введите ФИО для поиска (минимум 2 символа):",
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(UserEditStates.waiting_for_search_query)
+        await state.update_data(search_context='all_users')
+        
+        log_user_action(callback.from_user.id, "start_search_all_users", "Search initiated")
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "start_search_error", str(e))
+
+
+@router.message(UserEditStates.waiting_for_search_query)
+async def process_search_query_all_users(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработка поискового запроса для всех пользователей"""
+    try:
+        query = message.text.strip()
+        
+        # Валидация: минимум 2 символа
+        if len(query) < 2:
+            await message.answer(
+                "❌ Запрос слишком короткий\n\n"
+                "Пожалуйста, введите минимум 2 символа для поиска:",
+                parse_mode="HTML"
+            )
+            return
+        
+        # Выполняем поиск
+        users = await search_activated_users_by_name(session, query)
+        
+        if not users:
+            # Пользователи не найдены
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Повторить поиск", callback_data="retry_search_all_users")],
+                [InlineKeyboardButton(text="↩️ Назад к фильтрам", callback_data="back_to_filters")]
+            ])
+            
+            await message.answer(
+                f"🔍 <b>Результаты поиска</b>\n\n"
+                f"По запросу <b>'{query}'</b> ничего не найдено.\n\n"
+                "Попробуйте изменить запрос или вернитесь к фильтрам.",
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
+            
+            log_user_action(message.from_user.id, "search_all_users_no_results", f"Query: '{query}'")
+            return
+        
+        # Пользователи найдены - показываем с пагинацией
+        text = (
+            f"🔍 <b>Результаты поиска: '{query}'</b>\n\n"
+            f"📊 <b>Найдено пользователей:</b> {len(users)}\n\n"
+            "Выберите пользователя для просмотра и редактирования:"
+        )
+        
+        keyboard = get_users_list_keyboard(users, 0, 5, "search")
+        
+        await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        
+        await state.set_state(UserEditStates.waiting_for_user_selection)
+        await state.update_data(current_users=users, filter_type="search", search_query=query, current_page=0)
+        
+        log_user_action(message.from_user.id, "search_all_users_success", f"Query: '{query}', Found: {len(users)}")
+        
+    except Exception as e:
+        await message.answer("❌ Произошла ошибка при поиске. Попробуйте еще раз.")
+        log_user_error(message.from_user.id, "search_query_error", str(e))
+
+
+@router.callback_query(F.data == "retry_search_all_users")
+async def callback_retry_search_all_users(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Повторить поиск пользователей"""
+    try:
+        await callback.answer()
+        
+        await callback.message.edit_text(
+            "🔍 <b>Поиск пользователей</b>\n\n"
+            "Введите ФИО для поиска (минимум 2 символа):",
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(UserEditStates.waiting_for_search_query)
+        await state.update_data(search_context='all_users')
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "retry_search_error", str(e))
+
+
 @router.callback_query(F.data.startswith("view_user:"), UserEditStates.waiting_for_user_selection)
 async def callback_view_user(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Просмотр информации о пользователе"""
@@ -461,6 +562,9 @@ async def callback_users_pagination(callback: CallbackQuery, state: FSMContext, 
         
         if filter_type == "all":
             text = f"👥 <b>ВСЕ ПОЛЬЗОВАТЕЛИ</b> 👥\n\n📊 Найдено пользователей: <b>{len(users)}</b>\n\nВыберите пользователя для просмотра и редактирования:"
+        elif filter_type == "search":
+            search_query = data.get('search_query', '')
+            text = f"🔍 <b>Результаты поиска: '{search_query}'</b>\n\n📊 Найдено пользователей: <b>{len(users)}</b>\n\nВыберите пользователя для просмотра и редактирования:"
         elif filter_type.startswith("group"):
             group_id = int(filter_type.split(":")[1]) if ":" in filter_type else 0
             group = await get_group_by_id(session, group_id) if group_id else None

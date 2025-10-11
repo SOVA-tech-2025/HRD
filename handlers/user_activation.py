@@ -11,10 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database.db import (
     get_user_by_tg_id, get_unactivated_users, get_all_roles, 
     get_all_groups, get_all_objects, activate_user,
-    get_user_by_id, check_user_permission
+    get_user_by_id, check_user_permission, search_unactivated_users_by_name
 )
 from utils.logger import logger
-from keyboards.keyboards import get_main_menu_keyboard
+from keyboards.keyboards import get_main_menu_keyboard, get_new_users_list_keyboard
 from states.states import UserActivationStates
 from utils.logger import log_user_action, log_user_error
 from utils.bot_commands import set_bot_commands
@@ -199,31 +199,190 @@ async def cmd_new_users_list(message: Message, state: FSMContext, session: Async
         )
         return
 
-    # Формируем клавиатуру с пользователями
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    
-    keyboard_buttons = []
-    for user_item in unactivated_users:
-        registration_date = user_item.registration_date.strftime('%d.%m.%Y') if user_item.registration_date else "Неизвестно"
-        button_text = f"{user_item.full_name} ({registration_date})"
-        keyboard_buttons.append([
-            InlineKeyboardButton(
-                text=button_text,
-                callback_data=f"activate_user:{user_item.id}"
-            )
-        ])
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+    # Формируем клавиатуру с пагинацией
+    keyboard = get_new_users_list_keyboard(unactivated_users, 0, 5)
 
     await message.answer(
-        "📋 <b>Новые пользователи</b>\n\n"
+        f"📋 <b>Новые пользователи</b>\n\n"
+        f"📊 <b>Всего новых пользователей:</b> {len(unactivated_users)}\n\n"
         "Выберите пользователя для активации:",
         parse_mode="HTML",
         reply_markup=keyboard
     )
     
     await state.set_state(UserActivationStates.waiting_for_user_selection)
+    await state.update_data(current_new_users=unactivated_users, current_page=0)
     log_user_action(message.from_user.id, message.from_user.username, "viewed new users list")
+
+
+@router.callback_query(F.data.startswith("new_users_page:"))
+async def callback_new_users_pagination(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработка пагинации списка новых пользователей"""
+    try:
+        await callback.answer()
+        
+        # Парсим данные: new_users_page:{page}
+        page = int(callback.data.split(":")[1])
+        
+        # Получаем данные из состояния
+        data = await state.get_data()
+        users = data.get('current_new_users', [])
+        
+        if not users:
+            await callback.answer("Список пользователей устарел", show_alert=True)
+            return
+        
+        # Формируем клавиатуру для новой страницы
+        keyboard = get_new_users_list_keyboard(users, page, 5)
+        
+        await callback.message.edit_reply_markup(reply_markup=keyboard)
+        await state.update_data(current_page=page)
+        
+        log_user_action(callback.from_user.id, "new_users_pagination", f"Page: {page}")
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "new_users_pagination_error", str(e))
+
+
+# ===================== ОБРАБОТЧИКИ ПОИСКА ПО ФИО =====================
+
+@router.callback_query(F.data == "search_new_users")
+async def callback_start_search_new_users(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Начать поиск новых пользователей по ФИО"""
+    try:
+        await callback.answer()
+        
+        await callback.message.edit_text(
+            "🔍 <b>Поиск новых пользователей</b>\n\n"
+            "Введите ФИО для поиска (минимум 2 символа):",
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(UserActivationStates.waiting_for_search_query)
+        await state.update_data(search_context='new_users')
+        
+        log_user_action(callback.from_user.id, "start_search_new_users", "Search initiated")
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "start_search_new_users_error", str(e))
+
+
+@router.message(UserActivationStates.waiting_for_search_query)
+async def process_search_query_new_users(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработка поискового запроса для новых пользователей"""
+    try:
+        query = message.text.strip()
+        
+        # Валидация: минимум 2 символа
+        if len(query) < 2:
+            await message.answer(
+                "❌ Запрос слишком короткий\n\n"
+                "Пожалуйста, введите минимум 2 символа для поиска:",
+                parse_mode="HTML"
+            )
+            return
+        
+        # Выполняем поиск
+        users = await search_unactivated_users_by_name(session, query)
+        
+        if not users:
+            # Пользователи не найдены
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Повторить поиск", callback_data="retry_search_new_users")],
+                [InlineKeyboardButton(text="↩️ Вернуться к списку", callback_data="back_to_new_users_list")]
+            ])
+            
+            await message.answer(
+                f"🔍 <b>Результаты поиска</b>\n\n"
+                f"По запросу <b>'{query}'</b> ничего не найдено.\n\n"
+                "Попробуйте изменить запрос или вернитесь к списку.",
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
+            
+            log_user_action(message.from_user.id, "search_new_users_no_results", f"Query: '{query}'")
+            return
+        
+        # Пользователи найдены - показываем с пагинацией
+        text = (
+            f"🔍 <b>Результаты поиска: '{query}'</b>\n\n"
+            f"📊 <b>Найдено новых пользователей:</b> {len(users)}\n\n"
+            "Выберите пользователя для активации:"
+        )
+        
+        keyboard = get_new_users_list_keyboard(users, 0, 5)
+        
+        await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        
+        await state.set_state(UserActivationStates.waiting_for_user_selection)
+        await state.update_data(current_new_users=users, search_query=query, current_page=0)
+        
+        log_user_action(message.from_user.id, "search_new_users_success", f"Query: '{query}', Found: {len(users)}")
+        
+    except Exception as e:
+        await message.answer("❌ Произошла ошибка при поиске. Попробуйте еще раз.")
+        log_user_error(message.from_user.id, "search_new_users_error", str(e))
+
+
+@router.callback_query(F.data == "retry_search_new_users")
+async def callback_retry_search_new_users(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Повторить поиск новых пользователей"""
+    try:
+        await callback.answer()
+        
+        await callback.message.edit_text(
+            "🔍 <b>Поиск новых пользователей</b>\n\n"
+            "Введите ФИО для поиска (минимум 2 символа):",
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(UserActivationStates.waiting_for_search_query)
+        await state.update_data(search_context='new_users')
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "retry_search_new_users_error", str(e))
+
+
+@router.callback_query(F.data == "back_to_new_users_list")
+async def callback_back_to_new_users_list(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Вернуться к полному списку новых пользователей"""
+    try:
+        await callback.answer()
+        
+        # Получаем список неактивированных пользователей
+        unactivated_users = await get_unactivated_users(session)
+        
+        if not unactivated_users:
+            await callback.message.edit_text(
+                "📋 <b>Новые пользователи</b>\n\n"
+                "✅ Все пользователи активированы!\n"
+                "Новых пользователей, ожидающих активации, нет.",
+                parse_mode="HTML"
+            )
+            await state.set_state(UserActivationStates.waiting_for_user_selection)
+            return
+        
+        # Формируем клавиатуру с пагинацией
+        keyboard = get_new_users_list_keyboard(unactivated_users, 0, 5)
+
+        await callback.message.edit_text(
+            f"📋 <b>Новые пользователи</b>\n\n"
+            f"📊 <b>Всего новых пользователей:</b> {len(unactivated_users)}\n\n"
+            "Выберите пользователя для активации:",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+        await state.set_state(UserActivationStates.waiting_for_user_selection)
+        await state.update_data(current_new_users=unactivated_users, current_page=0)
+        
+    except Exception as e:
+        await callback.answer("Произошла ошибка")
+        log_user_error(callback.from_user.id, "back_to_new_users_list_error", str(e))
 
 
 @router.callback_query(UserActivationStates.waiting_for_user_selection, F.data.startswith("activate_user:"))
@@ -277,28 +436,22 @@ async def process_back_to_user_selection(callback: CallbackQuery, state: FSMCont
             await callback.answer()
             return
 
-        # Формируем клавиатуру с пользователями
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        # Получаем текущую страницу из состояния
+        data = await state.get_data()
+        current_page = data.get('current_page', 0)
         
-        keyboard_buttons = []
-        for user_item in unactivated_users:
-            registration_date = user_item.registration_date.strftime('%d.%m.%Y') if user_item.registration_date else "Неизвестно"
-            button_text = f"{user_item.full_name} ({registration_date})"
-            keyboard_buttons.append([
-                InlineKeyboardButton(
-                    text=button_text,
-                    callback_data=f"activate_user:{user_item.id}"
-                )
-            ])
-        
-        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+        # Формируем клавиатуру с пагинацией
+        keyboard = get_new_users_list_keyboard(unactivated_users, current_page, 5)
 
         await callback.message.edit_text(
-            "📋 <b>Новые пользователи</b>\n\n"
+            f"📋 <b>Новые пользователи</b>\n\n"
+            f"📊 <b>Всего новых пользователей:</b> {len(unactivated_users)}\n\n"
             "Выберите пользователя для активации:",
             parse_mode="HTML",
             reply_markup=keyboard
         )
+        
+        await state.update_data(current_new_users=unactivated_users)
         
         await state.set_state(UserActivationStates.waiting_for_user_selection)
         await callback.answer()
@@ -786,30 +939,19 @@ async def callback_show_new_users(callback: CallbackQuery, state: FSMContext, se
         await callback.answer()
         return
 
-    # Формируем клавиатуру с пользователями (точно как в клавиатурном варианте)
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    
-    keyboard_buttons = []
-    for user_item in unactivated_users:
-        registration_date = user_item.registration_date.strftime('%d.%m.%Y') if user_item.registration_date else "Неизвестно"
-        button_text = f"{user_item.full_name} ({registration_date})"
-        keyboard_buttons.append([
-            InlineKeyboardButton(
-                text=button_text,
-                callback_data=f"activate_user:{user_item.id}"
-            )
-        ])
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+    # Формируем клавиатуру с пагинацией
+    keyboard = get_new_users_list_keyboard(unactivated_users, 0, 5)
 
     await callback.message.answer(
-        "📋 <b>Новые пользователи</b>\n\n"
+        f"📋 <b>Новые пользователи</b>\n\n"
+        f"📊 <b>Всего новых пользователей:</b> {len(unactivated_users)}\n\n"
         "Выберите пользователя для активации:",
         parse_mode="HTML",
         reply_markup=keyboard
     )
     
     await state.set_state(UserActivationStates.waiting_for_user_selection)
+    await state.update_data(current_new_users=unactivated_users, current_page=0)
     log_user_action(callback.from_user.id, callback.from_user.username, "viewed new users list via notification")
     await callback.answer()
 
