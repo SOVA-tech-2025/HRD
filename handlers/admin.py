@@ -31,13 +31,13 @@ async def check_admin_permission(message: Message, state: FSMContext, session: A
     
     user = await get_user_by_tg_id(session, message.from_user.id)
     if not user:
-        await message.answer("Вы не зарегистрированы в системе.")
+        await message.answer("Ты не зарегистрирован в системе.")
         return False
     
     has_permission = await check_user_permission(session, user.id, permission)
     
     if not has_permission:
-        await message.answer("У вас нет прав для выполнения этой команды.")
+        await message.answer("У тебя нет прав для выполнения этой команды.")
         return False
     
     return True
@@ -200,7 +200,7 @@ async def process_set_role(callback: CallbackQuery, state: FSMContext, session: 
     action_text = "удалить" if action == "remove" else "добавить"
 
     await callback.message.edit_text(
-        f"Вы хотите {action_text} роль '{role_name}' для пользователя {user.full_name}?\n\n"
+        f"Ты хочешь {action_text} роль '{role_name}' для пользователя {user.full_name}?\n\n"
         f"Текущие роли: {', '.join(current_role_names)}",
         reply_markup=get_confirmation_keyboard(user.id, role_name, action)
     )
@@ -236,7 +236,7 @@ async def process_confirm_role_change(callback: CallbackQuery, state: FSMContext
     if not has_permission:
         await callback.message.edit_text(
             "❌ <b>Недостаточно прав</b>\n\n"
-            "У вас нет прав для изменения ролей пользователей.\n"
+            "У тебя нет прав для изменения ролей пользователей.\n"
             "Обратитесь к администратору.",
             parse_mode="HTML"
         )

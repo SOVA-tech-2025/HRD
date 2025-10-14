@@ -70,12 +70,12 @@ async def cmd_assign_mentor(message: Message, state: FSMContext, session: AsyncS
     
     user = await get_user_by_tg_id(session, message.from_user.id)
     if not user:
-        await message.answer("Вы не зарегистрированы в системе.")
+        await message.answer("Ты не зарегистрирован в системе.")
         return
     
     has_permission = await check_user_permission(session, user.id, "assign_mentors")
     if not has_permission:
-        await message.answer("У вас нет прав для назначения наставников.")
+        await message.answer("У тебя нет прав для назначения наставников.")
         return
     
     unassigned_trainees = await get_unassigned_trainees(session)
@@ -93,12 +93,12 @@ async def cmd_assign_mentor(message: Message, state: FSMContext, session: AsyncS
         f"📊 <b>Статистика системы:</b>\n"
         f"• Стажеров без наставника: <b>{len(unassigned_trainees)}</b>\n"
         f"• Требуется назначение наставников\n\n"
-        f"🎯 <b>Ваша задача:</b> Назначить наставника каждому стажеру для:\n"
+        f"🎯 <b>Твоя задача:</b> Назначить наставника каждому стажеру для:\n"
         f"• Персонального сопровождения\n"
         f"• Контроля прогресса обучения\n"
         f"• Помощи в адаптации\n"
         f"• Предоставления доступа к тестам\n\n"
-        f"👇 <b>Выберите стажера для назначения наставника:</b>",
+        f"👇 <b>Выбери стажера для назначения наставника:</b>",
         parse_mode="HTML",
         reply_markup=get_unassigned_trainees_keyboard(unassigned_trainees)
     )
@@ -116,7 +116,7 @@ async def cmd_my_mentor(message: Message, state: FSMContext, session: AsyncSessi
     
     user = await get_user_by_tg_id(session, message.from_user.id)
     if not user:
-        await message.answer("Вы не зарегистрированы в системе.")
+        await message.answer("Ты не зарегистрирован в системе.")
         return
     
     mentor = await get_trainee_mentor(session, user.id)
@@ -124,7 +124,7 @@ async def cmd_my_mentor(message: Message, state: FSMContext, session: AsyncSessi
     if not mentor:
         await message.answer(
             "👨‍🏫 <b>Информация о наставнике</b>\n\n"
-            "У вас пока не назначен наставник.\n"
+            "У тебя пока не назначен наставник.\n"
             "Обратитесь к рекрутеру для назначения наставника.",
             parse_mode="HTML"
         )
@@ -153,15 +153,15 @@ async def cmd_mentor_trainees(message: Message, state: FSMContext, session: Asyn
     
     user = await get_user_by_tg_id(session, message.from_user.id)
     if not user:
-        await message.answer("Вы не зарегистрированы в системе.")
+        await message.answer("Ты не зарегистрирован в системе.")
         return
     
     trainees = await get_mentor_trainees(session, user.id)
     
     if not trainees:
         await message.answer(
-            "👥 <b>Ваши стажеры</b>\n\n"
-            "У вас пока нет назначенных стажеров.\n"
+            "👥 <b>Твои стажеры</b>\n\n"
+            "У тебя пока нет назначенных стажеров.\n"
             "Обратитесь к рекрутеру для назначения стажеров.",
             parse_mode="HTML"
         )
@@ -171,7 +171,7 @@ async def cmd_mentor_trainees(message: Message, state: FSMContext, session: Asyn
     keyboard = InlineKeyboardMarkup(inline_keyboard=[])
 
     # Формируем сообщение со списком стажеров
-    message_text = "👥 <b>Ваши стажеры</b>\n\n"
+    message_text = "👥 <b>Твои стажеры</b>\n\n"
 
     for i, trainee in enumerate(trainees, 1):
         # Получаем информацию о траектории стажера
@@ -255,7 +255,7 @@ async def process_trainee_selection_for_assignment(callback: CallbackQuery, stat
         f"📞 <b>Телефон:</b> {trainee.phone_number}\n"
         f"📅 <b>Дата регистрации:</b> {trainee.registration_date.strftime('%d.%m.%Y')}\n\n"
         f"👨‍🏫 <b>Доступные наставники:</b>\n\n{mentors_list}\n\n"
-        "Выберите наставника для этого стажера:",
+        "Выбери наставника для этого стажера:",
         parse_mode="HTML",
         reply_markup=get_mentor_selection_keyboard(available_mentors)
     )
@@ -415,7 +415,7 @@ async def process_assign_another_mentor(callback: CallbackQuery, state: FSMConte
     await callback.message.edit_text(
         "👥 <b>Назначение наставника</b>\n\n"
         f"Найдено стажеров без наставника: <b>{len(unassigned_trainees)}</b>\n\n"
-        "Выберите стажера, которому нужно назначить наставника:",
+        "Выбери стажера, которому нужно назначить наставника:",
         parse_mode="HTML",
         reply_markup=get_unassigned_trainees_keyboard(unassigned_trainees)
     )
@@ -452,7 +452,7 @@ async def show_mentors_list(callback: CallbackQuery, session: AsyncSession, page
         f"👨‍🏫 <b>Список наставников</b>\n\n"
         f"📊 Всего наставников в системе: <b>{len(mentors)}</b>\n"
         f"📄 Страница <b>{page + 1}</b> из <b>{total_pages}</b>\n\n"
-        f"👇 <b>Выберите наставника для просмотра детальной информации:</b>"
+        f"👇 <b>Выбери наставника для просмотра детальной информации:</b>"
     )
     
     await callback.message.edit_text(
@@ -534,7 +534,7 @@ async def callback_mentor_assignment_management(callback: CallbackQuery, state: 
     """Управление назначениями наставников"""
     await callback.message.edit_text(
         "👨‍🏫 <b>Управление назначениями наставников</b>\n\n"
-        "Выберите действие:",
+        "Выбери действие:",
         reply_markup=get_mentor_assignment_management_keyboard(),
         parse_mode="HTML"
     )
@@ -621,7 +621,7 @@ async def callback_reassign_mentor(callback: CallbackQuery, state: FSMContext, s
         
         await callback.message.edit_text(
             "🔄 <b>Переназначение наставника</b>\n\n"
-            "Выберите стажера для переназначения наставника:",
+            "Выбери стажера для переназначения наставника:",
             parse_mode="HTML",
             reply_markup=get_trainees_with_mentors_keyboard(trainees_with_mentors)
         )
@@ -669,7 +669,7 @@ async def callback_select_trainee_for_reassign(callback: CallbackQuery, state: F
             f"🔄 <b>Переназначение наставника</b>\n\n"
             f"👤 <b>Стажер:</b> {trainee.full_name}\n"
             f"👨‍🏫 <b>Текущий наставник:</b> {current_mentor.full_name if current_mentor else 'Не назначен'}\n\n"
-            f"👇 <b>Выберите нового наставника:</b>"
+            f"👇 <b>Выбери нового наставника:</b>"
         )
         
         # Создаем клавиатуру с доступными наставниками
@@ -759,7 +759,7 @@ async def callback_reassign_to_mentor(callback: CallbackQuery, state: FSMContext
 async def callback_back_to_mentors_menu(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Возврат к подменю наставников"""
     await callback.message.edit_text(
-        "Выберите действие:",
+        "Выбери действие:",
         reply_markup=get_mentors_main_keyboard(),
         parse_mode="HTML"
     )
@@ -775,16 +775,16 @@ async def cmd_mentors_menu(message: Message, state: FSMContext, session: AsyncSe
     
     user = await get_user_by_tg_id(session, message.from_user.id)
     if not user:
-        await message.answer("❌ Вы не зарегистрированы в системе.")
+        await message.answer("❌ Ты не зарегистрирован в системе.")
         return
     
     has_permission = await check_user_permission(session, user.id, "view_mentorship")
     if not has_permission:
-        await message.answer("❌ У вас нет прав для просмотра информации о наставничестве.")
+        await message.answer("❌ У тебя нет прав для просмотра информации о наставничестве.")
         return
     
     await message.answer(
-        "Выберите действие:",
+        "Выбери действие:",
         reply_markup=get_mentors_main_keyboard(),
         parse_mode="HTML"
     )
@@ -799,12 +799,12 @@ async def cmd_list_mentors(message: Message, state: FSMContext, session: AsyncSe
     
     user = await get_user_by_tg_id(session, message.from_user.id)
     if not user:
-        await message.answer("❌ Вы не зарегистрированы в системе.")
+        await message.answer("❌ Ты не зарегистрирован в системе.")
         return
     
     has_permission = await check_user_permission(session, user.id, "view_mentorship")
     if not has_permission:
-        await message.answer("❌ У вас нет прав для просмотра информации о наставничестве.")
+        await message.answer("❌ У тебя нет прав для просмотра информации о наставничестве.")
         return
     
     mentors = await get_available_mentors(session)
@@ -865,12 +865,12 @@ async def cmd_list_unassigned_trainees(message: Message, state: FSMContext, sess
     
     user = await get_user_by_tg_id(session, message.from_user.id)
     if not user:
-        await message.answer("❌ Вы не зарегистрированы в системе.")
+        await message.answer("❌ Ты не зарегистрирован в системе.")
         return
     
     has_permission = await check_user_permission(session, user.id, "view_trainee_list")
     if not has_permission:
-        await message.answer("❌ У вас нет прав для просмотра списка пользователей.")
+        await message.answer("❌ У тебя нет прав для просмотра списка пользователей.")
         return
     
     # Получаем стажеров без наставника (они считаются "новыми")
@@ -1012,8 +1012,8 @@ async def callback_select_trajectory_for_trainee(callback: CallbackQuery, sessio
         await callback.message.edit_text(
             f"❌ <b>Нет доступных траекторий</b>\n\n"
             f"👤 <b>Стажер:</b> {trainee.full_name}\n\n"
-            "Для вас нет доступных траекторий обучения.\n"
-            "Возможно, нет траекторий для вашей группы.",
+            "Для тебя нет доступных траекторий обучения.\n"
+            "Возможно, нет траекторий для твоей группы.",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -1036,7 +1036,7 @@ async def callback_select_trajectory_for_trainee(callback: CallbackQuery, sessio
             "📍 <b>Объект:</b>\n"
             f"<b>Стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
             f"<b>Работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n\n"
-            "Выберите траекторию обучения👇"
+            "Выбери траекторию обучения👇"
         )
 
     # Создаем клавиатуру с доступными траекториями
@@ -1355,7 +1355,7 @@ async def process_my_trainees_callback(callback: CallbackQuery, session: AsyncSe
     """Обработчик кнопки 'Мои стажёры' из уведомления - ПО ТЗ 6-й задачи"""
     user = await get_user_by_tg_id(session, callback.from_user.id)
     if not user:
-        await callback.message.answer("❌ Вы не зарегистрированы в системе.")
+        await callback.message.answer("❌ Ты не зарегистрирован в системе.")
         await callback.answer()
         return
     
@@ -1363,8 +1363,8 @@ async def process_my_trainees_callback(callback: CallbackQuery, session: AsyncSe
     
     if not trainees:
         await callback.message.edit_text(
-            "👥 <b>Ваши стажеры</b>\n\n"
-            "У вас пока нет назначенных стажеров.\n"
+            "👥 <b>Твои стажеры</b>\n\n"
+            "У тебя пока нет назначенных стажеров.\n"
             "Обратитесь к рекрутеру для назначения стажеров.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -1378,7 +1378,7 @@ async def process_my_trainees_callback(callback: CallbackQuery, session: AsyncSe
     keyboard = InlineKeyboardMarkup(inline_keyboard=[])
 
     # Формируем сообщение со списком стажеров
-    message_text = "👥 <b>Ваши стажеры</b>\n\n"
+    message_text = "👥 <b>Твои стажеры</b>\n\n"
 
     for i, trainee in enumerate(trainees, 1):
         # Получаем информацию о траектории стажера
@@ -1478,7 +1478,7 @@ async def process_grant_test_access_callback(callback: CallbackQuery, session: A
     """Обработчик кнопки 'Предоставить доступ к тестам' из уведомления"""
     user = await get_user_by_tg_id(session, callback.from_user.id)
     if not user:
-        await callback.message.answer("❌ Вы не зарегистрированы в системе.")
+        await callback.message.answer("❌ Ты не зарегистрирован в системе.")
         await callback.answer()
         return
     
@@ -1487,7 +1487,7 @@ async def process_grant_test_access_callback(callback: CallbackQuery, session: A
     if not has_permission:
         await callback.message.edit_text(
             "❌ <b>Недостаточно прав</b>\n\n"
-            "У вас нет прав для предоставления доступа к тестам.\n"
+            "У тебя нет прав для предоставления доступа к тестам.\n"
             "Обратитесь к администратору.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -1503,7 +1503,7 @@ async def process_grant_test_access_callback(callback: CallbackQuery, session: A
     if not trainees:
         await callback.message.edit_text(
             "❌ <b>Нет стажеров</b>\n\n"
-            "У вас нет назначенных стажеров.\n"
+            "У тебя нет назначенных стажеров.\n"
             "Обратитесь к рекрутеру для назначения стажеров.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -1539,10 +1539,10 @@ async def process_grant_test_access_callback(callback: CallbackQuery, session: A
     
     await callback.message.edit_text(
         f"📊 <b>Предоставление доступа к тестам</b>\n\n"
-        f"👥 <b>Ваших стажеров:</b> {len(trainees)}\n"
+        f"👥 <b>Твоих стажеров:</b> {len(trainees)}\n"
         f"📋 <b>Доступных тестов:</b> {len(tests)}\n\n"
         f"<b>Тесты в системе:</b>\n{tests_info}\n\n"
-        "Выберите тест для назначения стажерам:",
+        "Выбери тест для назначения стажерам:",
         parse_mode="HTML",
         reply_markup=get_tests_for_access_keyboard(tests)
     )
@@ -1562,14 +1562,14 @@ async def process_my_mentor_info(callback: CallbackQuery, session: AsyncSession)
     if not mentor:
         await callback.message.edit_text(
             "👨‍🏫 <b>Информация о наставнике</b>\n\n"
-            "У вас пока не назначен наставник.\n"
+            "У тебя пока не назначен наставник.\n"
             "Обратитесь к администратору или дождитесь назначения.",
             parse_mode="HTML"
         )
         await callback.answer()
         return
     
-    mentor_info = f"""👨‍🏫 <b>Ваш наставник</b>
+    mentor_info = f"""👨‍🏫 <b>Твой наставник</b>
 
 🧑 <b>ФИО:</b> {mentor.full_name}
 📞 <b>Телефон:</b> {mentor.phone_number}
@@ -1711,7 +1711,7 @@ async def process_add_test_access(callback: CallbackQuery, state: FSMContext, se
     if not has_permission:
         await callback.message.edit_text(
             "❌ <b>Недостаточно прав</b>\n\n"
-            "У вас нет прав для предоставления доступа к тестам.\n"
+            "У тебя нет прав для предоставления доступа к тестам.\n"
             "Обратитесь к администратору.",
             parse_mode="HTML"
         )
@@ -1744,7 +1744,7 @@ async def process_add_test_access(callback: CallbackQuery, state: FSMContext, se
         f"📋 <b>Добавление теста стажеру</b>\n\n"
         f"👤 <b>Стажер:</b> {trainee.full_name}\n"
         f"📊 <b>Доступно тестов:</b> {len(tests)}\n\n"
-        "Выберите тест, к которому хотите предоставить доступ:",
+        "Выбери тест, к которому хочешь предоставить доступ:",
         parse_mode="HTML",
         reply_markup=get_test_access_keyboard(tests, trainee_id)
     )
@@ -1880,8 +1880,8 @@ async def process_back_to_trainees(callback: CallbackQuery, state: FSMContext, s
     
     if not trainees:
         await callback.message.edit_text(
-            "👥 <b>Ваши стажеры</b>\n\n"
-            "У вас пока нет назначенных стажеров.\n"
+            "👥 <b>Твои стажеры</b>\n\n"
+            "У тебя пока нет назначенных стажеров.\n"
             "Обратитесь к рекрутеру для назначения стажеров.",
             parse_mode="HTML"
         )
@@ -1896,9 +1896,9 @@ async def process_back_to_trainees(callback: CallbackQuery, state: FSMContext, s
     ])
     
     await callback.message.edit_text(
-        f"👥 <b>Ваши стажеры</b>\n\n"
+        f"👥 <b>Твои стажеры</b>\n\n"
         f"Всего стажеров: <b>{len(trainees)}</b>\n\n{trainees_list}\n\n"
-        "Выберите стажера для управления:",
+        "Выбери стажера для управления:",
         parse_mode="HTML",
         reply_markup=get_trainee_selection_keyboard(trainees)
     )
@@ -1911,7 +1911,7 @@ async def process_assign_mentor_callback(callback: CallbackQuery, state: FSMCont
     """Обработчик кнопки 'Назначить наставника' из уведомления"""
     user = await get_user_by_tg_id(session, callback.from_user.id)
     if not user:
-        await callback.message.answer("❌ Вы не зарегистрированы в системе.")
+        await callback.message.answer("❌ Ты не зарегистрирован в системе.")
         await callback.answer()
         return
     
@@ -1919,7 +1919,7 @@ async def process_assign_mentor_callback(callback: CallbackQuery, state: FSMCont
     if not has_permission:
         await callback.message.edit_text(
             "❌ <b>Недостаточно прав</b>\n\n"
-            "У вас нет прав для назначения наставников.\n"
+            "У тебя нет прав для назначения наставников.\n"
             "Обратитесь к администратору.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -1948,12 +1948,12 @@ async def process_assign_mentor_callback(callback: CallbackQuery, state: FSMCont
         f"📊 <b>Статистика системы:</b>\n"
         f"• Стажеров без наставника: <b>{len(unassigned_trainees)}</b>\n"
         f"• Требуется назначение наставников\n\n"
-        f"🎯 <b>Ваша задача:</b> Назначить наставника каждому стажеру для:\n"
+        f"🎯 <b>Твоя задача:</b> Назначить наставника каждому стажеру для:\n"
         f"• Персонального сопровождения\n"
         f"• Контроля прогресса обучения\n"
         f"• Помощи в адаптации\n"
         f"• Предоставления доступа к тестам\n\n"
-        f"👇 <b>Выберите стажера для назначения наставника:</b>",
+        f"👇 <b>Выбери стажера для назначения наставника:</b>",
         parse_mode="HTML",
         reply_markup=get_unassigned_trainees_keyboard(unassigned_trainees)
     )
@@ -1966,7 +1966,7 @@ async def process_new_trainees_list_callback(callback: CallbackQuery, session: A
     """Обработчик кнопки 'Список новых стажёров' из уведомления"""
     user = await get_user_by_tg_id(session, callback.from_user.id)
     if not user:
-        await callback.message.answer("❌ Вы не зарегистрированы в системе.")
+        await callback.message.answer("❌ Ты не зарегистрирован в системе.")
         await callback.answer()
         return
     
@@ -1974,7 +1974,7 @@ async def process_new_trainees_list_callback(callback: CallbackQuery, session: A
     if not has_permission:
         await callback.message.edit_text(
             "❌ <b>Недостаточно прав</b>\n\n"
-            "У вас нет прав для просмотра списка стажёров.\n"
+            "У тебя нет прав для просмотра списка стажёров.\n"
             "Обратитесь к администратору.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -2045,8 +2045,8 @@ async def callback_assign_trajectory(callback: CallbackQuery, state: FSMContext,
 
         if not trainees:
             await callback.message.edit_text(
-                "👥 <b>Ваши стажеры</b>\n\n"
-                "У вас пока нет назначенных стажеров.\n"
+                "👥 <b>Твои стажеры</b>\n\n"
+                "У тебя пока нет назначенных стажеров.\n"
                 "Обратитесь к рекрутеру для назначения стажеров.",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -2057,7 +2057,7 @@ async def callback_assign_trajectory(callback: CallbackQuery, state: FSMContext,
 
         # Показываем список стажеров для выбора (аналогично cmd_mentor_trainees)
         keyboard = InlineKeyboardMarkup(inline_keyboard=[])
-        message_text = "👥 <b>Ваши стажеры</b>\n\n"
+        message_text = "👥 <b>Твои стажеры</b>\n\n"
 
         for i, trainee in enumerate(trainees, 1):
             # Получаем информацию о траектории стажера
@@ -2086,7 +2086,7 @@ async def callback_assign_trajectory(callback: CallbackQuery, state: FSMContext,
         ])
 
         await callback.message.edit_text(
-            message_text + "Выберите стажера для назначения траектории:",
+            message_text + "Выбери стажера для назначения траектории:",
             reply_markup=keyboard,
             parse_mode="HTML"
         )
@@ -2204,7 +2204,7 @@ async def callback_confirm_trajectory_assignment(callback: CallbackQuery, state:
                 f"👨‍🏫 <b>Назначил:</b> {mentor.full_name}\n"
             f"📅 <b>Дата назначения:</b> {trainee.registration_date.strftime('%d.%m.%Y %H:%M')}\n\n"
                 "📬 <b>Стажер получил уведомление о назначении траектории!</b>\n\n"
-                "🎯 <b>Теперь вы можете открывать этапы стажеру по мере необходимости.</b>"
+                "🎯 <b>Теперь ты можешь открывать этапы стажеру по мере необходимости.</b>"
             )
 
             # Клавиатура для продолжения работы
@@ -2249,7 +2249,7 @@ async def callback_cancel_trajectory_assignment(callback: CallbackQuery, state: 
 
         await callback.message.edit_text(
             "🚫 <b>Назначение траектории отменено</b>\n\n"
-            "Вы можете вернуться к этому позже.",
+            "Ты можешь вернуться к этому позже.",
             reply_markup=get_trainee_actions_keyboard(),
                 parse_mode="HTML"
         )
@@ -2534,12 +2534,12 @@ async def callback_open_stage(callback: CallbackQuery, state: FSMContext, sessio
             success_message += trajectory_progress + "\n"
             
             # Добавляем сообщение об успешном открытии
-            success_message += f"✅<b>Вы успешно открыли стажёру {current_stage.name}!</b>\n\n"
+            success_message += f"✅<b>Ты успешно открыл стажёру {current_stage.name}!</b>\n\n"
             success_message += f"<b>Открытые стажёру этапы отображаются значком 🟡</b>\n"
             success_message += f"<b>Пройденные стажёром этапы отображаются значком ✅</b>\n\n"
             success_message += f"<b>Чтобы следить за прогрессом стажёра:</b>\n"
             success_message += f"1 Нажмите кнопку \"Мои стажёры\"\n"
-            success_message += f"2 Выберите нужного стажёра\n"
+            success_message += f"2 Выбери нужного стажёра\n"
             success_message += f"3 Откройте просмотр стажёра, чтобы увидеть его результаты"
 
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -2618,7 +2618,7 @@ async def callback_assign_manager(callback: CallbackQuery, state: FSMContext, se
             f"📞 <b>Телефон:</b> {trainee.phone_number}\n"
             f"📅 <b>Дата регистрации:</b> {trainee.registration_date.strftime('%d.%m.%Y')}\n"
             f"🗂️ <b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n\n"
-            "👨‍🏫 <b>Выберите руководителя:</b>"
+            "👨‍🏫 <b>Выбери руководителя:</b>"
         )
 
         # Создаем клавиатуру с доступными руководителями
@@ -2875,7 +2875,7 @@ async def callback_manager_actions(callback: CallbackQuery, session: AsyncSessio
             f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n"
             f"{manager_info}\n"
             f"🎯 <b>Статус:</b> {manager_status}\n\n"
-            "📋 <b>Выберите действие:</b>"
+            "📋 <b>Выбери действие:</b>"
         )
 
         keyboard = get_manager_actions_keyboard(trainee_id)
@@ -2914,13 +2914,13 @@ async def callback_view_trainee_attestation(callback: CallbackQuery, state: FSMC
         # Получаем наставника (текущего пользователя)
         mentor = await get_user_by_tg_id(session, callback.from_user.id)
         if not mentor:
-            await callback.message.edit_text("Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("Ты не зарегистрирован в системе.")
             return
             
         # Проверяем права доступа наставника
         has_permission = await check_user_permission(session, mentor.id, "view_mentorship")
         if not has_permission:
-            await callback.message.edit_text("❌ У вас нет прав для управления аттестациями")
+            await callback.message.edit_text("❌ У тебя нет прав для управления аттестациями")
             return
             
         # Получаем аттестацию из траектории стажера
@@ -2986,7 +2986,7 @@ async def callback_view_trainee_attestation(callback: CallbackQuery, state: FSMC
             f"<b>Работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n\n"
             "🗺️<b>Управление траекторией</b>\n"
             "🔍<b>Аттестация</b>\n\n"
-            "🟡<b>Выберите руководителя для аттестации👇</b>"
+            "🟡<b>Выбери руководителя для аттестации👇</b>"
         )
         
         # Создаем клавиатуру с руководителями согласно ТЗ
@@ -3181,7 +3181,7 @@ async def send_attestation_assignment_notification_to_trainee(session: AsyncSess
         
         # Формируем уведомление согласно ТЗ
         notification_text = (
-            "<b>Вам назначена аттестация:</b>\n\n"
+            "<b>Тебе назначена аттестация:</b>\n\n"
             f"🏁<b>Аттестация:</b> {attestation.name} ⛔️\n"
             f"🟢<b>Руководитель:</b> {manager.full_name}\n"
             f"👤 <b>Username:</b> @{manager.username or 'не указан'}\n"
@@ -3218,7 +3218,7 @@ async def send_attestation_assignment_notification_to_manager(session: AsyncSess
         
         # Формируем уведомление согласно ТЗ
         notification_text = (
-            "<b>Вам назначен стажёр на аттестацию:</b>\n\n"
+            "<b>Тебе назначен стажёр на аттестацию:</b>\n\n"
             f"🧑 <b>ФИО:</b> {trainee.full_name}\n"
             f"📞 <b>Телефон:</b> {trainee.phone_number}\n"
             f"👤 <b>Username:</b> @{trainee.username or 'не указан'}\n"

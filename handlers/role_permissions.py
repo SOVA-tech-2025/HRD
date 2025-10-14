@@ -29,13 +29,13 @@ async def cmd_manage_permissions(message: Message, state: FSMContext, session: A
     
     user = await get_user_by_tg_id(session, message.from_user.id)
     if not user:
-        await message.answer("Вы не зарегистрированы в системе.")
+        await message.answer("Ты не зарегистрирован в системе.")
         return
     
     has_permission = await check_user_permission(session, user.id, "manage_roles")
     
     if not has_permission:
-        await message.answer("У вас нет прав для управления правами ролей.")
+        await message.answer("У тебя нет прав для управления правами ролей.")
         return
     
     await show_roles_list(message, state, session)
@@ -218,7 +218,7 @@ async def process_permission_selection(callback: CallbackQuery, state: FSMContex
         return
     
     action_text = "добавить" if action == "add" else "убрать"
-    confirmation_text = f"Вы действительно хотите {action_text} возможность '{permission.description}' для роли '{role.name}'?"
+    confirmation_text = f"Ты действительно хочешь {action_text} возможность '{permission.description}' для роли '{role.name}'?"
     
     keyboard = get_permission_confirmation_keyboard(action, role.id, permission.name)
     
@@ -262,7 +262,7 @@ async def process_permission_confirmation(callback: CallbackQuery, state: FSMCon
     if not has_permission:
         await callback.message.edit_text(
             "❌ <b>Недостаточно прав</b>\n\n"
-            "У вас нет прав для управления правами ролей.\n"
+            "У тебя нет прав для управления правами ролей.\n"
             "Обратитесь к администратору.",
             parse_mode="HTML"
         )

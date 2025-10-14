@@ -33,7 +33,7 @@ async def cmd_my_attestations(message: Message, state: FSMContext, session: Asyn
         # Получение пользователя
         user = await get_user_by_tg_id(session, message.from_user.id)
         if not user:
-            await message.answer("Вы не зарегистрированы в системе.")
+            await message.answer("Ты не зарегистрирован в системе.")
             return
 
         # Проверка роли руководителя
@@ -41,7 +41,7 @@ async def cmd_my_attestations(message: Message, state: FSMContext, session: Asyn
         if not has_permission:
             await message.answer(
                 "❌ <b>Недостаточно прав</b>\n\n"
-                "У вас нет прав для проведения аттестаций.\n"
+                "У тебя нет прав для проведения аттестаций.\n"
                 "Обратитесь к администратору.",
                 parse_mode="HTML"
             )
@@ -54,7 +54,7 @@ async def cmd_my_attestations(message: Message, state: FSMContext, session: Asyn
             await message.answer(
                 "🎯 <b>МОИ АТТЕСТАЦИИ</b>\n\n"
                 "❌ <b>Стажеры не найдены</b>\n\n"
-                "У вас нет назначенных стажеров для проведения аттестаций.\n"
+                "У тебя нет назначенных стажеров для проведения аттестаций.\n"
                 "Обратитесь к наставнику для назначения стажеров.",
                 parse_mode="HTML",
                 reply_markup=get_main_menu_keyboard()
@@ -197,7 +197,7 @@ async def callback_back_to_my_attestations(callback: CallbackQuery, session: Asy
 
         if not trainees:
             await callback.message.edit_text(
-                "У вас нет назначенных стажеров для проведения аттестаций."
+                "У тебя нет назначенных стажеров для проведения аттестаций."
             )
             return
 
@@ -258,7 +258,7 @@ async def cmd_my_trainees(message: Message, state: FSMContext, session: AsyncSes
         # Получение пользователя
         user = await get_user_by_tg_id(session, message.from_user.id)
         if not user:
-            await message.answer("Вы не зарегистрированы в системе.")
+            await message.answer("Ты не зарегистрирован в системе.")
             return
 
         # Проверка роли руководителя
@@ -266,7 +266,7 @@ async def cmd_my_trainees(message: Message, state: FSMContext, session: AsyncSes
         if not has_permission:
             await message.answer(
                 "❌ <b>Недостаточно прав</b>\n\n"
-                "У вас нет прав для просмотра стажеров.\n"
+                "У тебя нет прав для просмотра стажеров.\n"
                 "Обратитесь к администратору.",
                 parse_mode="HTML"
             )
@@ -279,7 +279,7 @@ async def cmd_my_trainees(message: Message, state: FSMContext, session: AsyncSes
             await message.answer(
                 "👨‍🏫 <b>МОИ СТАЖЕРЫ</b>\n\n"
                 "❌ <b>Стажеры не найдены</b>\n\n"
-                "У вас нет назначенных стажеров.\n"
+                "У тебя нет назначенных стажеров.\n"
                 "Обратитесь к наставнику для назначения стажеров.",
                 parse_mode="HTML",
                 reply_markup=get_main_menu_keyboard()

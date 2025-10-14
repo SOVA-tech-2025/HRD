@@ -85,7 +85,7 @@ async def cmd_all_users(message: Message, session: AsyncSession, state: FSMConte
         return
 
     if not await check_user_permission(session, user.id, "manage_groups"):
-        await message.answer("❌ У вас нет прав для управления пользователями")
+        await message.answer("❌ У тебя нет прав для управления пользователями")
         log_user_error(message.from_user.id, "all_users_access_denied", "Insufficient permissions")
         return
         
@@ -103,7 +103,7 @@ async def cmd_all_users(message: Message, session: AsyncSession, state: FSMConte
         f"<b>🚸 Всего пользователей в системе: {len(users)}</b>\n"
         f"Доступно групп: {len(groups)}\n"
         f"Доступно объектов: {len(objects)}\n\n"
-        "Выберите способ фильтрации пользователей:"
+        "Выбери способ фильтрации пользователей:"
     )
     
     keyboard = get_users_filter_keyboard(groups, objects)
@@ -130,7 +130,7 @@ async def callback_filter_all_users(callback: CallbackQuery, state: FSMContext, 
         
         text = (
             f"<b>Найдено пользователей: {len(users)}</b>\n\n"
-            "Выберите пользователя для просмотра и редактирования:"
+            "Выбери пользователя для просмотра и редактирования:"
         )
         
         keyboard = get_users_list_keyboard(users, 0, 5, "all")
@@ -227,7 +227,7 @@ async def callback_filter_group(callback: CallbackQuery, state: FSMContext, sess
         )
         
         if users:
-            text += "Выберите пользователя для просмотра и редактирования:"
+            text += "Выбери пользователя для просмотра и редактирования:"
             keyboard = get_users_list_keyboard(users, 0, 5, f"group:{group_id}")
             await state.set_state(UserEditStates.waiting_for_user_selection)
             await state.update_data(current_users=users, filter_type=f"group:{group_id}", current_page=0)
@@ -266,7 +266,7 @@ async def callback_filter_object(callback: CallbackQuery, state: FSMContext, ses
         )
         
         if users:
-            text += "Выберите пользователя для просмотра и редактирования:"
+            text += "Выбери пользователя для просмотра и редактирования:"
             keyboard = get_users_list_keyboard(users, 0, 5, f"object:{object_id}")
             await state.set_state(UserEditStates.waiting_for_user_selection)
             await state.update_data(current_users=users, filter_type=f"object:{object_id}", current_page=0)
@@ -348,7 +348,7 @@ async def process_search_query_all_users(message: Message, state: FSMContext, se
         text = (
             f"🔍 <b>Результаты поиска: '{query}'</b>\n\n"
             f"📊 <b>Найдено пользователей:</b> {len(users)}\n\n"
-            "Выберите пользователя для просмотра и редактирования:"
+            "Выбери пользователя для просмотра и редактирования:"
         )
         
         keyboard = get_users_list_keyboard(users, 0, 5, "search")
@@ -486,7 +486,7 @@ async def callback_back_to_filters(callback: CallbackQuery, state: FSMContext, s
             f"📊 Всего пользователей в системе: <b>{len(users)}</b>\n"
             f"🗂️ Доступно групп: <b>{len(groups)}</b>\n"
             f"📍 Доступно объектов: <b>{len(objects)}</b>\n\n"
-            "Выберите способ фильтрации пользователей:"
+            "Выбери способ фильтрации пользователей:"
         )
         
         keyboard = get_users_filter_keyboard(groups, objects)
@@ -513,17 +513,17 @@ async def callback_back_to_users(callback: CallbackQuery, state: FSMContext, ses
         current_page = data.get('current_page', 0)
         
         if filter_type == "all":
-            text = f"👥 <b>ВСЕ ПОЛЬЗОВАТЕЛИ</b> 👥\n\n📊 Найдено пользователей: <b>{len(users)}</b>\n\nВыберите пользователя для просмотра и редактирования:"
+            text = f"👥 <b>ВСЕ ПОЛЬЗОВАТЕЛИ</b> 👥\n\n📊 Найдено пользователей: <b>{len(users)}</b>\n\nВыбери пользователя для просмотра и редактирования:"
         elif filter_type.startswith("group:"):
             group_id = int(filter_type.split(":")[1])
             group = await get_group_by_id(session, group_id)
-            text = f"🗂️ <b>ГРУППА: {group.name if group else 'Неизвестная'}</b> 🗂️\n\n📊 Пользователей в группе: <b>{len(users)}</b>\n\nВыберите пользователя для просмотра и редактирования:"
+            text = f"🗂️ <b>ГРУППА: {group.name if group else 'Неизвестная'}</b> 🗂️\n\n📊 Пользователей в группе: <b>{len(users)}</b>\n\nВыбери пользователя для просмотра и редактирования:"
         elif filter_type.startswith("object:"):
             object_id = int(filter_type.split(":")[1])
             obj = await get_object_by_id(session, object_id)
-            text = f"📍 <b>ОБЪЕКТ: {obj.name if obj else 'Неизвестный'}</b> 📍\n\n📊 Пользователей на объекте: <b>{len(users)}</b>\n\nВыберите пользователя для просмотра и редактирования:"
+            text = f"📍 <b>ОБЪЕКТ: {obj.name if obj else 'Неизвестный'}</b> 📍\n\n📊 Пользователей на объекте: <b>{len(users)}</b>\n\nВыбери пользователя для просмотра и редактирования:"
         else:
-            text = f"👥 <b>СПИСОК ПОЛЬЗОВАТЕЛЕЙ</b> 👥\n\n📊 Найдено пользователей: <b>{len(users)}</b>\n\nВыберите пользователя для просмотра и редактирования:"
+            text = f"👥 <b>СПИСОК ПОЛЬЗОВАТЕЛЕЙ</b> 👥\n\n📊 Найдено пользователей: <b>{len(users)}</b>\n\nВыбери пользователя для просмотра и редактирования:"
         
         keyboard = get_users_list_keyboard(users, current_page, 5, filter_type)
         
@@ -561,20 +561,20 @@ async def callback_users_pagination(callback: CallbackQuery, state: FSMContext, 
         users = data.get('current_users', [])
         
         if filter_type == "all":
-            text = f"👥 <b>ВСЕ ПОЛЬЗОВАТЕЛИ</b> 👥\n\n📊 Найдено пользователей: <b>{len(users)}</b>\n\nВыберите пользователя для просмотра и редактирования:"
+            text = f"👥 <b>ВСЕ ПОЛЬЗОВАТЕЛИ</b> 👥\n\n📊 Найдено пользователей: <b>{len(users)}</b>\n\nВыбери пользователя для просмотра и редактирования:"
         elif filter_type == "search":
             search_query = data.get('search_query', '')
-            text = f"🔍 <b>Результаты поиска: '{search_query}'</b>\n\n📊 Найдено пользователей: <b>{len(users)}</b>\n\nВыберите пользователя для просмотра и редактирования:"
+            text = f"🔍 <b>Результаты поиска: '{search_query}'</b>\n\n📊 Найдено пользователей: <b>{len(users)}</b>\n\nВыбери пользователя для просмотра и редактирования:"
         elif filter_type.startswith("group"):
             group_id = int(filter_type.split(":")[1]) if ":" in filter_type else 0
             group = await get_group_by_id(session, group_id) if group_id else None
-            text = f"🗂️ <b>ГРУППА: {group.name if group else 'Неизвестная'}</b> 🗂️\n\n📊 Пользователей в группе: <b>{len(users)}</b>\n\nВыберите пользователя для просмотра и редактирования:"
+            text = f"🗂️ <b>ГРУППА: {group.name if group else 'Неизвестная'}</b> 🗂️\n\n📊 Пользователей в группе: <b>{len(users)}</b>\n\nВыбери пользователя для просмотра и редактирования:"
         elif filter_type.startswith("object"):
             object_id = int(filter_type.split(":")[1]) if ":" in filter_type else 0
             obj = await get_object_by_id(session, object_id) if object_id else None
-            text = f"📍 <b>ОБЪЕКТ: {obj.name if obj else 'Неизвестный'}</b> 📍\n\n📊 Пользователей на объекте: <b>{len(users)}</b>\n\nВыберите пользователя для просмотра и редактирования:"
+            text = f"📍 <b>ОБЪЕКТ: {obj.name if obj else 'Неизвестный'}</b> 📍\n\n📊 Пользователей на объекте: <b>{len(users)}</b>\n\nВыбери пользователя для просмотра и редактирования:"
         else:
-            text = f"👥 <b>СПИСОК ПОЛЬЗОВАТЕЛЕЙ</b> 👥\n\n📊 Найдено пользователей: <b>{len(users)}</b>\n\nВыберите пользователя для просмотра и редактирования:"
+            text = f"👥 <b>СПИСОК ПОЛЬЗОВАТЕЛЕЙ</b> 👥\n\n📊 Найдено пользователей: <b>{len(users)}</b>\n\nВыбери пользователя для просмотра и редактирования:"
         
         keyboard = get_users_list_keyboard(users, page, 5, filter_type)
         
@@ -690,7 +690,7 @@ async def show_user_editor(message: Message, session: AsyncSession,
         
     user_info += f"\n🎱Номер пользователя: {target_user.id}"
     
-    user_info += "\n\nКакую информацию вы хотите изменить?\nВыберите кнопкой ниже👇"
+    user_info += "\n\nКакую информацию ты хочешь изменить?\nВыбери кнопкой ниже👇"
     
     # Получаем клавиатуру редактора
     keyboard = get_user_editor_keyboard(role_name in ["Стажер", "Стажёр"])
@@ -912,7 +912,7 @@ async def process_new_role(callback: CallbackQuery, session: AsyncSession, state
 @router.callback_query(UserEditStates.waiting_for_new_role, F.data == "cancel_registration")
 async def process_cancel_role_selection(callback: CallbackQuery, session: AsyncSession, state: FSMContext):
     """Отмена выбора роли"""
-    await callback.message.edit_text("❌ ВЫ ОТМЕНИЛИ РЕДАКТИРОВАНИЕ ПОЛЬЗОВАТЕЛЯ")
+    await callback.message.edit_text("❌ ТЫ ОТМЕНИЛ РЕДАКТИРОВАНИЕ ПОЛЬЗОВАТЕЛЯ")
     await state.clear()
     await callback.answer()
     log_user_action(callback.from_user.id, "cancel_role_edit", "Cancelled role editing")
@@ -1341,7 +1341,7 @@ async def callback_delete_user(callback: CallbackQuery, state: FSMContext, sessi
         
         warning_text = (
             f"⚠️ <b>ПРЕДУПРЕЖДЕНИЕ</b> ⚠️\n\n"
-            f"Вы собираетесь ПОЛНОСТЬЮ УДАЛИТЬ пользователя:\n"
+            f"Ты собираешься ПОЛНОСТЬЮ УДАЛИТЬ пользователя:\n"
             f"👤 <b>{user.full_name}</b>\n"
             f"📞 {user.phone_number}\n"
             f"🆔 #{user.id}\n\n"

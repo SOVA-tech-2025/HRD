@@ -39,7 +39,7 @@ async def cmd_manager_attestations(message: Message, state: FSMContext, session:
         # Получение пользователя
         user = await get_user_by_tg_id(session, message.from_user.id)
         if not user:
-            await message.answer("Вы не зарегистрированы в системе.")
+            await message.answer("Ты не зарегистрирован в системе.")
             return
 
         # Проверка роли руководителя
@@ -47,7 +47,7 @@ async def cmd_manager_attestations(message: Message, state: FSMContext, session:
         if not has_permission:
             await message.answer(
                 "❌ <b>Недостаточно прав</b>\n\n"
-                "У вас нет прав для проведения аттестаций.\n"
+                "У тебя нет прав для проведения аттестаций.\n"
                 "Обратитесь к администратору.",
                 parse_mode="HTML"
             )
@@ -60,7 +60,7 @@ async def cmd_manager_attestations(message: Message, state: FSMContext, session:
             await message.answer(
                 "🔍<b>Аттестация🔍</b>\n\n"
                 "❌ <b>Стажеры не найдены</b>\n\n"
-                "У вас нет назначенных стажеров на аттестацию.\n"
+                "У тебя нет назначенных стажеров на аттестацию.\n"
                 "Обратитесь к наставнику для назначения стажеров.",
                 parse_mode="HTML",
                 reply_markup=get_main_menu_keyboard()
@@ -754,7 +754,7 @@ async def send_attestation_failure_notification(session: AsyncSession, bot, trai
             f"👤 <b>Username:</b> @{manager_username or 'не указан'}\n"
             f"🟢<b>Дата:</b> {date or ''}\n"
             f"🟢<b>Время:</b> {time or ''}\n\n"
-            "<b>Договоритесь с руководителем, когда вам нужно пройти аттестацию повторно</b>"
+            "<b>Договорись с руководителем, когда тебе нужно пройти аттестацию повторно</b>"
         )
 
         await bot.send_message(
@@ -786,7 +786,7 @@ async def callback_make_employee_anyway(callback: CallbackQuery, state: FSMConte
         # Проверяем права руководителя
         manager = await get_user_by_tg_id(session, callback.from_user.id)
         if not manager or manager.id != assignment.manager_id:
-            await callback.message.edit_text("❌ У вас нет прав для изменения статуса этого стажера")
+            await callback.message.edit_text("❌ У тебя нет прав для изменения статуса этого стажера")
             return
             
         # Меняем роль стажера на сотрудника несмотря на провал
@@ -811,10 +811,10 @@ async def callback_make_employee_anyway(callback: CallbackQuery, state: FSMConte
         await callback.message.bot.send_message(
             chat_id=trainee.tg_id,
             text=(
-                "🎉 <b>Поздравляем! Вы стали сотрудником!</b>\n\n"
+                "🎉 <b>Поздравляем! Ты стал сотрудником!</b>\n\n"
                 f"👨‍💼 <b>Руководитель:</b> {manager.full_name}\n"
                 f"📅 <b>Дата перевода:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
-                "<i>Вы переведены в сотрудники по решению руководителя.</i>\n\n"
+                "<i>Ты переведён в сотрудники по решению руководителя.</i>\n\n"
                 "🚀 <b>Используйте /start чтобы обновить меню</b>"
             ),
             parse_mode="HTML"
@@ -848,7 +848,7 @@ async def callback_back_to_attestations(callback: CallbackQuery, state: FSMConte
         if not has_permission:
             await callback.message.edit_text(
                 "❌ <b>Недостаточно прав</b>\n\n"
-                "У вас нет прав для проведения аттестаций.\n"
+                "У тебя нет прав для проведения аттестаций.\n"
                 "Обратитесь к администратору.",
                 parse_mode="HTML"
             )
@@ -860,7 +860,7 @@ async def callback_back_to_attestations(callback: CallbackQuery, state: FSMConte
         if not manager_attestations:
             await callback.message.edit_text(
                 "🔍 <b>Аттестация стажеров</b>\n\n"
-                "❌ У вас пока нет назначенных аттестаций.\n\n"
+                "❌ У тебя пока нет назначенных аттестаций.\n\n"
                 "Аттестации назначают наставники через кнопку 'Аттестация' в разделе 'Мои стажёры'.",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[

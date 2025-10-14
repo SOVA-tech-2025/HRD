@@ -45,7 +45,7 @@ async def cmd_tests_main(message: Message, state: FSMContext, session: AsyncSess
         # Получаем пользователя и проверяем права
         user = await get_user_by_tg_id(session, message.from_user.id)
         if not user:
-            await message.answer("❌ Вы не зарегистрированы в системе.")
+            await message.answer("❌ Ты не зарегистрирован в системе.")
             return
         
         # Проверяем права на создание тестов (только рекрутеры)
@@ -53,7 +53,7 @@ async def cmd_tests_main(message: Message, state: FSMContext, session: AsyncSess
         if not has_permission:
             await message.answer(
                 "❌ <b>Недостаточно прав</b>\n\n"
-                "У вас нет прав для управления тестами.\n"
+                "У тебя нет прав для управления тестами.\n"
                 "Обратитесь к администратору.",
                 parse_mode="HTML"
             )
@@ -62,7 +62,7 @@ async def cmd_tests_main(message: Message, state: FSMContext, session: AsyncSess
         # Показываем меню управления тестами
         await message.answer(
             "📄 <b>УПРАВЛЕНИЕ ТЕСТАМИ</b>\n\n"
-            "Выберите действие:",
+            "Выбери действие:",
             parse_mode="HTML",
             reply_markup=get_tests_main_keyboard()
         )
@@ -110,17 +110,17 @@ async def cmd_create_test(message: Message, state: FSMContext, session: AsyncSes
     
     user = await get_user_by_tg_id(session, message.from_user.id)
     if not user:
-        await message.answer("Вы не зарегистрированы в системе.")
+        await message.answer("Ты не зарегистрирован в системе.")
         return
     
     has_permission = await check_user_permission(session, user.id, "create_tests")
     if not has_permission:
-        await message.answer("У вас нет прав для создания тестов.")
+        await message.answer("У тебя нет прав для создания тестов.")
         return
     
     await message.answer(
         "🔧 <b>Создание нового теста</b>\n\n"
-        "📝 Начинаем пошаговое создание теста для вашей системы стажировки.\n\n"
+        "📝 Начинаем пошаговое создание теста для твоей системы стажировки.\n\n"
         "1️⃣ <b>Шаг 1:</b> Введите название теста\n"
         "💡 <i>Название должно быть информативным и понятным для стажеров</i>\n\n"
         "📋 <b>Пример:</b> «Основы работы с клиентами» или «Техника безопасности»",
@@ -144,13 +144,13 @@ async def cmd_list_tests(message: Message, state: FSMContext, session: AsyncSess
 
     user = await get_user_by_tg_id(session, message.from_user.id)
     if not user:
-        await message.answer("Вы не зарегистрированы в системе.")
+        await message.answer("Ты не зарегистрирован в системе.")
         return
 
     # Рекрутеры/управляющие (с правом create_tests) получают выбор
     if await check_user_permission(session, user.id, "create_tests"):
         await message.answer(
-            "🗂️ Выберите, какие тесты вы хотите просмотреть:",
+            "🗂️ Выбери, какие тесты ты хочешь просмотреть:",
             reply_markup=get_test_filter_keyboard()
         )
         return
@@ -175,7 +175,7 @@ async def cmd_list_tests(message: Message, state: FSMContext, session: AsyncSess
     
     await message.answer(
         f"📋 <b>Список доступных тестов</b>\n\n{tests_list}\n\n"
-        f"Выберите тест для просмотра и предоставления доступа:",
+        f"Выбери тест для просмотра и предоставления доступа:",
         parse_mode="HTML",
         reply_markup=get_simple_test_selection_keyboard(tests)
     )
@@ -194,14 +194,14 @@ async def callback_create_test(callback: CallbackQuery, state: FSMContext, sessi
         # Получаем пользователя и проверяем права
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("❌ Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("❌ Ты не зарегистрирован в системе.")
             return
         
         has_permission = await check_user_permission(session, user.id, "create_tests")
         if not has_permission:
             await callback.message.edit_text(
                 "❌ <b>Недостаточно прав</b>\n\n"
-                "У вас нет прав для создания тестов.\n"
+                "У тебя нет прав для создания тестов.\n"
                 "Обратитесь к администратору.",
                 parse_mode="HTML"
             )
@@ -209,7 +209,7 @@ async def callback_create_test(callback: CallbackQuery, state: FSMContext, sessi
         
         await callback.message.edit_text(
             "🔧 <b>Создание нового теста</b>\n\n"
-            "📝 Начинаем пошаговое создание теста для вашей системы стажировки.\n\n"
+            "📝 Начинаем пошаговое создание теста для твоей системы стажировки.\n\n"
             "1️⃣ <b>Шаг 1:</b> Введите название теста\n"
             "💡 <i>Название должно быть информативным и понятным для стажеров</i>\n\n"
             "📋 <b>Пример:</b> «Основы работы с клиентами» или «Техника безопасности»",
@@ -239,13 +239,13 @@ async def callback_list_tests(callback: CallbackQuery, state: FSMContext, sessio
         # Получаем пользователя и проверяем права
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("❌ Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("❌ Ты не зарегистрирован в системе.")
             return
         
         # Рекрутеры/управляющие (с правом create_tests) получают выбор
         if await check_user_permission(session, user.id, "create_tests"):
             await callback.message.edit_text(
-                "🗂️ Выберите, какие тесты вы хотите просмотреть:",
+                "🗂️ Выбери, какие тесты ты хочешь просмотреть:",
                 reply_markup=get_test_filter_keyboard()
             )
             return
@@ -270,7 +270,7 @@ async def callback_list_tests(callback: CallbackQuery, state: FSMContext, sessio
         
         await callback.message.edit_text(
             f"📋 <b>Список доступных тестов</b>\n\n{tests_list}\n\n"
-            f"Выберите тест для просмотра и предоставления доступа:",
+            f"Выбери тест для просмотра и предоставления доступа:",
             parse_mode="HTML",
             reply_markup=get_simple_test_selection_keyboard(tests)
         )
@@ -291,7 +291,7 @@ async def callback_back_to_tests_menu(callback: CallbackQuery, state: FSMContext
         # Получаем пользователя и проверяем права
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("❌ Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("❌ Ты не зарегистрирован в системе.")
             return
         
         # Проверяем права на создание тестов (только рекрутеры)
@@ -299,7 +299,7 @@ async def callback_back_to_tests_menu(callback: CallbackQuery, state: FSMContext
         if not has_permission:
             await callback.message.edit_text(
                 "❌ <b>Недостаточно прав</b>\n\n"
-                "У вас нет прав для управления тестами.\n"
+                "У тебя нет прав для управления тестами.\n"
                 "Обратитесь к администратору.",
                 parse_mode="HTML"
             )
@@ -308,7 +308,7 @@ async def callback_back_to_tests_menu(callback: CallbackQuery, state: FSMContext
         # Возвращаемся к меню управления тестами
         await callback.message.edit_text(
             "📄 <b>УПРАВЛЕНИЕ ТЕСТАМИ</b>\n\n"
-            "Выберите действие:",
+            "Выбери действие:",
             parse_mode="HTML",
             reply_markup=get_tests_main_keyboard()
         )
@@ -337,7 +337,7 @@ async def callback_test_back(callback: CallbackQuery, state: FSMContext):
             test_name = data.get('test_name', '')
             await callback.message.edit_text(
                 "🔧 <b>Создание нового теста</b>\n\n"
-                "📝 Начинаем пошаговое создание теста для вашей системы стажировки.\n\n"
+                "📝 Начинаем пошаговое создание теста для твоей системы стажировки.\n\n"
                 "1️⃣ <b>Шаг 1:</b> Введите название теста\n"
                 "💡 <i>Название должно быть информативным и понятным для стажеров</i>\n\n"
                 "📋 <b>Пример:</b> «Основы работы с клиентами» или «Техника безопасности»",
@@ -355,7 +355,7 @@ async def callback_test_back(callback: CallbackQuery, state: FSMContext):
             await callback.message.edit_text(
                 f"✅ <b>Название принято:</b> {test_name}\n\n"
                 "2️⃣ <b>Шаг 2:</b> Материалы для изучения\n\n"
-                "📚 Есть ли у вас материалы, которые стажеры должны изучить перед прохождением теста?\n\n"
+                "📚 Есть ли у тебя материалы, которые стажеры должны изучить перед прохождением теста?\n\n"
                 "💡 <b>Материалы могут быть:</b>\n"
                 "• Ссылки на обучающие видео\n"
                 "• Документы и инструкции\n"
@@ -390,7 +390,7 @@ async def process_test_name(message: Message, state: FSMContext, session: AsyncS
     await message.answer(
         f"✅ <b>Название принято:</b> {test_name}\n\n"
         "2️⃣ <b>Шаг 2:</b> Материалы для изучения\n\n"
-        "📚 Есть ли у вас материалы, которые стажеры должны изучить перед прохождением теста?\n\n"
+        "📚 Есть ли у тебя материалы, которые стажеры должны изучить перед прохождением теста?\n\n"
         "💡 <b>Материалы могут быть:</b>\n"
         "• Ссылки на обучающие видео\n"
         "• Документы и инструкции\n"
@@ -497,7 +497,7 @@ async def process_skip_description(callback: CallbackQuery, state: FSMContext):
     
     await callback.message.edit_text(
         "📝 <b>Отлично! Теперь давайте добавим вопросы к тесту.</b>\n\n"
-        "Выберите тип <b>первого вопроса</b>:",
+        "Выбери тип <b>первого вопроса</b>:",
         parse_mode="HTML",
         reply_markup=get_question_type_keyboard(is_creating_test=True)
     )
@@ -512,7 +512,7 @@ async def process_description(message: Message, state: FSMContext):
     
     await message.answer(
         "📝 <b>Отлично! Теперь давайте добавим вопросы к тесту.</b>\n\n"
-        "Выберите тип <b>первого вопроса</b>:",
+        "Выбери тип <b>первого вопроса</b>:",
         parse_mode="HTML",
         reply_markup=get_question_type_keyboard(is_creating_test=True)
     )
@@ -557,7 +557,7 @@ async def process_question_text(message: Message, state: FSMContext):
         await state.set_state(TestCreationStates.waiting_for_option)
     elif q_type == 'yes_no':
         await message.answer(
-            "✅ Текст вопроса принят. Теперь выберите, какой ответ является правильным:",
+            "✅ Текст вопроса принят. Теперь выбери, какой ответ является правильным:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="👍 Да", callback_data="answer_bool:Да")],
                 [InlineKeyboardButton(text="👎 Нет", callback_data="answer_bool:Нет")],
@@ -665,7 +665,7 @@ async def process_answer(message: Message, state: FSMContext):
     await state.update_data(current_answer=answer)
     await message.answer(
         "🔢 Теперь укажите, сколько баллов можно получить за правильный ответ на этот вопрос.\n"
-        "Вы можете использовать <b>дробные числа</b>, например, <code>0.5</code> или <code>1.5</code>.",
+        "Ты можешь использовать <b>дробные числа</b>, например, <code>0.5</code> или <code>1.5</code>.",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="❌ Отменить создание вопроса", callback_data="cancel_current_question")]
@@ -716,7 +716,7 @@ async def process_more_questions_choice(callback: CallbackQuery, state: FSMConte
     """Обработка выбора: добавить еще вопрос или завершить"""
     if callback.data.endswith(":yes"):
         await callback.message.edit_text(
-            f"Выберите тип <b>следующего вопроса</b>:",
+            f"Выбери тип <b>следующего вопроса</b>:",
             parse_mode="HTML",
             reply_markup=get_question_type_keyboard(is_creating_test=True)
         )
@@ -876,7 +876,7 @@ async def process_test_selection(callback: CallbackQuery, state: FSMContext, ses
         if not has_access:
             await callback.message.edit_text(
                 "❌ <b>Доступ к тесту запрещен</b>\n\n"
-                "У вас нет доступа к этому тесту. Обратитесь к наставнику для получения доступа.",
+                "У тебя нет доступа к этому тесту. Обратись к наставнику для получения доступа.",
                 parse_mode="HTML"
             )
             await callback.answer()
@@ -969,7 +969,7 @@ async def process_grant_access_to_test(callback: CallbackQuery, state: FSMContex
     if not has_permission:
         await callback.message.edit_text(
             "❌ <b>Недостаточно прав</b>\n\n"
-            "У вас нет прав для предоставления доступа к тестам.\n"
+            "У тебя нет прав для предоставления доступа к тестам.\n"
             "Обратитесь к администратору.",
             parse_mode="HTML"
         )
@@ -982,7 +982,7 @@ async def process_grant_access_to_test(callback: CallbackQuery, state: FSMContex
     if not trainees:
         await callback.message.edit_text(
             "❌ <b>Нет стажеров</b>\n\n"
-            "У вас нет назначенных стажеров.\n"
+            "У тебя нет назначенных стажеров.\n"
             "Обратитесь к рекрутеру для назначения стажеров.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -1012,8 +1012,8 @@ async def process_grant_access_to_test(callback: CallbackQuery, state: FSMContex
     await callback.message.edit_text(
         f"🔐 <b>Предоставление доступа к тесту</b>\n\n"
         f"👤 <b>Тест:</b> {test.name}\n"
-        f"👥 <b>Ваши стажеры:</b> {len(trainees)}\n\n"
-        "Выберите стажера, которому хотите предоставить доступ к этому тесту:",
+        f"👥 <b>Твои стажеры:</b> {len(trainees)}\n\n"
+        "Выбери стажера, которому хочешь предоставить доступ к этому тесту:",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
     )
@@ -1095,7 +1095,7 @@ async def process_edit_test_menu(callback: CallbackQuery, state: FSMContext, ses
     if not has_permission:
         await callback.message.edit_text(
             "❌ <b>Недостаточно прав</b>\n\n"
-            "У вас нет прав для редактирования тестов.\n"
+            "У тебя нет прав для редактирования тестов.\n"
             "Обратитесь к администратору.",
             parse_mode="HTML"
         )
@@ -1104,7 +1104,7 @@ async def process_edit_test_menu(callback: CallbackQuery, state: FSMContext, ses
 
     await callback.message.edit_text(
         f"✏️ <b>Редактирование теста: «{test.name}»</b>\n\n"
-        "Выберите, что вы хотите изменить:",
+        "Выбери, что ты хочешь изменить:",
         parse_mode="HTML",
         reply_markup=get_test_edit_menu(test_id)
     )
@@ -1239,7 +1239,7 @@ async def process_manage_questions(callback: CallbackQuery, session: AsyncSessio
     
     if not questions:
         await callback.message.edit_text(
-            "В этом тесте пока нет вопросов. Вы можете добавить их.",
+            "В этом тесте пока нет вопросов. Ты можешь добавить их.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="➕ Добавить вопрос", callback_data=f"add_q_to_test:{test_id}")],
                 [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"edit_test:{test_id}")]
@@ -1247,7 +1247,7 @@ async def process_manage_questions(callback: CallbackQuery, session: AsyncSessio
         )
         return
 
-    text = "Выберите вопрос для редактирования или удаления:\n\n"
+    text = "Выбери вопрос для редактирования или удаления:\n\n"
     buttons = []
     for q in questions:
         text += f"<b>{q.question_number}.</b> {q.question_text[:50]}... ({q.points} б.)\n"
@@ -1289,7 +1289,7 @@ async def select_question_for_edit(callback: CallbackQuery, state: FSMContext, s
         f"{options_text}\n"
         f"<b>Ответ:</b> {question.correct_answer}\n"
         f"<b>Баллы:</b> {question.points}\n\n"
-        "Выберите действие:",
+        "Выбери действие:",
         parse_mode="HTML",
         reply_markup=get_question_management_keyboard(question_id, is_first, is_last)
     )
@@ -1685,7 +1685,7 @@ async def process_delete_test(callback: CallbackQuery, state: FSMContext, sessio
     if not has_permission:
         await callback.message.edit_text(
             "❌ <b>Недостаточно прав</b>\n\n"
-            "У вас нет прав для удаления тестов.\n"
+            "У тебя нет прав для удаления тестов.\n"
             "Обратитесь к администратору.",
             parse_mode="HTML"
         )
@@ -1694,7 +1694,7 @@ async def process_delete_test(callback: CallbackQuery, state: FSMContext, sessio
     
     await callback.message.edit_text(
         f"🗑️ <b>Удаление теста</b>\n\n"
-        f"Вы действительно хотите удалить тест <b>«{test.name}»</b>?\n\n"
+        f"Ты действительно хочешь удалить тест <b>«{test.name}»</b>?\n\n"
         "⚠️ <b>Внимание:</b> Это действие нельзя отменить!",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -1727,7 +1727,7 @@ async def process_confirm_delete_test(callback: CallbackQuery, state: FSMContext
     if not has_permission:
         await callback.message.edit_text(
             "❌ <b>Недостаточно прав</b>\n\n"
-            "У вас нет прав для удаления тестов.\n"
+            "У тебя нет прав для удаления тестов.\n"
             "Обратитесь к администратору.",
             parse_mode="HTML"
         )
@@ -1780,8 +1780,8 @@ async def process_test_filter(callback: CallbackQuery, session: AsyncSession):
 
     if filter_type == "my":
         tests = await get_tests_by_creator(session, user.id)
-        list_title = "📋 <b>Список ваших тестов</b>"
-        empty_message = "У вас пока нет созданных тестов."
+        list_title = "📋 <b>Список твоих тестов</b>"
+        empty_message = "У тебя пока нет созданных тестов."
     else:  # all
         tests = await get_all_active_tests(session)
         list_title = "📋 <b>Список всех тестов в системе</b>"
@@ -1804,7 +1804,7 @@ async def process_test_filter(callback: CallbackQuery, session: AsyncSession):
         
         await callback.message.edit_text(
             f"{list_title}\n\n{tests_list}\n\n"
-            f"Выберите тест для редактирования и управления:",
+            f"Выбери тест для редактирования и управления:",
             parse_mode="HTML",
             reply_markup=get_simple_test_selection_keyboard(tests)
         )
@@ -1821,7 +1821,7 @@ async def process_back_to_tests(callback: CallbackQuery, state: FSMContext, sess
     # Рекрутеры/управляющие (с правом create_tests) возвращаются к выбору фильтра
     if await check_user_permission(session, user.id, "create_tests"):
         await callback.message.edit_text(
-            "🗂️ Выберите, какие тесты вы хотите просмотреть:",
+            "🗂️ Выбери, какие тесты ты хочешь просмотреть:",
             reply_markup=get_test_filter_keyboard()
         )
     # Наставники (без права create_tests) возвращаются к списку всех тестов
@@ -1843,7 +1843,7 @@ async def process_back_to_tests(callback: CallbackQuery, state: FSMContext, sess
             ])
             await callback.message.edit_text(
                 f"📋 <b>Список доступных тестов</b>\n\n{tests_list}\n\n"
-                f"Выберите тест для просмотра и предоставления доступа:",
+                f"Выбери тест для просмотра и предоставления доступа:",
                 parse_mode="HTML",
                 reply_markup=get_simple_test_selection_keyboard(tests)
             )
@@ -1875,7 +1875,7 @@ async def process_edit_test_stage(callback: CallbackQuery, state: FSMContext, se
 
     await state.update_data(test_id_to_edit=test_id)
     await callback.message.edit_text(
-        "Выберите новый этап для этого теста:",
+        "Выбери новый этап для этого теста:",
         reply_markup=get_stage_selection_keyboard(stages)
     )
     await state.set_state(TestCreationStates.waiting_for_new_stage)
@@ -2081,7 +2081,7 @@ async def process_test_settings(callback: CallbackQuery, session: AsyncSession):
         
     await callback.message.edit_text(
         "⚙️ <b>Настройки теста</b>\n\n"
-        "Здесь вы можете изменить параметры прохождения теста.",
+        "Здесь ты можешь изменить параметры прохождения теста.",
         parse_mode="HTML",
         reply_markup=get_test_settings_keyboard(test.id, test.shuffle_questions, test.max_attempts)
     )
@@ -2107,7 +2107,7 @@ async def toggle_shuffle_questions(callback: CallbackQuery, session: AsyncSessio
     await callback.message.edit_text(
         f"⚙️ <b>Настройки теста</b>\n\n"
         f"<b>Перемешивание вопросов:</b>\n{shuffle_status}\n\n"
-        "Здесь вы можете изменить параметры прохождения теста.",
+        "Здесь ты можешь изменить параметры прохождения теста.",
         parse_mode="HTML",
         reply_markup=get_test_settings_keyboard(test.id, test.shuffle_questions, test.max_attempts)
     )
@@ -2197,7 +2197,7 @@ async def add_question_to_test_handler(callback: CallbackQuery, state: FSMContex
     
     await callback.message.edit_text(
         "Начинаем добавление нового вопроса.\n\n"
-        "Выберите тип вопроса:",
+        "Выбери тип вопроса:",
         reply_markup=get_question_type_keyboard(is_creating_test=False)
     )
     await state.set_state(TestCreationStates.waiting_for_question_type)
@@ -2284,7 +2284,7 @@ async def cancel_current_question_creation(callback: CallbackQuery, state: FSMCo
     
     await callback.message.edit_text(
         f"❌ <b>Отмена {context_text}</b>\n\n"
-        f"Выберите тип вопроса или завершите создание:",
+        f"Выбери тип вопроса или заверши создание:",
         parse_mode="HTML",
         reply_markup=get_question_type_keyboard(is_creating_test=is_creating_test)
     )

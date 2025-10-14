@@ -114,7 +114,7 @@ async def cmd_profile(message: Message, state: FSMContext, session: AsyncSession
     
     has_permission = await check_user_permission(session, user.id, "view_profile")
     if not has_permission:
-        await message.answer("У вас нет прав для просмотра профиля.")
+        await message.answer("У тебя нет прав для просмотра профиля.")
         return
     
     # Используем универсальную функцию формирования профиля
@@ -140,7 +140,7 @@ async def process_main_menu(callback: CallbackQuery, state: FSMContext, session:
             return
 
         if not user.is_active:
-            await callback.answer("❌ Ваш аккаунт деактивирован", show_alert=True)
+            await callback.answer("❌ Твой аккаунт деактивирован", show_alert=True)
             return
 
         # Получаем роли пользователя
@@ -201,7 +201,7 @@ async def process_reload_menu(callback: CallbackQuery, state: FSMContext, sessio
             return
 
         if not user.is_active:
-            await callback.answer("❌ Ваш аккаунт деактивирован", show_alert=True)
+            await callback.answer("❌ Твой аккаунт деактивирован", show_alert=True)
             return
 
         # Получаем роли пользователя
@@ -228,7 +228,7 @@ async def process_reload_menu(callback: CallbackQuery, state: FSMContext, sessio
         # Отправляем новое сообщение с правильной клавиатурой
         await callback.message.answer(
             "🔄 <b>Клавиатура обновлена</b>\n\n"
-            "Ваша клавиатура обновлена согласно текущей роли. Используйте кнопки для навигации по системе.",
+            "Твоя клавиатура обновлена согласно текущей роли. Используй кнопки для навигации по системе.",
             parse_mode="HTML",
             reply_markup=keyboard
         )

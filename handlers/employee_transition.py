@@ -32,7 +32,7 @@ async def callback_become_employee(callback: CallbackQuery, state: FSMContext, s
         # Получаем пользователя
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("❌ Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("❌ Ты не зарегистрирован в системе.")
             return
             
         # Проверяем что пользователь - стажер
@@ -96,7 +96,7 @@ async def show_employee_profile(callback: CallbackQuery, session: AsyncSession, 
             employee_keyboard = get_keyboard_by_role(["Сотрудник"])
 
             await callback.message.answer(
-                "🎉 <b>Поздравляем!</b> Вы успешно стали сотрудником!",
+                "🎉 <b>Поздравляем!</b> Ты успешно стал сотрудником!",
                 parse_mode="HTML",
                 reply_markup=employee_keyboard
             )

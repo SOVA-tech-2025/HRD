@@ -132,7 +132,7 @@ async def cmd_knowledge_base_universal(message: Message, state: FSMContext, sess
         # Получение пользователя
         user = await get_user_by_tg_id(session, message.from_user.id)
         if not user:
-            await message.answer("❌ Вы не зарегистрированы в системе.")
+            await message.answer("❌ Ты не зарегистрирован в системе.")
             return
 
         # Определяем роль пользователя
@@ -142,7 +142,7 @@ async def cmd_knowledge_base_universal(message: Message, state: FSMContext, sess
         if "Рекрутер" in user_roles:
             has_permission = await check_user_permission(session, user.id, "manage_groups")
             if not has_permission:
-                await message.answer("❌ У вас нет прав для управления базой знаний.")
+                await message.answer("❌ У тебя нет прав для управления базой знаний.")
                 return
 
             # Получаем все папки
@@ -152,7 +152,7 @@ async def cmd_knowledge_base_universal(message: Message, state: FSMContext, sess
                 # ТЗ 9-1 шаг 2: Нет папок
                 await message.answer(
                     "📚РЕДАКТОР БАЗЫ ЗНАНИЙ📚\n\n"
-                    "Вы не создали ни одной папки",
+                    "Ты не создал ни одной папки",
                     reply_markup=get_knowledge_base_main_keyboard(has_folders=False),
                     parse_mode="HTML"
                 )
@@ -160,8 +160,8 @@ async def cmd_knowledge_base_universal(message: Message, state: FSMContext, sess
                 # ТЗ 9-2 шаг 2: Есть папки
                 await message.answer(
                     "📚РЕДАКТОР БАЗЫ ЗНАНИЙ📚\n\n"
-                    "Ниже на клавиатуре вы видите список всех созданных папок в системе👇\n"
-                    "🟡Выберите действие или папку, чтобы продолжить",
+                    "Ниже на клавиатуре ты видишь список всех созданных папок в системе👇\n"
+                    "🟡Выбери действие или папку, чтобы продолжить",
                     reply_markup=get_knowledge_folders_keyboard(folders),
                     parse_mode="HTML"
                 )
@@ -173,7 +173,7 @@ async def cmd_knowledge_base_universal(message: Message, state: FSMContext, sess
         elif "Стажер" in user_roles or "Сотрудник" in user_roles or "Наставник" in user_roles or "Руководитель" in user_roles:
             has_permission = await check_user_permission(session, user.id, "view_knowledge_base")
             if not has_permission:
-                await message.answer("❌ У вас нет прав для просмотра базы знаний.")
+                await message.answer("❌ У тебя нет прав для просмотра базы знаний.")
                 return
 
             # Получаем папки, доступные пользователю
@@ -182,14 +182,14 @@ async def cmd_knowledge_base_universal(message: Message, state: FSMContext, sess
             if not accessible_folders:
                 await message.answer(
                     "📚 <b>База знаний</b>\n\n"
-                    "В данный момент для вас нет доступных материалов.\n"
+                    "В данный момент для тебя нет доступных материалов.\n"
                     "Обратитесь к рекрутеру для получения доступа к необходимым разделам.",
                     parse_mode="HTML"
                 )
             else:
                 await message.answer(
                     "📚 <b>База знаний</b>\n\n"
-                    "Выберите раздел для изучения материалов:",
+                    "Выбери раздел для изучения материалов:",
                     reply_markup=get_employee_knowledge_folders_keyboard(accessible_folders),
                     parse_mode="HTML"
                 )
@@ -265,7 +265,7 @@ async def process_folder_name(message: Message, state: FSMContext, session: Asyn
         # ТЗ 9-1 шаг 6: Папка создана успешно
         await message.answer(
             "📚РЕДАКТОР БАЗЫ ЗНАНИЙ📚\n\n"
-            "✅Вы успешно добавили новую папку в базу знаний!\n"
+            "✅Ты успешно добавил новую папку в базу знаний!\n"
             f"Название папки: {folder_name}\n"
             "Добавить материалы в папку?",
             reply_markup=get_folder_created_keyboard(),
@@ -769,8 +769,8 @@ async def callback_save_material(callback: CallbackQuery, state: FSMContext, ses
             "📚РЕДАКТОР БАЗЫ ЗНАНИЙ📚\n\n"
             f"📁Папка: {folder.name}\n\n"
             f"{materials_text}\n\n"
-            "✅Вы успешно сохранили материал!\n"
-            "Теперь вы можете его найти в базе знаний",
+            "✅Ты успешно сохранил материал!\n"
+            "Теперь ты можешь его найти в базе знаний",
             reply_markup=get_material_saved_keyboard(),
             parse_mode="HTML"
         )
@@ -795,15 +795,15 @@ async def callback_cancel_material(callback: CallbackQuery, state: FSMContext, s
         if not folders:
             await callback.message.edit_text(
                 "📚РЕДАКТОР БАЗЫ ЗНАНИЙ📚\n\n"
-                "Вы не создали ни одной папки",
+                "Ты не создал ни одной папки",
                 reply_markup=get_knowledge_base_main_keyboard(has_folders=False),
                 parse_mode="HTML"
             )
         else:
             await callback.message.edit_text(
                 "📚РЕДАКТОР БАЗЫ ЗНАНИЙ📚\n\n"
-                "Ниже на клавиатуре вы видите список всех созданных папок в системе👇\n"
-                "🟡Выберите действие или папку, чтобы продолжить",
+                "Ниже на клавиатуре ты видишь список всех созданных папок в системе👇\n"
+                "🟡Выбери действие или папку, чтобы продолжить",
                 reply_markup=get_knowledge_folders_keyboard(folders),
                 parse_mode="HTML"
             )
@@ -839,7 +839,7 @@ async def callback_view_folder(callback: CallbackQuery, state: FSMContext, sessi
             "📚РЕДАКТОР БАЗЫ ЗНАНИЙ📚\n"
             f"📁Папка: {folder.name}\n"
             f"🔒Доступ: {access_text}\n\n"
-            "🟡Выберите материал, который хотите посмотреть или действие",
+            "🟡Выбери материал, который хочешь посмотреть или действие",
             reply_markup=get_folder_view_keyboard(folder_id, folder.materials),
             parse_mode="HTML"
         )
@@ -1103,7 +1103,7 @@ async def callback_delete_material(callback: CallbackQuery, state: FSMContext, s
         # Наконец, отправляем сообщение с подтверждением удаления
         await callback.bot.send_message(
             chat_id=callback.message.chat.id,
-            text="🟡Вы уверены, что хотите удалить материал?\n"
+            text="🟡Ты уверен, что хочешь удалить материал?\n"
                  "❗️Доступ к нему будет утрачен навсегда",
             reply_markup=get_material_delete_confirmation_keyboard(material_id),
             parse_mode="HTML"
@@ -1214,7 +1214,7 @@ async def callback_view_folder_by_id(callback: CallbackQuery, state: FSMContext,
             "📚РЕДАКТОР БАЗЫ ЗНАНИЙ📚\n"
             f"📁Папка: {folder.name}\n"
             f"🔒Доступ: {access_text}\n\n"
-            "🟡Выберите материал, который хотите посмотреть или действие",
+            "🟡Выбери материал, который хочешь посмотреть или действие",
             reply_markup=get_folder_view_keyboard(folder_id, folder.materials),
             parse_mode="HTML"
         )
@@ -1235,15 +1235,15 @@ async def show_main_folders_list(callback: CallbackQuery, state: FSMContext, ses
         if not folders:
             await callback.message.edit_text(
                 "📚РЕДАКТОР БАЗЫ ЗНАНИЙ📚\n\n"
-                "Вы не создали ни одной папки",
+                "Ты не создал ни одной папки",
                 reply_markup=get_knowledge_base_main_keyboard(has_folders=False),
                 parse_mode="HTML"
             )
         else:
             await callback.message.edit_text(
                 "📚РЕДАКТОР БАЗЫ ЗНАНИЙ📚\n\n"
-                "Ниже на клавиатуре вы видите список всех созданных папок в системе👇\n"
-                "🟡Выберите действие или папку, чтобы продолжить",
+                "Ниже на клавиатуре ты видишь список всех созданных папок в системе👇\n"
+                "🟡Выбери действие или папку, чтобы продолжить",
                 reply_markup=get_knowledge_folders_keyboard(folders),
                 parse_mode="HTML"
             )
@@ -1291,8 +1291,8 @@ async def callback_folder_access(callback: CallbackQuery, state: FSMContext, ses
             "📚РЕДАКТОР БАЗЫ ЗНАНИЙ📚\n\n"
             f"📁Папка: {folder.name}\n"
             f"🔒Доступ: {access_text}\n\n"
-            "🟡Каким группам вы хотите предоставить доступ к этой папке?\n"
-            "Выберите группу на клавиатуре👇",
+            "🟡Каким группам ты хочешь предоставить доступ к этой папке?\n"
+            "Выбери группу на клавиатуре👇",
             reply_markup=get_group_access_selection_keyboard(groups, current_group_ids),
             parse_mode="HTML"
         )
@@ -1354,9 +1354,9 @@ async def callback_toggle_group_access(callback: CallbackQuery, state: FSMContex
         )
         
         if selected_group_ids:
-            message_text += "🟡Добавить ещё группу к данной папке?\nВыберите группу на клавиатуре👇"
+            message_text += "🟡Добавить ещё группу к данной папке?\nВыбери группу на клавиатуре👇"
         else:
-            message_text += "🟡Каким группам вы хотите предоставить доступ к этой папке?\nВыберите группу на клавиатуре👇"
+            message_text += "🟡Каким группам ты хочешь предоставить доступ к этой папке?\nВыбери группу на клавиатуре👇"
         
         await callback.message.edit_text(
             message_text,
@@ -1515,7 +1515,7 @@ async def callback_confirm_rename(callback: CallbackQuery, state: FSMContext, se
         # ТЗ 9-4 шаг 9
         await callback.message.edit_text(
             "📚РЕДАКТОР БАЗЫ ЗНАНИЙ📚\n\n"
-            "✅Вы успешно изменили название папки\n"
+            "✅Ты успешно изменил название папки\n"
             f"🟡Новое название для папки: {new_name}",
             reply_markup=get_folder_deleted_keyboard(),  # Используем ту же клавиатуру с "Главное меню"
             parse_mode="HTML"
@@ -1580,7 +1580,7 @@ async def callback_delete_folder(callback: CallbackQuery, state: FSMContext, ses
             "📚РЕДАКТОР БАЗЫ ЗНАНИЙ📚\n\n"
             f"📁Папка: {folder.name}\n"
             f"🔒Доступ: {access_text}\n\n"
-            "🟡Вы уверены, что хотите удалить папку?\n"
+            "🟡Ты уверен, что хочешь удалить папку?\n"
             "❗️Доступ ко всем материалам внутри папки будет утрачен навсегда",
             reply_markup=get_folder_delete_confirmation_keyboard(folder_id),
             parse_mode="HTML"
@@ -1681,13 +1681,13 @@ async def callback_employee_knowledge_base(callback: CallbackQuery, state: FSMCo
         # Получение пользователя
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("❌ Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("❌ Ты не зарегистрирован в системе.")
             return
 
         # Проверка прав доступа к базе знаний
         has_permission = await check_user_permission(session, user.id, "view_knowledge_base")
         if not has_permission:
-            await callback.message.edit_text("❌ У вас нет прав для просмотра базы знаний.")
+            await callback.message.edit_text("❌ У тебя нет прав для просмотра базы знаний.")
             return
 
         # Получаем папки, доступные пользователю
@@ -1696,7 +1696,7 @@ async def callback_employee_knowledge_base(callback: CallbackQuery, state: FSMCo
         if not accessible_folders:
             await callback.message.edit_text(
                 "📚 <b>База знаний</b>\n\n"
-                "В данный момент для вас нет доступных материалов.\n"
+                "В данный момент для тебя нет доступных материалов.\n"
                 "Обратитесь к рекрутеру для получения доступа к необходимым разделам.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="⬅️ Назад к профилю", callback_data="back_to_employee_profile")]
@@ -1706,7 +1706,7 @@ async def callback_employee_knowledge_base(callback: CallbackQuery, state: FSMCo
         else:
             await callback.message.edit_text(
                 "📚 <b>База знаний</b>\n\n"
-                "Выберите раздел для изучения материалов:",
+                "Выбери раздел для изучения материалов:",
                 reply_markup=get_employee_knowledge_folders_keyboard(accessible_folders),
                 parse_mode="HTML"
             )
@@ -1730,13 +1730,13 @@ async def callback_employee_view_folder(callback: CallbackQuery, state: FSMConte
         # Получение пользователя
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("❌ Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("❌ Ты не зарегистрирован в системе.")
             return
 
         # Проверяем доступ к папке
         has_access = await check_folder_access(session, folder_id, user.id)
         if not has_access:
-            await callback.message.edit_text("❌ У вас нет доступа к этой папке.")
+            await callback.message.edit_text("❌ У тебя нет доступа к этой папке.")
             return
 
         # Получаем папку с материалами
@@ -1757,7 +1757,7 @@ async def callback_employee_view_folder(callback: CallbackQuery, state: FSMConte
         else:
             await callback.message.edit_text(
                 f"📁 <b>{folder.name}</b>\n\n"
-                "Выберите материал для изучения:",
+                "Выбери материал для изучения:",
                 reply_markup=get_employee_folder_materials_keyboard(folder_id, folder.materials),
                 parse_mode="HTML"
             )
@@ -1783,7 +1783,7 @@ async def callback_employee_view_material(callback: CallbackQuery, state: FSMCon
         # Получение пользователя
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("❌ Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("❌ Ты не зарегистрирован в системе.")
             return
 
         # Получаем материал
@@ -1795,7 +1795,7 @@ async def callback_employee_view_material(callback: CallbackQuery, state: FSMCon
         # Проверяем доступ к папке материала
         has_access = await check_folder_access(session, material.folder_id, user.id)
         if not has_access:
-            await callback.message.edit_text("❌ У вас нет доступа к этому материалу.")
+            await callback.message.edit_text("❌ У тебя нет доступа к этому материалу.")
             return
 
         # Формируем отображение содержимого
@@ -1917,7 +1917,7 @@ async def callback_employee_back_to_folders(callback: CallbackQuery, state: FSMC
         # Получение пользователя
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("❌ Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("❌ Ты не зарегистрирован в системе.")
             return
 
         # Получаем папки, доступные пользователю
@@ -1926,7 +1926,7 @@ async def callback_employee_back_to_folders(callback: CallbackQuery, state: FSMC
         if not accessible_folders:
             await callback.message.edit_text(
                 "📚 <b>База знаний</b>\n\n"
-                "В данный момент для вас нет доступных материалов.\n"
+                "В данный момент для тебя нет доступных материалов.\n"
                 "Обратитесь к рекрутеру для получения доступа к необходимым разделам.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="⬅️ Назад к профилю", callback_data="back_to_employee_profile")]
@@ -1936,7 +1936,7 @@ async def callback_employee_back_to_folders(callback: CallbackQuery, state: FSMC
         else:
             await callback.message.edit_text(
                 "📚 <b>База знаний</b>\n\n"
-                "Выберите раздел для изучения материалов:",
+                "Выбери раздел для изучения материалов:",
                 reply_markup=get_employee_knowledge_folders_keyboard(accessible_folders),
                 parse_mode="HTML"
             )

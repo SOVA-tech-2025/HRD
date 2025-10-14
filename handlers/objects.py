@@ -39,7 +39,7 @@ async def cmd_objects(message: Message, state: FSMContext, session: AsyncSession
         # Получение пользователя
         user = await get_user_by_tg_id(session, message.from_user.id)
         if not user:
-            await message.answer("Вы не зарегистрированы в системе.")
+            await message.answer("Ты не зарегистрирован в системе.")
             return
         
         # Проверка прав доступа
@@ -47,14 +47,14 @@ async def cmd_objects(message: Message, state: FSMContext, session: AsyncSession
         if not has_permission:
             await message.answer(
                 "❌ <b>Недостаточно прав</b>\n\n"
-                "У вас нет прав для управления объектами.",
+                "У тебя нет прав для управления объектами.",
                 parse_mode="HTML"
             )
             return
         
         await message.answer(
             "📍<b>УПРАВЛЕНИЕ ОБЪЕКТАМИ</b>📍\n\n"
-            "В данном меню вы можете:\n"
+            "В данном меню ты можешь:\n"
             "1. Создавать объекты\n"
             "2. Посмотреть существующие объекты\n"
             "3. Менять названия объектам\n"
@@ -75,7 +75,7 @@ async def callback_create_object(callback: CallbackQuery, state: FSMContext, ses
         # Получение пользователя
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("Ты не зарегистрирован в системе.")
             await callback.answer()
             return
         
@@ -84,7 +84,7 @@ async def callback_create_object(callback: CallbackQuery, state: FSMContext, ses
         if not has_permission:
             await callback.message.edit_text(
                 "❌ <b>Недостаточно прав</b>\n\n"
-                "У вас нет прав для управления объектами.",
+                "У тебя нет прав для управления объектами.",
                 parse_mode="HTML"
             )
             await callback.answer()
@@ -111,7 +111,7 @@ async def process_object_name(message: Message, state: FSMContext, session: Asyn
         # Получение пользователя
         user = await get_user_by_tg_id(session, message.from_user.id)
         if not user:
-            await message.answer("Вы не зарегистрированы в системе.")
+            await message.answer("Ты не зарегистрирован в системе.")
             await state.clear()
             return
         
@@ -158,7 +158,7 @@ async def callback_edit_object(callback: CallbackQuery, state: FSMContext, sessi
         # Получение пользователя
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("Ты не зарегистрирован в системе.")
             await callback.answer()
             return
         
@@ -167,7 +167,7 @@ async def callback_edit_object(callback: CallbackQuery, state: FSMContext, sessi
         if not has_permission:
             await callback.message.edit_text(
                 "❌ <b>Недостаточно прав</b>\n\n"
-                "У вас нет прав для управления объектами.",
+                "У тебя нет прав для управления объектами.",
                 parse_mode="HTML"
             )
             await callback.answer()
@@ -207,7 +207,7 @@ async def callback_select_object(callback: CallbackQuery, state: FSMContext, ses
         # Получение пользователя
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("Ты не зарегистрирован в системе.")
             await callback.answer()
             await state.clear()
             return
@@ -234,7 +234,7 @@ async def callback_select_object(callback: CallbackQuery, state: FSMContext, ses
         
         await callback.message.edit_text(
             f"📍<b>УПРАВЛЕНИЕ ОБЪЕКТАМИ</b>📍\n"
-            f"👉Вы выбрали объект: <b>{obj.name}</b>\n"
+            f"👉Ты выбрал объект: <b>{obj.name}</b>\n"
             f"Сотрудников на объекте: <b>{len(object_users)}</b>\n\n"
             f"<b>ФИО сотрудников:</b>\n"
             f"{user_list}\n\n"
@@ -282,7 +282,7 @@ async def process_new_object_name(message: Message, state: FSMContext, session: 
         # Получение пользователя
         user = await get_user_by_tg_id(session, message.from_user.id)
         if not user:
-            await message.answer("Вы не зарегистрированы в системе.")
+            await message.answer("Ты не зарегистрирован в системе.")
             await state.clear()
             return
         
@@ -310,7 +310,7 @@ async def process_new_object_name(message: Message, state: FSMContext, session: 
         
         await message.answer(
             f"📍<b>УПРАВЛЕНИЕ ОБЪЕКТАМИ</b>📍\n"
-            f"Вы уверены, что хотите изменить название?\n\n"
+            f"Ты уверен, что хочешь изменить название?\n\n"
             f"Старое название: <b>{old_name}</b>\n"
             f"Новое название: <b>{new_name}</b>",
             reply_markup=get_object_rename_confirmation_keyboard(object_id),
@@ -333,7 +333,7 @@ async def callback_confirm_object_rename(callback: CallbackQuery, state: FSMCont
         # Получение пользователя
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("Ты не зарегистрирован в системе.")
             await callback.answer()
             await state.clear()
             return
@@ -372,7 +372,7 @@ async def callback_cancel_object_rename(callback: CallbackQuery, state: FSMConte
     try:
         await callback.message.edit_text(
             "📍<b>УПРАВЛЕНИЕ ОБЪЕКТАМИ</b>📍\n"
-            "❌<b>Вы отменили изменение</b>",
+            "❌<b>Ты отменил изменение</b>",
             reply_markup=get_main_menu_keyboard(),
             parse_mode="HTML"
         )
@@ -392,7 +392,7 @@ async def callback_manage_delete_object(callback: CallbackQuery, state: FSMConte
         # Проверяем права доступа
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user or not await check_user_permission(session, user.id, "manage_objects"):
-            await callback.answer("У вас нет прав для удаления объектов", show_alert=True)
+            await callback.answer("У тебя нет прав для удаления объектов", show_alert=True)
             return
         
         # Получаем все объекты
@@ -512,7 +512,7 @@ async def callback_delete_object(callback: CallbackQuery, state: FSMContext, ses
             f"<b>Создан:</b> {object_obj.created_date.strftime('%d.%m.%Y %H:%M')}\n\n"
             f"⚠️ <b>Внимание!</b> Это действие необратимо!\n"
             f"Объект будет полностью удален из системы.\n\n"
-            f"Вы уверены, что хотите удалить этот объект?",
+            f"Ты уверен, что хочешь удалить этот объект?",
             reply_markup=get_object_delete_confirmation_keyboard(object_id),
             parse_mode="HTML"
         )
@@ -581,7 +581,7 @@ async def callback_cancel_delete_object(callback: CallbackQuery, state: FSMConte
     try:
         await callback.message.edit_text(
             "📍<b>УПРАВЛЕНИЕ ОБЪЕКТАМИ</b>📍\n\n"
-            "В данном меню вы можете:\n"
+            "В данном меню ты можешь:\n"
             "1. Создавать объекты\n"
             "2. Посмотреть существующие объекты\n"
             "3. Менять названия объектам\n"

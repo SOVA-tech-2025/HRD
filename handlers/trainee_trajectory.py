@@ -63,7 +63,7 @@ async def cmd_trajectory(message: Message, state: FSMContext, session: AsyncSess
         from database.db import get_user_by_tg_id
         user = await get_user_by_tg_id(session, message.from_user.id)
         if not user:
-            await message.answer("Вы не зарегистрированы в системе.")
+            await message.answer("Ты не зарегистрирован в системе.")
             return
 
         # КРИТИЧЕСКАЯ ПРОВЕРКА: Траектории доступны ТОЛЬКО стажерам
@@ -72,7 +72,7 @@ async def cmd_trajectory(message: Message, state: FSMContext, session: AsyncSess
             await message.answer(
                 "❌ <b>Доступ запрещен</b>\n\n"
                 "Траектории обучения доступны только стажерам.\n"
-                "После перехода в сотрудники вы получаете доступ к тестам от рекрутера через рассылку.",
+                "После перехода в сотрудники ты получаешь доступ к тестам от рекрутера через рассылку.",
                 parse_mode="HTML"
             )
             log_user_action(user.tg_id, "trajectory_access_denied", f"Пользователь с ролью {user_roles} попытался получить доступ к траектории")
@@ -224,7 +224,7 @@ async def callback_trajectory_command(callback: CallbackQuery, state: FSMContext
         from database.db import get_user_by_tg_id
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("Ты не зарегистрирован в системе.")
             return
 
         # Получаем траекторию стажера
@@ -1039,7 +1039,7 @@ async def callback_contact_mentor(callback: CallbackQuery, state: FSMContext, se
         # Получаем пользователя
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("❌ Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("❌ Ты не зарегистрирован в системе.")
             return
         
         # Получаем наставника стажера
@@ -1049,14 +1049,14 @@ async def callback_contact_mentor(callback: CallbackQuery, state: FSMContext, se
         if not mentor:
             await callback.message.edit_text(
                 "❌ <b>Наставник не назначен</b>\n\n"
-                "Вам еще не назначен наставник.\n"
+                "Тебе еще не назначен наставник.\n"
                 "Обратитесь к рекрутеру для назначения наставника.",
                 parse_mode="HTML"
             )
             return
         
         # Формируем сообщение с контактами наставника
-        mentor_info = f"""👨‍🏫 <b>Ваш наставник</b>
+        mentor_info = f"""👨‍🏫 <b>Твой наставник</b>
 
 🧑 <b>Имя:</b> {mentor.full_name}
 📞 <b>Телефон:</b> {mentor.phone_number}

@@ -33,7 +33,7 @@ class RoleMiddleware(BaseMiddleware):
         if required_permission:
             has_permission = await check_user_permission(session, user.id, required_permission)
             if not has_permission:
-                await event.answer("У вас нет прав для выполнения этого действия.")
+                await event.answer("У тебя нет прав для выполнения этого действия.")
                 return None
 
         return await handler(event, data) 

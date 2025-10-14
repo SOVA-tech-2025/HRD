@@ -51,12 +51,12 @@ async def cmd_trajectory_tests(message: Message, state: FSMContext, session: Asy
     
     user = await get_user_by_tg_id(session, message.from_user.id)
     if not user:
-        await message.answer("Вы не зарегистрированы в системе.")
+        await message.answer("Ты не зарегистрирован в системе.")
         return
     
     has_permission = await check_user_permission(session, user.id, "take_tests")
     if not has_permission:
-        await message.answer("У вас нет прав для прохождения тестов.")
+        await message.answer("У тебя нет прав для прохождения тестов.")
         return
     
     # Получаем ТОЛЬКО тесты траектории (от наставника), исключая тесты рассылки от рекрутера
@@ -99,7 +99,7 @@ async def cmd_trajectory_tests(message: Message, state: FSMContext, session: Asy
     
     await message.answer(
         f"🗺️ <b>Тесты траектории</b>\n\n"
-        f"У вас есть доступ к <b>{len(available_tests)}</b> тестам:\n\n"
+        f"У тебя есть доступ к <b>{len(available_tests)}</b> тестам:\n\n"
         f"{tests_display}\n\n"
         "💡 <b>Рекомендация:</b> Пройденные тесты можно пересдать для улучшения результата!",
         parse_mode="HTML",
@@ -190,13 +190,13 @@ async def cmd_trainee_broadcast_tests(message: Message, state: FSMContext, sessi
         # Получение пользователя
         user = await get_user_by_tg_id(session, message.from_user.id)
         if not user:
-            await message.answer("Вы не зарегистрированы в системе.")
+            await message.answer("Ты не зарегистрирован в системе.")
             return
 
         # Проверяем что пользователь имеет право проходить тесты
         has_permission = await check_user_permission(session, user.id, "take_tests")
         if not has_permission:
-            await message.answer("❌ У вас нет прав для прохождения тестов.")
+            await message.answer("❌ У тебя нет прав для прохождения тестов.")
             return
         
         # Получаем тесты ВМЕСТЕ: от рекрутера через рассылку + индивидуальные от наставника (исключая тесты траектории)
@@ -240,12 +240,12 @@ async def show_user_test_scores(message: Message, session: AsyncSession) -> None
     """Универсальная функция для показа результатов тестирования пользователя"""
     user = await get_user_by_tg_id(session, message.from_user.id)
     if not user:
-        await message.answer("Вы не зарегистрированы в системе.")
+        await message.answer("Ты не зарегистрирован в системе.")
         return
     
     has_permission = await check_user_permission(session, user.id, "view_test_results")
     if not has_permission:
-        await message.answer("У вас нет прав для просмотра результатов тестов.")
+        await message.answer("У тебя нет прав для просмотра результатов тестов.")
         return
     
     # Определяем роль пользователя
@@ -261,8 +261,8 @@ async def show_user_test_scores(message: Message, session: AsyncSession) -> None
     
     if not test_results:
         await message.answer(
-            f"📊 <b>Ваши результаты</b>\n\n"
-            f"Вы пока не проходили тестов.\n"
+            f"📊 <b>Твои результаты</b>\n\n"
+            f"Ты пока не проходил тестов.\n"
             f"Используйте кнопку 'Мои тесты 📋' для прохождения доступных тестов.",
             parse_mode="HTML"
         )
@@ -586,7 +586,7 @@ async def show_question(message: Message, state: FSMContext):
     question_text = f"<b>Вопрос {index + 1}/{len(questions)}:</b>\n\n{question.question_text}"
     
     if question.question_type == 'text' or question.question_type == 'number':
-        question_text += "\n\n<i>Отправьте ваш ответ сообщением.</i>"
+        question_text += "\n\n<i>Отправь свой ответ сообщением.</i>"
     elif question.question_type == 'multiple_choice':
         # Показываем варианты ответов в тексте - используем текущие варианты для этого вопроса
         options_text = "\n".join([f"{i+1}. {option}" for i, option in enumerate(current_options)])
@@ -1223,7 +1223,7 @@ async def process_cancel_test(callback: CallbackQuery, state: FSMContext, sessio
     await callback.message.edit_text(
         f"❌ <b>Тест прерван</b>\n\n"
         f"Прохождение теста <b>«{test_name}»</b> было прервано.\n"
-        "Вы можете вернуться к прохождению в любое время.",
+        "Ты можешь вернуться к прохождению в любое время.",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔄 Попробовать снова", callback_data=f"take_test:{test_id}")],
@@ -1388,7 +1388,7 @@ async def process_trajectory_tests_shortcut(callback: CallbackQuery, state: FSMC
     # Проверяем права
     has_permission = await check_user_permission(session, user.id, "take_tests")
     if not has_permission:
-        await callback.message.edit_text("❌ У вас нет прав для прохождения тестов.")
+        await callback.message.edit_text("❌ У тебя нет прав для прохождения тестов.")
         await callback.answer()
         return
     
@@ -1425,7 +1425,7 @@ async def process_trajectory_tests_shortcut(callback: CallbackQuery, state: FSMC
     
     await callback.message.edit_text(
         f"🗺️ <b>Тесты траектории</b>\n\n"
-        f"У вас есть доступ к <b>{len(available_tests)}</b> тестам:\n\n"
+        f"У тебя есть доступ к <b>{len(available_tests)}</b> тестам:\n\n"
         f"{tests_display}\n\n"
         "💡 <b>Рекомендация:</b> Изучите материалы перед прохождением теста!",
         parse_mode="HTML",
@@ -1701,7 +1701,7 @@ async def send_stage_completion_notification(session: AsyncSession, trainee_id: 
             f"🗂️<b>Группа:</b> {', '.join([group.name for group in trainee.groups]) if trainee.groups else 'Не указана'}\n"
             f"📍<b>1️⃣Объект стажировки:</b> {trainee.internship_object.name if trainee.internship_object else 'Не указан'}\n"
             f"📍<b>2️⃣Объект работы:</b> {trainee.work_object.name if trainee.work_object else 'Не указан'}\n\n"
-            "✅<b>Ваш стажёр успешно завершил этап траектории!</b>\n\n"
+            "✅<b>Твой стажёр успешно завершил этап траектории!</b>\n\n"
             "Откройте ему следующий этап"
         )
 

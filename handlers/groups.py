@@ -34,7 +34,7 @@ async def cmd_groups(message: Message, state: FSMContext, session: AsyncSession)
         # Получение пользователя
         user = await get_user_by_tg_id(session, message.from_user.id)
         if not user:
-            await message.answer("Вы не зарегистрированы в системе.")
+            await message.answer("Ты не зарегистрирован в системе.")
             return
         
         # Проверка прав доступа
@@ -42,7 +42,7 @@ async def cmd_groups(message: Message, state: FSMContext, session: AsyncSession)
         if not has_permission:
             await message.answer(
                 "❌ <b>Недостаточно прав</b>\n\n"
-                "У вас нет прав для управления группами.\n"
+                "У тебя нет прав для управления группами.\n"
                 "Обратитесь к администратору.",
                 parse_mode="HTML"
             )
@@ -51,7 +51,7 @@ async def cmd_groups(message: Message, state: FSMContext, session: AsyncSession)
         
         await message.answer(
             "🗂️<b>УПРАВЛЕНИЕ ГРУППАМИ</b>🗂️\n\n"
-            "В данном меню вы можете:\n"
+            "В данном меню ты можешь:\n"
             "1. Создавать группы\n"
             "2. Посмотреть существующие группы\n"
             "3. Менять названия группе\n"
@@ -72,7 +72,7 @@ async def callback_create_group(callback: CallbackQuery, state: FSMContext, sess
         # Получение пользователя
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("Ты не зарегистрирован в системе.")
             await callback.answer()
             return
         
@@ -81,7 +81,7 @@ async def callback_create_group(callback: CallbackQuery, state: FSMContext, sess
         if not has_permission:
             await callback.message.edit_text(
                 "❌ <b>Недостаточно прав</b>\n\n"
-                "У вас нет прав для управления группами.",
+                "У тебя нет прав для управления группами.",
                 parse_mode="HTML"
             )
             await callback.answer()
@@ -108,7 +108,7 @@ async def process_group_name(message: Message, state: FSMContext, session: Async
         # Получение пользователя
         user = await get_user_by_tg_id(session, message.from_user.id)
         if not user:
-            await message.answer("Вы не зарегистрированы в системе.")
+            await message.answer("Ты не зарегистрирован в системе.")
             await state.clear()
             return
         
@@ -155,7 +155,7 @@ async def callback_edit_group(callback: CallbackQuery, state: FSMContext, sessio
         # Получение пользователя
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("Ты не зарегистрирован в системе.")
             await callback.answer()
             return
         
@@ -164,7 +164,7 @@ async def callback_edit_group(callback: CallbackQuery, state: FSMContext, sessio
         if not has_permission:
             await callback.message.edit_text(
                 "❌ <b>Недостаточно прав</b>\n\n"
-                "У вас нет прав для управления группами.",
+                "У тебя нет прав для управления группами.",
                 parse_mode="HTML"
             )
             await callback.answer()
@@ -228,7 +228,7 @@ async def callback_select_group(callback: CallbackQuery, state: FSMContext, sess
         
         await callback.message.edit_text(
             f"🗂️<b>УПРАВЛЕНИЕ ГРУППАМИ</b>🗂️\n"
-            f"👉Вы выбрали группу: <b>{group.name}</b>\n"
+            f"👉Ты выбрал группу: <b>{group.name}</b>\n"
             f"Сотрудников в группе: <b>{len(group_users)}</b>\n\n"
             f"<b>ФИО сотрудников:</b>\n"
             f"{user_list}\n\n"
@@ -243,7 +243,7 @@ async def callback_select_group(callback: CallbackQuery, state: FSMContext, sess
         # Получение пользователя
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("Ты не зарегистрирован в системе.")
             await callback.answer()
             await state.clear()
             return
@@ -291,7 +291,7 @@ async def process_new_group_name(message: Message, state: FSMContext, session: A
         # Получение пользователя
         user = await get_user_by_tg_id(session, message.from_user.id)
         if not user:
-            await message.answer("Вы не зарегистрированы в системе.")
+            await message.answer("Ты не зарегистрирован в системе.")
             await state.clear()
             return
         
@@ -319,7 +319,7 @@ async def process_new_group_name(message: Message, state: FSMContext, session: A
         
         await message.answer(
             f"🗂️<b>УПРАВЛЕНИЕ ГРУППАМИ</b>🗂️\n"
-            f"Вы уверены, что хотите изменить название?\n\n"
+            f"Ты уверен, что хочешь изменить название?\n\n"
             f"Старое название: <b>{old_name}</b>\n"
             f"Новое название: <b>{new_name}</b>",
             reply_markup=get_group_rename_confirmation_keyboard(group_id),
@@ -343,7 +343,7 @@ async def callback_confirm_rename(callback: CallbackQuery, state: FSMContext, se
         # Получение пользователя
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("Ты не зарегистрирован в системе.")
             await callback.answer()
             await state.clear()
             return
@@ -385,7 +385,7 @@ async def callback_cancel_rename(callback: CallbackQuery, state: FSMContext):
     try:
         await callback.message.edit_text(
             "🗂️<b>УПРАВЛЕНИЕ ГРУППАМИ</b>🗂️\n"
-            "❌<b>Вы отменили изменение</b>",
+            "❌<b>Ты отменил изменение</b>",
             reply_markup=get_main_menu_keyboard(),
             parse_mode="HTML"
         )
@@ -409,7 +409,7 @@ async def callback_manage_delete_group(callback: CallbackQuery, state: FSMContex
         # Получение пользователя
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("Ты не зарегистрирован в системе.")
             await callback.answer()
             return
         
@@ -418,7 +418,7 @@ async def callback_manage_delete_group(callback: CallbackQuery, state: FSMContex
         if not has_permission:
             await callback.message.edit_text(
                 "❌ <b>Недостаточно прав</b>\n\n"
-                "У вас нет прав для управления группами.",
+                "У тебя нет прав для управления группами.",
                 parse_mode="HTML"
             )
             await callback.answer()
@@ -546,7 +546,7 @@ async def callback_delete_group(callback: CallbackQuery, state: FSMContext, sess
             f"<b>Создана:</b> {group.created_date.strftime('%d.%m.%Y %H:%M')}\n\n"
             f"⚠️ <b>Внимание!</b> Это действие необратимо!\n"
             f"Группа будет полностью удалена из системы.\n\n"
-            f"Вы уверены, что хотите удалить эту группу?",
+            f"Ты уверен, что хочешь удалить эту группу?",
             reply_markup=get_group_delete_confirmation_keyboard(group_id),
             parse_mode="HTML"
         )
@@ -567,7 +567,7 @@ async def callback_confirm_delete_group(callback: CallbackQuery, state: FSMConte
         # Получаем пользователя
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
-            await callback.message.edit_text("Вы не зарегистрированы в системе.")
+            await callback.message.edit_text("Ты не зарегистрирован в системе.")
             await callback.answer()
             return
         
@@ -624,7 +624,7 @@ async def callback_cancel_delete_group(callback: CallbackQuery, state: FSMContex
         await callback.message.edit_text(
             "🗂️<b>УПРАВЛЕНИЕ ГРУППАМИ</b>🗂️\n"
             "🗑️<b>Удаление группы</b>🗑️\n\n"
-            "❌<b>Вы отменили удаление</b>",
+            "❌<b>Ты отменил удаление</b>",
             reply_markup=get_main_menu_keyboard(),
             parse_mode="HTML"
         )
