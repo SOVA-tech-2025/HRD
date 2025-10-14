@@ -54,7 +54,7 @@ async def cmd_tests_main(message: Message, state: FSMContext, session: AsyncSess
             await message.answer(
                 "❌ <b>Недостаточно прав</b>\n\n"
                 "У тебя нет прав для управления тестами.\n"
-                "Обратитесь к администратору.",
+                "Обратись к администратору.",
                 parse_mode="HTML"
             )
             return
@@ -121,7 +121,7 @@ async def cmd_create_test(message: Message, state: FSMContext, session: AsyncSes
     await message.answer(
         "🔧 <b>Создание нового теста</b>\n\n"
         "📝 Начинаем пошаговое создание теста для твоей системы стажировки.\n\n"
-        "1️⃣ <b>Шаг 1:</b> Введите название теста\n"
+        "1️⃣ <b>Шаг 1:</b> Введи название теста\n"
         "💡 <i>Название должно быть информативным и понятным для стажеров</i>\n\n"
         "📋 <b>Пример:</b> «Основы работы с клиентами» или «Техника безопасности»",
         parse_mode="HTML",
@@ -160,7 +160,7 @@ async def cmd_list_tests(message: Message, state: FSMContext, session: AsyncSess
     if not tests:
         await message.answer(
             "📋 <b>Список доступных тестов</b>\n\n"
-            "В системе пока нет созданных тестов.\nОбратитесь к рекрутеру для создания тестов.",
+            "В системе пока нет созданных тестов.\nОбратись к рекрутеру для создания тестов.",
             parse_mode="HTML"
         )
         return
@@ -202,7 +202,7 @@ async def callback_create_test(callback: CallbackQuery, state: FSMContext, sessi
             await callback.message.edit_text(
                 "❌ <b>Недостаточно прав</b>\n\n"
                 "У тебя нет прав для создания тестов.\n"
-                "Обратитесь к администратору.",
+                "Обратись к администратору.",
                 parse_mode="HTML"
             )
             return
@@ -210,7 +210,7 @@ async def callback_create_test(callback: CallbackQuery, state: FSMContext, sessi
         await callback.message.edit_text(
             "🔧 <b>Создание нового теста</b>\n\n"
             "📝 Начинаем пошаговое создание теста для твоей системы стажировки.\n\n"
-            "1️⃣ <b>Шаг 1:</b> Введите название теста\n"
+            "1️⃣ <b>Шаг 1:</b> Введи название теста\n"
             "💡 <i>Название должно быть информативным и понятным для стажеров</i>\n\n"
             "📋 <b>Пример:</b> «Основы работы с клиентами» или «Техника безопасности»",
             parse_mode="HTML",
@@ -255,7 +255,7 @@ async def callback_list_tests(callback: CallbackQuery, state: FSMContext, sessio
         if not tests:
             await callback.message.edit_text(
                 "📋 <b>Список доступных тестов</b>\n\n"
-                "В системе пока нет созданных тестов.\nОбратитесь к рекрутеру для создания тестов.",
+                "В системе пока нет созданных тестов.\nОбратись к рекрутеру для создания тестов.",
                 parse_mode="HTML"
             )
             return
@@ -300,7 +300,7 @@ async def callback_back_to_tests_menu(callback: CallbackQuery, state: FSMContext
             await callback.message.edit_text(
                 "❌ <b>Недостаточно прав</b>\n\n"
                 "У тебя нет прав для управления тестами.\n"
-                "Обратитесь к администратору.",
+                "Обратись к администратору.",
                 parse_mode="HTML"
             )
             return
@@ -338,7 +338,7 @@ async def callback_test_back(callback: CallbackQuery, state: FSMContext):
             await callback.message.edit_text(
                 "🔧 <b>Создание нового теста</b>\n\n"
                 "📝 Начинаем пошаговое создание теста для твоей системы стажировки.\n\n"
-                "1️⃣ <b>Шаг 1:</b> Введите название теста\n"
+                "1️⃣ <b>Шаг 1:</b> Введи название теста\n"
                 "💡 <i>Название должно быть информативным и понятным для стажеров</i>\n\n"
                 "📋 <b>Пример:</b> «Основы работы с клиентами» или «Техника безопасности»",
                 parse_mode="HTML",
@@ -382,7 +382,7 @@ async def process_test_name(message: Message, state: FSMContext, session: AsyncS
     test_name = message.text.strip()
     
     if len(test_name) < 3:
-        await message.answer("❌ Название теста должно содержать не менее 3 символов. Попробуйте еще раз:")
+        await message.answer("❌ Название теста должно содержать не менее 3 символов. Попробуй еще раз:")
         return
     
     await state.update_data(test_name=test_name)
@@ -396,7 +396,7 @@ async def process_test_name(message: Message, state: FSMContext, session: AsyncS
         "• Документы и инструкции\n"
         "• Презентации или курсы\n"
         "• Любые другие учебные ресурсы\n\n"
-        "❓ Хотите добавить материалы к тесту?",
+        "❓ Хочешь добавить материалы к тесту?",
         parse_mode="HTML",
         reply_markup=get_materials_choice_keyboard()
     )
@@ -410,7 +410,7 @@ async def process_materials_choice(callback: CallbackQuery, state: FSMContext):
     
     if choice == "yes":
         await callback.message.edit_text(
-            "📎 Отправьте ссылку на материалы для изучения, документ, изображение или нажмите 'Пропустить'",
+            "📎 Отправь ссылку на материалы для изучения, документ, изображение или нажми кнопку 'Пропустить'",
             reply_markup=get_test_materials_keyboard()
         )
     elif choice == "skip":
@@ -466,7 +466,7 @@ async def process_materials_input(message: Message, state: FSMContext):
     else:
         # Неподдерживаемый тип сообщения
         await message.answer(
-            "❌ Пожалуйста, отправьте ссылку на материалы, документ, изображение или нажмите кнопку 'Пропустить'.",
+            "❌ Пожалуйста, отправь ссылку на материалы, документ, изображение или нажми кнопку 'Пропустить'.",
             reply_markup=get_test_materials_keyboard()
         )
         return
@@ -479,12 +479,12 @@ async def ask_for_description(message: Message, state: FSMContext, show_cancel_b
     
     await message.answer(
         "3️⃣ <b>Шаг 3:</b> Описание теста\n\n"
-        "📝 Введите краткое описание теста, которое поможет стажерам понять:\n"
+        "📝 Введи краткое описание теста, которое поможет стажерам понять:\n"
         "• О чем этот тест\n"
         "• Какие знания проверяются\n"
         "• Что ожидается от стажера\n\n"
         "💡 <b>Пример:</b> «Тест проверяет знание основных принципов обслуживания клиентов и умение решать конфликтные ситуации»\n\n"
-        "✍️ Введите описание или нажмите кнопку 'Пропустить':",
+        "✍️ Введи описание или нажми кнопку 'Пропустить':",
         parse_mode="HTML",
         reply_markup=keyboard
     )
@@ -496,7 +496,7 @@ async def process_skip_description(callback: CallbackQuery, state: FSMContext):
     await state.update_data(description=None, questions=[], current_question_number=1)
     
     await callback.message.edit_text(
-        "📝 <b>Отлично! Теперь давайте добавим вопросы к тесту.</b>\n\n"
+        "📝 <b>Отлично! Теперь давай добавим вопросы к тесту.</b>\n\n"
         "Выбери тип <b>первого вопроса</b>:",
         parse_mode="HTML",
         reply_markup=get_question_type_keyboard(is_creating_test=True)
@@ -511,7 +511,7 @@ async def process_description(message: Message, state: FSMContext):
     await state.update_data(description=description, questions=[], current_question_number=1)
     
     await message.answer(
-        "📝 <b>Отлично! Теперь давайте добавим вопросы к тесту.</b>\n\n"
+        "📝 <b>Отлично! Теперь давай добавим вопросы к тесту.</b>\n\n"
         "Выбери тип <b>первого вопроса</b>:",
         parse_mode="HTML",
         reply_markup=get_question_type_keyboard(is_creating_test=True)
@@ -524,7 +524,7 @@ async def process_question_type(callback: CallbackQuery, state: FSMContext):
     question_type = callback.data.split(':')[1]
     await state.update_data(current_question_type=question_type)
     
-    await callback.message.edit_text("Введите <b>текст вопроса</b>:")
+    await callback.message.edit_text("Введи <b>текст вопроса</b>:")
     await state.set_state(TestCreationStates.waiting_for_question_text)
     await callback.answer()
 
@@ -537,7 +537,7 @@ async def process_question_text(message: Message, state: FSMContext):
 
     if q_type == 'text':
         await message.answer(
-            "✅ Текст вопроса принят. Теперь введите **единственный правильный ответ** (точную фразу):",
+            "✅ Текст вопроса принят. Теперь введи **единственный правильный ответ** (точную фразу):",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="❌ Отменить создание вопроса", callback_data="cancel_current_question")]
@@ -546,8 +546,8 @@ async def process_question_text(message: Message, state: FSMContext):
         await state.set_state(TestCreationStates.waiting_for_answer)
     elif q_type in ['single_choice', 'multiple_choice']:
         await message.answer(
-            "✅ Текст вопроса принят. Теперь давайте добавим варианты ответа.\n\n"
-            "Введите **первый вариант** ответа:",
+            "✅ Текст вопроса принят. Теперь давай добавим варианты ответа.\n\n"
+            "Введи **первый вариант** ответа:",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="❌ Отменить создание вопроса", callback_data="cancel_current_question")]
@@ -574,7 +574,7 @@ async def process_option(message: Message, state: FSMContext):
     
     # Проверка на дубликаты вариантов
     if message.text.strip() in options:
-        await message.answer("❌ Такой вариант уже есть. Введите другой.")
+        await message.answer("❌ Такой вариант уже есть. Введи другой.")
         return
 
     options.append(message.text.strip())
@@ -584,7 +584,7 @@ async def process_option(message: Message, state: FSMContext):
     
     if len(options) < 2:
         await message.answer(
-            f"✅ Вариант добавлен.\n\n<b>Текущие варианты:</b>\n{current_options_text}\n\nВведите **следующий вариант** ответа:",
+            f"✅ Вариант добавлен.\n\n<b>Текущие варианты:</b>\n{current_options_text}\n\nВведи **следующий вариант** ответа:",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="❌ Отменить создание вопроса", callback_data="cancel_current_question")]
@@ -592,7 +592,7 @@ async def process_option(message: Message, state: FSMContext):
         )
     else:
         await message.answer(
-            f"✅ Вариант добавлен.\n\n<b>Текущие варианты:</b>\n{current_options_text}\n\nВведите **следующий** или нажмите 'Завершить'.",
+            f"✅ Вариант добавлен.\n\n<b>Текущие варианты:</b>\n{current_options_text}\n\nВведи **следующий** или нажми 'Завершить'.",
             parse_mode="HTML",
             reply_markup=get_finish_options_keyboard()
         )
@@ -609,7 +609,7 @@ async def finish_adding_options(callback: CallbackQuery, state: FSMContext):
         options_text = "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(options)])
         await callback.message.edit_text(
             f"✅ Варианты приняты. Вот они:\n\n{options_text}\n\n"
-            "Теперь введите **номер** правильного ответа (например: 2):",
+            "Теперь введи **номер** правильного ответа (например: 2):",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="❌ Отменить создание вопроса", callback_data="cancel_current_question")]
@@ -622,7 +622,7 @@ async def finish_adding_options(callback: CallbackQuery, state: FSMContext):
         options_text = "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(options)])
         await callback.message.edit_text(
             f"✅ Варианты приняты. Вот они:\n\n{options_text}\n\n"
-            "Теперь введите **номера** правильных ответов через запятую (например: 1, 3):",
+            "Теперь введи **номера** правильных ответов через запятую (например: 1, 3):",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="❌ Отменить создание вопроса", callback_data="cancel_current_question")]
@@ -648,7 +648,7 @@ async def process_answer(message: Message, state: FSMContext):
                 raise ValueError
             answer = options[index]
         except (ValueError, IndexError):
-            await message.answer("❌ Некорректный номер. Введите номер правильного ответа (например: 2):")
+            await message.answer("❌ Некорректный номер. Введи номер правильного ответа (например: 2):")
             return
     elif q_type == 'multiple_choice':
         try:
@@ -659,7 +659,7 @@ async def process_answer(message: Message, state: FSMContext):
                 raise ValueError
             answer = correct_answers
         except (ValueError, IndexError):
-            await message.answer("❌ Некорректный формат. Введите номера через запятую (например: 1, 3):")
+            await message.answer("❌ Некорректный формат. Введи номера через запятую (например: 1, 3):")
             return
 
     await state.update_data(current_answer=answer)
@@ -679,10 +679,10 @@ async def process_points(message: Message, state: FSMContext):
     try:
         points = float(message.text.replace(',', '.').strip())
         if points <= 0:
-            await message.answer("❌ Количество баллов должно быть больше нуля. Попробуйте еще раз:")
+            await message.answer("❌ Количество баллов должно быть больше нуля. Попробуй еще раз:")
             return
     except ValueError:
-        await message.answer("❌ Пожалуйста, введите число (можно дробное):")
+        await message.answer("❌ Пожалуйста, введи число (можно дробное):")
         return
 
     data = await state.get_data()
@@ -705,7 +705,7 @@ async def process_points(message: Message, state: FSMContext):
         f"Текущая статистика теста:\n"
         f" • Количество вопросов: {total_questions}\n"
         f" • Максимальный балл: {total_score}\n\n"
-        "❓ Хотите добавить еще один вопрос?",
+        "❓ Хочешь добавить еще один вопрос?",
         parse_mode="HTML",
         reply_markup=get_yes_no_keyboard("more_questions")
     )
@@ -729,7 +729,7 @@ async def process_more_questions_choice(callback: CallbackQuery, state: FSMConte
         await callback.message.edit_text(
             f"✅ <b>Добавление вопросов завершено.</b>\n\n"
             f"Максимальный балл за тест: <b>{total_score}</b>\n\n"
-            f"Теперь введите <b>проходной балл</b> для этого теста (число от 0.5 до {total_score}):",
+            f"Теперь введи <b>проходной балл</b> для этого теста (число от 0.5 до {total_score}):",
             parse_mode="HTML"
         )
         await state.set_state(TestCreationStates.waiting_for_threshold)
@@ -745,10 +745,10 @@ async def process_threshold_and_create_test(message: Message, state: FSMContext,
     try:
         threshold_score = float(message.text.replace(',', '.').strip())
         if threshold_score <= 0 or threshold_score > max_score:
-            await message.answer(f"❌ Проходной балл должен быть от 0.5 до {max_score}. Попробуйте еще раз:")
+            await message.answer(f"❌ Проходной балл должен быть от 0.5 до {max_score}. Попробуй еще раз:")
             return
     except ValueError:
-        await message.answer(f"❌ Пожалуйста, введите число от 0.5 до {max_score}:")
+        await message.answer(f"❌ Пожалуйста, введи число от 0.5 до {max_score}:")
         return
     
     # 1. Создаем объект теста в БД
@@ -764,7 +764,7 @@ async def process_threshold_and_create_test(message: Message, state: FSMContext,
     test = await create_test(session, test_data)
     
     if not test:
-        await message.answer("❌ Произошла критическая ошибка при создании теста. Попробуйте еще раз.")
+        await message.answer("❌ Произошла критическая ошибка при создании теста. Попробуй еще раз.")
         await state.clear()
         return
         
@@ -983,7 +983,7 @@ async def process_grant_access_to_test(callback: CallbackQuery, state: FSMContex
         await callback.message.edit_text(
             "❌ <b>Нет стажеров</b>\n\n"
             "У тебя нет назначенных стажеров.\n"
-            "Обратитесь к рекрутеру для назначения стажеров.",
+            "Обратись к рекрутеру для назначения стажеров.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="⬅️ Назад к тесту", callback_data=f"test:{test_id}")],
@@ -1117,7 +1117,7 @@ async def process_edit_test_meta(callback: CallbackQuery, state: FSMContext):
     await state.update_data(test_id_to_edit=test_id)
     
     await callback.message.edit_text(
-        "Введите новое <b>название</b> теста:",
+        "Введи новое <b>название</b> теста:",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"edit_test:{test_id}")]
@@ -1131,7 +1131,7 @@ async def process_new_test_name(message: Message, state: FSMContext):
     """Обрабатывает новое название и запрашивает описание"""
     await state.update_data(new_test_name=message.text.strip())
     await message.answer(
-        "✅ Название обновлено. Теперь введите новое <b>описание</b> или нажмите кнопку 'Пропустить':",
+        "✅ Название обновлено. Теперь введи новое <b>описание</b> или нажми кнопку 'Пропустить':",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="edit_description:skip")]
@@ -1197,7 +1197,7 @@ async def process_edit_threshold(callback: CallbackQuery, state: FSMContext, ses
     
     await callback.message.edit_text(
         f"Текущий проходной балл: <b>{test.threshold_score}</b> из <b>{test.max_score}</b>.\n\n"
-        f"Введите новый проходной балл (от 0.5 до {test.max_score}):",
+        f"Введи новый проходной балл (от 0.5 до {test.max_score}):",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"edit_test:{test_id}")]
@@ -1216,10 +1216,10 @@ async def process_new_threshold(message: Message, state: FSMContext, session: As
     try:
         new_threshold = float(message.text.replace(',', '.').strip())
         if not (0 < new_threshold <= test.max_score):
-            await message.answer(f"❌ Балл должен быть между 0 и {test.max_score}. Попробуйте снова.")
+            await message.answer(f"❌ Балл должен быть между 0 и {test.max_score}. Попробуй снова.")
             return
     except ValueError:
-        await message.answer("❌ Пожалуйста, введите число.")
+        await message.answer("❌ Пожалуйста, введи число.")
         return
         
     await update_test(session, test_id, {"threshold_score": new_threshold})
@@ -1403,7 +1403,7 @@ async def process_edit_question_text(callback: CallbackQuery, state: FSMContext)
     """Запрашивает новый текст вопроса"""
     question_id = int(callback.data.split(':')[1])
     await callback.message.edit_text(
-        "Введите новый текст вопроса:",
+        "Введи новый текст вопроса:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"select_question_for_edit:{question_id}")]
         ])
@@ -1448,16 +1448,16 @@ async def process_edit_question_answer(callback: CallbackQuery, state: FSMContex
 
     if question.question_type in ['text', 'number']:
         await callback.message.edit_text(
-            "Введите новый <b>правильный ответ</b>:",
+            "Введи новый <b>правильный ответ</b>:",
             parse_mode="HTML",
             reply_markup=back_button
         )
         await state.set_state(TestCreationStates.waiting_for_answer_edit)
     elif question.question_type in ['single_choice', 'multiple_choice', 'yes_no']:
         options_text = "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(question.options)])
-        prompt = "Введите **номер** нового правильного ответа:"
+        prompt = "Введи **номер** нового правильного ответа:"
         if question.question_type == 'multiple_choice':
-            prompt = "Введите **номера** новых правильных ответов через запятую (напр: 1, 3):"
+            prompt = "Введи **номера** новых правильных ответов через запятую (напр: 1, 3):"
         
         await callback.message.edit_text(
             f"Текущие варианты:\n{options_text}\n\n{prompt}",
@@ -1485,7 +1485,7 @@ async def save_new_question_answer(message: Message, state: FSMContext, session:
             if not correct_answers: raise ValueError
             new_answer = json.dumps(correct_answers)
         except (ValueError, IndexError):
-            await message.answer("❌ Некорректный формат. Введите номера через запятую (например: 1, 3):")
+            await message.answer("❌ Некорректный формат. Введи номера через запятую (например: 1, 3):")
             return
     elif question.question_type == 'single_choice':
         try:
@@ -1493,7 +1493,7 @@ async def save_new_question_answer(message: Message, state: FSMContext, session:
             if not (0 <= index < len(question.options)): raise ValueError
             new_answer = question.options[index]
         except (ValueError, IndexError):
-            await message.answer(f"❌ Введите номер от 1 до {len(question.options)}.")
+            await message.answer(f"❌ Введи номер от 1 до {len(question.options)}.")
             return
 
     await update_question(session, question_id, {"correct_answer": new_answer})
@@ -1515,8 +1515,8 @@ async def process_edit_question_points(callback: CallbackQuery, state: FSMContex
     """Запрашивает новое количество баллов за вопрос"""
     question_id = int(callback.data.split(':')[1])
     await callback.message.edit_text(
-        "Введите новое количество <b>баллов</b> за правильный ответ (можно дробное).\n\n"
-        "Для установки штрафа, введите отрицательное число, например: <code>-0.5</code>",
+        "Введи новое количество <b>баллов</b> за правильный ответ (можно дробное).\n\n"
+        "Для установки штрафа, введи отрицательное число, например: <code>-0.5</code>",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"select_question_for_edit:{question_id}")]
@@ -1534,7 +1534,7 @@ async def save_new_question_points(message: Message, state: FSMContext, session:
     try:
         points = float(message.text.replace(',', '.').strip())
         if points == 0:
-            await message.answer("❌ Количество баллов не может быть равно нулю. Попробуйте еще раз:")
+            await message.answer("❌ Количество баллов не может быть равно нулю. Попробуй еще раз:")
             return
             
         penalty = 0
@@ -1543,7 +1543,7 @@ async def save_new_question_points(message: Message, state: FSMContext, session:
             points = 0
             
     except ValueError:
-        await message.answer("❌ Пожалуйста, введите число.")
+        await message.answer("❌ Пожалуйста, введи число.")
         return
 
     await update_question(session, question_id, {"points": points, "penalty_points": penalty})
@@ -1755,7 +1755,7 @@ async def process_confirm_delete_test(callback: CallbackQuery, state: FSMContext
     else:
         await callback.message.edit_text(
             "❌ <b>Ошибка удаления</b>\n\n"
-            "Произошла ошибка при удалении теста. Попробуйте еще раз позже.",
+            "Произошла ошибка при удалении теста. Попробуй еще раз позже.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="⬅️ Назад к тесту", callback_data=f"test:{test_id}")]
@@ -1830,7 +1830,7 @@ async def process_back_to_tests(callback: CallbackQuery, state: FSMContext, sess
         if not tests:
             await callback.message.edit_text(
                 "📋 <b>Список доступных тестов</b>\n\n"
-                "В системе пока нет созданных тестов.\nОбратитесь к рекрутеру для создания тестов.",
+                "В системе пока нет созданных тестов.\nОбратись к рекрутеру для создания тестов.",
                 parse_mode="HTML"
             )
         else:
@@ -1921,7 +1921,7 @@ async def preview_test(callback: CallbackQuery, state: FSMContext, session: Asyn
             f"🎯 <b>Проходной балл:</b> {test.threshold_score} из {test.max_score} баллов\n"
             f"🔗 <b>Материалы:</b> {'Есть' if test.material_link else 'Отсутствуют'}\n\n"
             "❓ <b>Вопросы:</b> Пока не добавлено ни одного вопроса.\n\n"
-            "💡 Добавьте вопросы через раздел «Управление вопросами», чтобы тест стал полноценным.",
+            "💡 Добавь вопросы через раздел «Управление вопросами», чтобы тест стал полноценным.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="➕ Добавить вопрос", callback_data=f"add_q_to_test:{test_id}")],
@@ -1964,7 +1964,7 @@ async def process_edit_test_materials(callback: CallbackQuery, state: FSMContext
     
     await callback.message.edit_text(
         f"Текущие материалы: {test.material_link or 'не указаны'}\n\n"
-        "📎 Отправьте новую ссылку, документ, изображение или нажмите кнопку 'Удалить'",
+        "📎 Отправь новую ссылку, документ, изображение или нажми кнопку 'Удалить'",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🗑️ Удалить материалы", callback_data="edit_materials:delete")],
@@ -2056,7 +2056,7 @@ async def save_new_materials(message: Message, state: FSMContext, session: Async
     else:
         # Неподдерживаемый тип сообщения
         await message.answer(
-            "❌ Пожалуйста, отправьте ссылку на материалы, документ, изображение или напишите 'удалить'."
+            "❌ Пожалуйста, отправь ссылку на материалы, документ, изображение или напиши 'удалить'."
         )
         return
     
@@ -2140,8 +2140,8 @@ async def process_edit_attempts(callback: CallbackQuery, state: FSMContext, sess
     
     await callback.message.edit_text(
         f"Текущее количество попыток: <b>{'бесконечно' if test.max_attempts == 0 else test.max_attempts}</b>.\n\n"
-        "Введите новое количество попыток (от 1 до 10). "
-        "Введите 0 для бесконечного количества попыток.",
+        "Введи новое количество попыток (от 1 до 10). "
+        "Введи 0 для бесконечного количества попыток.",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"edit_test_settings:{test_id}")]
@@ -2159,10 +2159,10 @@ async def save_new_attempts(message: Message, state: FSMContext, session: AsyncS
     try:
         attempts = int(message.text.strip())
         if not (0 <= attempts <= 10):
-            await message.answer("❌ Введите число от 0 до 10.")
+            await message.answer("❌ Введи число от 0 до 10.")
             return
     except ValueError:
-        await message.answer("❌ Пожалуйста, введите число.")
+        await message.answer("❌ Пожалуйста, введи число.")
         return
         
     await update_test(session, test_id, {"max_attempts": attempts})
@@ -2328,7 +2328,7 @@ async def cancel_question_creation(callback: CallbackQuery, state: FSMContext, s
             f"📊 Текущая статистика теста:\n"
             f" • Количество вопросов: {total_questions}\n"
             f" • Максимальный балл: {total_score}\n\n"
-            "❓ Хотите добавить еще один вопрос или завершить создание теста?",
+            "❓ Хочешь добавить еще один вопрос или завершить создание теста?",
             parse_mode="HTML",
             reply_markup=get_yes_no_keyboard("more_questions")
         )

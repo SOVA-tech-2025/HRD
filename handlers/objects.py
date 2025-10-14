@@ -93,7 +93,7 @@ async def callback_create_object(callback: CallbackQuery, state: FSMContext, ses
         await callback.message.edit_text(
             "📍<b>УПРАВЛЕНИЕ ОБЪЕКТАМИ</b>📍\n"
             "➕<b>Создание объекта</b>➕\n"
-            "Введите название объекта на клавиатуре",
+            "Введи название объекта на клавиатуре",
             parse_mode="HTML"
         )
         await state.set_state(ObjectManagementStates.waiting_for_object_name)
@@ -122,7 +122,7 @@ async def process_object_name(message: Message, state: FSMContext, session: Asyn
             await message.answer(
                 "❌ Некорректное название объекта.\n"
                 "Название должно содержать только буквы, цифры, пробелы, знаки препинания и слеш для адресов.\n"
-                "Попробуйте еще раз:"
+                "Попробуй еще раз:"
             )
             return
         
@@ -140,7 +140,7 @@ async def process_object_name(message: Message, state: FSMContext, session: Asyn
         else:
             await message.answer(
                 "❌ Ошибка создания объекта. Возможно, объект с таким названием уже существует.\n"
-                "Попробуйте другое название:",
+                "Попробуй другое название:",
             )
             return
         
@@ -178,7 +178,7 @@ async def callback_edit_object(callback: CallbackQuery, state: FSMContext, sessi
         if not objects:
             await callback.message.edit_text(
                 "📍<b>УПРАВЛЕНИЕ ОБЪЕКТАМИ</b>📍\n"
-                "❌ Объектов не найдено. Сначала создайте объект.",
+                "❌ Объектов не найдено. Сначала создай объект.",
                 reply_markup=get_main_menu_keyboard(),
                 parse_mode="HTML"
             )
@@ -187,7 +187,7 @@ async def callback_edit_object(callback: CallbackQuery, state: FSMContext, sessi
         
         await callback.message.edit_text(
             "📍<b>УПРАВЛЕНИЕ ОБЪЕКТАМИ</b>📍\n"
-            "👇<b>Выберите объект для изменения:</b>",
+            "👇<b>Выбери объект для изменения:</b>",
             reply_markup=get_object_selection_keyboard(objects, page=0),
             parse_mode="HTML"
         )
@@ -238,7 +238,7 @@ async def callback_select_object(callback: CallbackQuery, state: FSMContext, ses
             f"Сотрудников на объекте: <b>{len(object_users)}</b>\n\n"
             f"<b>ФИО сотрудников:</b>\n"
             f"{user_list}\n\n"
-            f"Введите новое название для данного объекта и отправьте чат-боту",
+            f"Введи новое название для данного объекта и отправь чат-боту",
             parse_mode="HTML"
         )
         
@@ -264,7 +264,7 @@ async def callback_objects_pagination(callback: CallbackQuery, state: FSMContext
         
         await callback.message.edit_text(
             "📍<b>УПРАВЛЕНИЕ ОБЪЕКТАМИ</b>📍\n"
-            "👇<b>Выберите объект для изменения:</b>",
+            "👇<b>Выбери объект для изменения:</b>",
             reply_markup=get_object_selection_keyboard(objects, page=page),
             parse_mode="HTML"
         )
@@ -296,7 +296,7 @@ async def process_new_object_name(message: Message, state: FSMContext, session: 
             await message.answer(
                 "❌ Некорректное название объекта.\n"
                 "Название должно содержать только буквы, цифры, пробелы, знаки препинания и слеш для адресов.\n"
-                "Попробуйте еще раз:"
+                "Попробуй еще раз:"
             )
             return
         
@@ -304,7 +304,7 @@ async def process_new_object_name(message: Message, state: FSMContext, session: 
         if new_name == old_name:
             await message.answer(
                 "❌ Новое название совпадает со старым.\n"
-                "Введите другое название:"
+                "Введи другое название:"
             )
             return
         
@@ -402,7 +402,7 @@ async def callback_manage_delete_object(callback: CallbackQuery, state: FSMConte
                 "📍<b>УПРАВЛЕНИЕ ОБЪЕКТАМИ</b>📍\n"
                 "🗑️<b>Удаление объекта</b>🗑️\n\n"
                 "❌ <b>Объекты не найдены!</b>\n\n"
-                "Сначала создайте объекты для удаления.",
+                "Сначала создай объекты для удаления.",
                 reply_markup=get_main_menu_keyboard(),
                 parse_mode="HTML"
             )
@@ -414,7 +414,7 @@ async def callback_manage_delete_object(callback: CallbackQuery, state: FSMConte
             "🗑️<b>Удаление объекта</b>🗑️\n\n"
             "⚠️ <b>Внимание!</b> Это действие необратимо!\n"
             "Объект будет полностью удален из системы.\n\n"
-            "Выберите объект для удаления:",
+            "Выбери объект для удаления:",
             reply_markup=get_object_delete_selection_keyboard(objects),
             parse_mode="HTML"
         )
@@ -450,7 +450,7 @@ async def callback_object_delete_page(callback: CallbackQuery, state: FSMContext
             "🗑️<b>Удаление объекта</b>🗑️\n\n"
             "⚠️ <b>Внимание!</b> Это действие необратимо!\n"
             "Объект будет полностью удален из системы.\n\n"
-            "Выберите объект для удаления:",
+            "Выбери объект для удаления:",
             reply_markup=get_object_delete_selection_keyboard(objects, page),
             parse_mode="HTML"
         )
@@ -495,7 +495,7 @@ async def callback_delete_object(callback: CallbackQuery, state: FSMContext, ses
                 f"<b>ID:</b> {object_obj.id}\n"
                 f"<b>Создан:</b> {object_obj.created_date.strftime('%d.%m.%Y %H:%M')}\n\n"
                 f"⚠️ <b>В объекте есть пользователи ({len(users_in_object)} чел.)</b>\n"
-                f"Сначала удалите всех пользователей из объекта или измените их объекты стажировки/работы.",
+                f"Сначала удали всех пользователей из объекта или измени их объекты стажировки/работы.",
                 reply_markup=get_main_menu_keyboard(),
                 parse_mode="HTML"
             )

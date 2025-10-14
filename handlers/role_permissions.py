@@ -63,7 +63,7 @@ async def show_roles_list(message: Message, state: FSMContext, session: AsyncSes
     keyboard = get_role_management_keyboard(roles)
     
     await message.answer(
-        "Выберите роль для управления правами:",
+        "Выбери роль для управления правами:",
         reply_markup=keyboard
     )
     
@@ -149,7 +149,7 @@ async def process_add_permission(callback: CallbackQuery, state: FSMContext, ses
     keyboard = get_permission_selection_keyboard(available_permissions, role_id, "add")
     
     await callback.message.edit_text(
-        "Выберите возможность, которую хотите добавить этой роли:",
+        "Выбери возможность, которую хочешь добавить этой роли:",
         reply_markup=keyboard
     )
     
@@ -179,7 +179,7 @@ async def process_remove_permission(callback: CallbackQuery, state: FSMContext, 
     keyboard = get_permission_selection_keyboard(current_permissions, role_id, "remove")
     
     await callback.message.edit_text(
-        "Выберите возможность, которую хотите убрать у этой роли:",
+        "Выбери возможность, которую хочешь убрать у этой роли:",
         reply_markup=keyboard
     )
     
@@ -263,7 +263,7 @@ async def process_permission_confirmation(callback: CallbackQuery, state: FSMCon
         await callback.message.edit_text(
             "❌ <b>Недостаточно прав</b>\n\n"
             "У тебя нет прав для управления правами ролей.\n"
-            "Обратитесь к администратору.",
+            "Обратись к администратору.",
             parse_mode="HTML"
         )
         await callback.answer()
@@ -450,7 +450,7 @@ async def process_cancel_permission_confirmation(callback: CallbackQuery, state:
         if available_permissions:
             keyboard = get_permission_selection_keyboard(available_permissions, role_id, "add")
             await callback.message.edit_text(
-                "Выберите возможность, которую хотите добавить этой роли:",
+                "Выбери возможность, которую хочешь добавить этой роли:",
                 reply_markup=keyboard
             )
         else:
@@ -460,7 +460,7 @@ async def process_cancel_permission_confirmation(callback: CallbackQuery, state:
         if current_permissions:
             keyboard = get_permission_selection_keyboard(current_permissions, role_id, "remove")
             await callback.message.edit_text(
-                "Выберите возможность, которую хотите убрать у этой роли:",
+                "Выбери возможность, которую хочешь убрать у этой роли:",
                 reply_markup=keyboard
             )
         else:

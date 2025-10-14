@@ -43,7 +43,7 @@ async def cmd_groups(message: Message, state: FSMContext, session: AsyncSession)
             await message.answer(
                 "❌ <b>Недостаточно прав</b>\n\n"
                 "У тебя нет прав для управления группами.\n"
-                "Обратитесь к администратору.",
+                "Обратись к администратору.",
                 parse_mode="HTML"
             )
             log_user_error(user.tg_id, "groups_access_denied", "Попытка доступа без прав")
@@ -90,7 +90,7 @@ async def callback_create_group(callback: CallbackQuery, state: FSMContext, sess
         await callback.message.edit_text(
             "🗂️<b>УПРАВЛЕНИЕ ГРУППАМИ</b>🗂️\n"
             "➕<b>Создание группы</b>➕\n"
-            "Введите название группы на клавиатуре",
+            "Введи название группы на клавиатуре",
             parse_mode="HTML"
         )
         await state.set_state(GroupManagementStates.waiting_for_group_name)
@@ -119,7 +119,7 @@ async def process_group_name(message: Message, state: FSMContext, session: Async
             await message.answer(
                 "❌ Некорректное название группы.\n"
                 "Название должно содержать только буквы, цифры, пробелы и знаки препинания.\n"
-                "Попробуйте еще раз:"
+                "Попробуй еще раз:"
             )
             return
         
@@ -137,7 +137,7 @@ async def process_group_name(message: Message, state: FSMContext, session: Async
         else:
             await message.answer(
                 "❌ Ошибка создания группы. Возможно, группа с таким названием уже существует.\n"
-                "Попробуйте другое название:",
+                "Попробуй другое название:",
             )
             return
         
@@ -175,7 +175,7 @@ async def callback_edit_group(callback: CallbackQuery, state: FSMContext, sessio
         if not groups:
             await callback.message.edit_text(
                 "🗂️<b>УПРАВЛЕНИЕ ГРУППАМИ</b>🗂️\n"
-                "❌ Групп не найдено. Сначала создайте группу.",
+                "❌ Групп не найдено. Сначала создай группу.",
                 reply_markup=get_main_menu_keyboard(),
                 parse_mode="HTML"
             )
@@ -184,7 +184,7 @@ async def callback_edit_group(callback: CallbackQuery, state: FSMContext, sessio
         
         await callback.message.edit_text(
             "🗂️<b>УПРАВЛЕНИЕ ГРУППАМИ</b>🗂️\n"
-            "👇<b>Выберите группу для изменения:</b>",
+            "👇<b>Выбери группу для изменения:</b>",
             reply_markup=get_group_selection_keyboard(groups, page=0),
             parse_mode="HTML"
         )
@@ -232,7 +232,7 @@ async def callback_select_group(callback: CallbackQuery, state: FSMContext, sess
             f"Сотрудников в группе: <b>{len(group_users)}</b>\n\n"
             f"<b>ФИО сотрудников:</b>\n"
             f"{user_list}\n\n"
-            f"Введите новое название для данной группы и отправьте чат-боту",
+            f"Введи новое название для данной группы и отправь чат-боту",
             parse_mode="HTML"
         )
         
@@ -265,7 +265,7 @@ async def callback_groups_pagination(callback: CallbackQuery, state: FSMContext,
         
         await callback.message.edit_text(
             "🗂️<b>УПРАВЛЕНИЕ ГРУППАМИ</b>🗂️\n"
-            "👇<b>Выберите группу для изменения:</b>",
+            "👇<b>Выбери группу для изменения:</b>",
             reply_markup=get_group_selection_keyboard(groups, page=page),
             parse_mode="HTML"
         )
@@ -305,7 +305,7 @@ async def process_new_group_name(message: Message, state: FSMContext, session: A
             await message.answer(
                 "❌ Некорректное название группы.\n"
                 "Название должно содержать только буквы, цифры, пробелы и знаки препинания.\n"
-                "Попробуйте еще раз:"
+                "Попробуй еще раз:"
             )
             return
         
@@ -313,7 +313,7 @@ async def process_new_group_name(message: Message, state: FSMContext, session: A
         if new_name == old_name:
             await message.answer(
                 "❌ Новое название совпадает со старым.\n"
-                "Введите другое название:"
+                "Введи другое название:"
             )
             return
         
@@ -431,7 +431,7 @@ async def callback_manage_delete_group(callback: CallbackQuery, state: FSMContex
                 "🗂️<b>УПРАВЛЕНИЕ ГРУППАМИ</b>🗂️\n"
                 "🗑️<b>Удаление группы</b>🗑️\n\n"
                 "❌ <b>Нет групп для удаления</b>\n\n"
-                "Сначала создайте группы в системе.",
+                "Сначала создай группы в системе.",
                 reply_markup=get_main_menu_keyboard(),
                 parse_mode="HTML"
             )
@@ -445,7 +445,7 @@ async def callback_manage_delete_group(callback: CallbackQuery, state: FSMContex
             "• В ней нет пользователей\n"
             "• Она не используется в траекториях\n"
             "• Она не используется в базе знаний\n\n"
-            "Выберите группу для удаления:",
+            "Выбери группу для удаления:",
             reply_markup=get_group_delete_selection_keyboard(groups),
             parse_mode="HTML"
         )
@@ -482,7 +482,7 @@ async def callback_delete_group_page(callback: CallbackQuery, state: FSMContext,
             "• В ней нет пользователей\n"
             "• Она не используется в траекториях\n"
             "• Она не используется в базе знаний\n\n"
-            "Выберите группу для удаления:",
+            "Выбери группу для удаления:",
             reply_markup=get_group_delete_selection_keyboard(groups, page),
             parse_mode="HTML"
         )
@@ -521,7 +521,7 @@ async def callback_delete_group(callback: CallbackQuery, state: FSMContext, sess
                 f"❌ <b>Нельзя удалить группу</b>\n\n"
                 f"<b>Группа:</b> {group.name}\n"
                 f"<b>Причина:</b> В группе есть пользователи ({len(users_in_group)} чел.)\n\n"
-                f"Сначала удалите всех пользователей из группы или переместите их в другие группы.",
+                f"Сначала удали всех пользователей из группы или перемести их в другие группы.",
                 reply_markup=get_group_delete_selection_keyboard(await get_all_groups(session)),
                 parse_mode="HTML"
             )
@@ -603,7 +603,7 @@ async def callback_confirm_delete_group(callback: CallbackQuery, state: FSMConte
                 f"• В группе есть пользователи\n"
                 f"• Группа используется в траекториях\n"
                 f"• Группа используется в базе знаний\n\n"
-                f"Проверьте зависимости и попробуйте снова.",
+                f"Проверь зависимости и попробуй снова.",
                 reply_markup=get_group_delete_selection_keyboard(await get_all_groups(session)),
                 parse_mode="HTML"
             )

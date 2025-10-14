@@ -66,7 +66,7 @@ async def process_full_name(message: Message, state: FSMContext):
     
     if not is_valid:
         await message.answer(
-            "Некорректный формат ФИО. Пожалуйста, введите имя и фамилию, используя только буквы, пробелы и дефисы."
+            "Некорректный формат ФИО. Пожалуйста, введи имя и фамилию, используя только буквы, пробелы и дефисы."
         )
         log_user_error(message.from_user.id, message.from_user.username, f"invalid full name: {message.text}")
         return
@@ -88,7 +88,7 @@ async def process_contact(message: Message, state: FSMContext, session: AsyncSes
     
     if not is_valid:
         await message.answer(
-            "Некорректный формат номера телефона. Пожалуйста, введите номер в формате +7XXXXXXXXXX.",
+            "Некорректный формат номера телефона. Пожалуйста, введи номер в формате +7XXXXXXXXXX.",
             reply_markup=get_contact_keyboard()
         )
         log_user_error(message.from_user.id, message.from_user.username, f"invalid phone from contact: {phone_number}")
@@ -195,7 +195,7 @@ async def process_contact(message: Message, state: FSMContext, session: AsyncSes
                 await message.answer(
                     f"🎉 <b>Добро пожаловать!</b>\n\n"
                     f"Ты автоматически зарегистрирован как <b>{default_role}</b>.\n"
-                    f"Используйте команду /login для входа.\n\n"
+                    f"Используй команду /login для входа.\n\n"
                     f"При необходимости администратор может изменить твою роль.",
                     parse_mode="HTML"
                 )
@@ -248,7 +248,7 @@ async def process_phone_manually(message: Message, state: FSMContext, session: A
     
     if not is_valid:
         await message.answer(
-            "Некорректный формат номера телефона. Пожалуйста, введите номер в формате +7XXXXXXXXXX или используйте кнопку 'Отправить контакт'.",
+            "Некорректный формат номера телефона. Пожалуйста, введи номер в формате +7XXXXXXXXXX или используй кнопку 'Отправить контакт'.",
             reply_markup=get_contact_keyboard()
         )
         log_user_error(message.from_user.id, message.from_user.username, f"invalid phone manual entry: {message.text}")
@@ -355,7 +355,7 @@ async def process_phone_manually(message: Message, state: FSMContext, session: A
                 await message.answer(
                     f"🎉 <b>Добро пожаловать!</b>\n\n"
                     f"Ты автоматически зарегистрирован как <b>{default_role}</b>.\n"
-                    f"Используйте команду /login для входа.\n\n"
+                    f"Используй команду /login для входа.\n\n"
                     f"При необходимости администратор может изменить твою роль.",
                     parse_mode="HTML"
                 )
@@ -600,7 +600,7 @@ async def process_role_selection(callback: CallbackQuery, state: FSMContext, ses
 async def process_cancel_registration(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     
-    await callback.message.answer("Регистрация отменена. Используйте /register, чтобы начать заново.")
+    await callback.message.answer("Регистрация отменена. Используй /register, чтобы начать заново.")
     
     await callback.message.edit_reply_markup(reply_markup=None)
     
@@ -616,7 +616,7 @@ async def cmd_cancel(message: Message, state: FSMContext):
         return
     
     await state.clear()
-    await message.answer("Регистрация отменена. Используйте /register, чтобы начать заново.")
+    await message.answer("Регистрация отменена. Используй /register, чтобы начать заново.")
     log_user_action(message.from_user.id, message.from_user.username, "cancelled registration")
 
 @router.message(RegistrationStates.waiting_for_role)
@@ -710,7 +710,7 @@ async def callback_select_admin_role(callback: CallbackQuery, state: FSMContext,
             await callback.message.edit_text(
                 f"🎉 <b>Поздравляем!</b>\n\n"
                 f"Ты успешно стал {role_display} системы.\n"
-                "Используйте команду /login для входа.",
+                "Используй команду /login для входа.",
                 parse_mode="HTML"
             )
             log_user_action(
@@ -724,7 +724,7 @@ async def callback_select_admin_role(callback: CallbackQuery, state: FSMContext,
             await callback.message.edit_text(
                 "❌ <b>Ошибка создания администратора</b>\n\n"
                 "Произошла ошибка при создании учетной записи администратора.\n"
-                "Попробуйте позже или обратитесь к разработчику.",
+                "Попробуй позже или обратись к разработчику.",
                 parse_mode="HTML"
             )
 

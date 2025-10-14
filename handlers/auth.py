@@ -63,7 +63,7 @@ async def cmd_login(message: Message, state: FSMContext, session: AsyncSession, 
         # await state.clear()
     except Exception as e:
         log_user_error(message.from_user.id, message.from_user.username, "login error", e)
-        await message.answer("Произошла ошибка при входе в систему. Пожалуйста, попробуйте позже.")
+        await message.answer("Произошла ошибка при входе в систему. Пожалуйста, попробуй позже.")
 
 async def check_auth(message: Message, state: FSMContext, session: AsyncSession) -> bool:
     try:
@@ -124,7 +124,7 @@ async def check_auth(message: Message, state: FSMContext, session: AsyncSession)
         return True
     except Exception as e:
         log_user_error(message.from_user.id, message.from_user.username, "authentication check error", e)
-        await message.answer("Произошла ошибка при проверке авторизации. Пожалуйста, попробуйте позже.")
+        await message.answer("Произошла ошибка при проверке авторизации. Пожалуйста, попробуй позже.")
         return False
 
 @router.message(Command("logout"))
@@ -196,7 +196,7 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession, 
         )
     except Exception as e:
         log_user_error(message.from_user.id, message.from_user.username, "start command error", e)
-        await message.answer("Произошла ошибка при запуске бота. Пожалуйста, попробуйте позже.")
+        await message.answer("Произошла ошибка при запуске бота. Пожалуйста, попробуй позже.")
 
 
 @router.callback_query(F.data == "register:normal")

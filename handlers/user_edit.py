@@ -294,7 +294,7 @@ async def callback_start_search_all_users(callback: CallbackQuery, state: FSMCon
         
         await callback.message.edit_text(
             "🔍 <b>Поиск пользователей</b>\n\n"
-            "Введите ФИО для поиска (минимум 2 символа):",
+            "Введи ФИО для поиска (минимум 2 символа):",
             parse_mode="HTML"
         )
         
@@ -318,7 +318,7 @@ async def process_search_query_all_users(message: Message, state: FSMContext, se
         if len(query) < 2:
             await message.answer(
                 "❌ Запрос слишком короткий\n\n"
-                "Пожалуйста, введите минимум 2 символа для поиска:",
+                "Пожалуйста, введи минимум 2 символа для поиска:",
                 parse_mode="HTML"
             )
             return
@@ -336,7 +336,7 @@ async def process_search_query_all_users(message: Message, state: FSMContext, se
             await message.answer(
                 f"🔍 <b>Результаты поиска</b>\n\n"
                 f"По запросу <b>'{query}'</b> ничего не найдено.\n\n"
-                "Попробуйте изменить запрос или вернитесь к фильтрам.",
+                "Попробуй изменить запрос или вернись к фильтрам.",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
@@ -361,7 +361,7 @@ async def process_search_query_all_users(message: Message, state: FSMContext, se
         log_user_action(message.from_user.id, "search_all_users_success", f"Query: '{query}', Found: {len(users)}")
         
     except Exception as e:
-        await message.answer("❌ Произошла ошибка при поиске. Попробуйте еще раз.")
+        await message.answer("❌ Произошла ошибка при поиске. Попробуй еще раз.")
         log_user_error(message.from_user.id, "search_query_error", str(e))
 
 
@@ -373,7 +373,7 @@ async def callback_retry_search_all_users(callback: CallbackQuery, state: FSMCon
         
         await callback.message.edit_text(
             "🔍 <b>Поиск пользователей</b>\n\n"
-            "Введите ФИО для поиска (минимум 2 символа):",
+            "Введи ФИО для поиска (минимум 2 символа):",
             parse_mode="HTML"
         )
         
@@ -456,7 +456,7 @@ async def callback_edit_user(callback: CallbackQuery, state: FSMContext, session
         else:
             text += f"<b>Работы:</b> Не указан\n"
         
-        text += "\n<b>Выберите параметр для изменения:</b>"
+        text += "\n<b>Выбери параметр для изменения:</b>"
         
         keyboard = get_user_editor_keyboard(is_trainee)
         
@@ -646,7 +646,7 @@ async def process_user_number(message: Message, session: AsyncSession, state: FS
     try:
         user_id = int(message.text.strip())
     except ValueError:
-        await message.answer("❌ Пожалуйста, введите корректный номер пользователя")
+        await message.answer("❌ Пожалуйста, введи корректный номер пользователя")
         return
         
     # Получаем пользователя для редактирования
@@ -1278,7 +1278,7 @@ async def process_confirm_change(callback: CallbackQuery, session: AsyncSession,
             else:
                 success_message += f"<b>Работы:</b> Не указан\n"
                 
-            success_message += "\n<b>Выберите параметр для изменения:</b>"
+            success_message += "\n<b>Выбери параметр для изменения:</b>"
             
             # Получаем клавиатуру редактора
             keyboard = get_user_editor_keyboard(role_name in ["Стажер", "Стажёр"])
@@ -1414,7 +1414,7 @@ async def callback_confirm_delete_user(callback: CallbackQuery, state: FSMContex
             await callback.message.edit_text(
                 f"❌ <b>Ошибка удаления</b>\n\n"
                 f"Не удалось удалить пользователя {user_name}.\n"
-                f"Попробуйте позже или обратитесь к администратору.",
+                f"Попробуй позже или обратись к администратору.",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="⬅️ Назад к просмотру", callback_data=f"back_to_view_after_error:{user_id}")],
@@ -1475,7 +1475,7 @@ async def callback_cancel_delete_user(callback: CallbackQuery, state: FSMContext
         else:
             text += f"<b>Работы:</b> Не указан\n"
         
-        text += "\n<b>Выберите параметр для изменения:</b>"
+        text += "\n<b>Выбери параметр для изменения:</b>"
         
         await callback.message.edit_text(
             text,

@@ -81,7 +81,7 @@ async def show_group_selection(callback: CallbackQuery, state: FSMContext, sessi
     groups = await get_all_groups(session)
     
     if not groups:
-        await callback.message.edit_text("❌ В системе нет групп. Сначала создайте группы.")
+        await callback.message.edit_text("❌ В системе нет групп. Сначала создай группы.")
         return False
     
     # Формируем клавиатуру с группами
@@ -131,7 +131,7 @@ async def show_work_object_selection(callback: CallbackQuery, state: FSMContext,
     objects = await get_all_objects(session)
     
     if not objects:
-        await callback.message.edit_text("❌ В системе нет объектов. Сначала создайте объекты.")
+        await callback.message.edit_text("❌ В системе нет объектов. Сначала создай объекты.")
         return False
     
     # Формируем клавиатуру с объектами работы
@@ -205,7 +205,7 @@ async def cmd_new_users_list(message: Message, state: FSMContext, session: Async
     await message.answer(
         f"📋 <b>Новые пользователи</b>\n\n"
         f"📊 <b>Всего новых пользователей:</b> {len(unactivated_users)}\n\n"
-        "Выберите пользователя для активации:",
+        "Выбери пользователя для активации:",
         parse_mode="HTML",
         reply_markup=keyboard
     )
@@ -255,7 +255,7 @@ async def callback_start_search_new_users(callback: CallbackQuery, state: FSMCon
         
         await callback.message.edit_text(
             "🔍 <b>Поиск новых пользователей</b>\n\n"
-            "Введите ФИО для поиска (минимум 2 символа):",
+            "Введи ФИО для поиска (минимум 2 символа):",
             parse_mode="HTML"
         )
         
@@ -279,7 +279,7 @@ async def process_search_query_new_users(message: Message, state: FSMContext, se
         if len(query) < 2:
             await message.answer(
                 "❌ Запрос слишком короткий\n\n"
-                "Пожалуйста, введите минимум 2 символа для поиска:",
+                "Пожалуйста, введи минимум 2 символа для поиска:",
                 parse_mode="HTML"
             )
             return
@@ -298,7 +298,7 @@ async def process_search_query_new_users(message: Message, state: FSMContext, se
             await message.answer(
                 f"🔍 <b>Результаты поиска</b>\n\n"
                 f"По запросу <b>'{query}'</b> ничего не найдено.\n\n"
-                "Попробуйте изменить запрос или вернитесь к списку.",
+                "Попробуй изменить запрос или вернись к списку.",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
@@ -323,7 +323,7 @@ async def process_search_query_new_users(message: Message, state: FSMContext, se
         log_user_action(message.from_user.id, "search_new_users_success", f"Query: '{query}', Found: {len(users)}")
         
     except Exception as e:
-        await message.answer("❌ Произошла ошибка при поиске. Попробуйте еще раз.")
+        await message.answer("❌ Произошла ошибка при поиске. Попробуй еще раз.")
         log_user_error(message.from_user.id, "search_new_users_error", str(e))
 
 
@@ -335,7 +335,7 @@ async def callback_retry_search_new_users(callback: CallbackQuery, state: FSMCon
         
         await callback.message.edit_text(
             "🔍 <b>Поиск новых пользователей</b>\n\n"
-            "Введите ФИО для поиска (минимум 2 символа):",
+            "Введи ФИО для поиска (минимум 2 символа):",
             parse_mode="HTML"
         )
         
@@ -372,7 +372,7 @@ async def callback_back_to_new_users_list(callback: CallbackQuery, state: FSMCon
         await callback.message.edit_text(
             f"📋 <b>Новые пользователи</b>\n\n"
             f"📊 <b>Всего новых пользователей:</b> {len(unactivated_users)}\n\n"
-            "Выберите пользователя для активации:",
+            "Выбери пользователя для активации:",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -446,7 +446,7 @@ async def process_back_to_user_selection(callback: CallbackQuery, state: FSMCont
         await callback.message.edit_text(
             f"📋 <b>Новые пользователи</b>\n\n"
             f"📊 <b>Всего новых пользователей:</b> {len(unactivated_users)}\n\n"
-            "Выберите пользователя для активации:",
+            "Выбери пользователя для активации:",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -478,7 +478,7 @@ async def process_role_selection(callback: CallbackQuery, state: FSMContext, ses
     groups = await get_all_groups(session)
     
     if not groups:
-        await callback.message.edit_text("❌ В системе нет групп. Сначала создайте группы.")
+        await callback.message.edit_text("❌ В системе нет групп. Сначала создай группы.")
         await callback.answer()
         return
     
@@ -563,7 +563,7 @@ async def process_group_selection(callback: CallbackQuery, state: FSMContext, se
         objects = await get_all_objects(session)
         
         if not objects:
-            await callback.message.edit_text("❌ В системе нет объектов. Сначала создайте объекты.")
+            await callback.message.edit_text("❌ В системе нет объектов. Сначала создай объекты.")
             await callback.answer()
             return
         
@@ -681,7 +681,7 @@ async def process_back_to_previous_step(callback: CallbackQuery, state: FSMConte
             objects = await get_all_objects(session)
             
             if not objects:
-                await callback.message.edit_text("❌ В системе нет объектов. Сначала создайте объекты.")
+                await callback.message.edit_text("❌ В системе нет объектов. Сначала создай объекты.")
                 await callback.answer()
                 return
             
@@ -865,7 +865,7 @@ async def process_activation_confirmation(callback: CallbackQuery, state: FSMCon
         )
     else:
         await callback.message.edit_text(
-            "❌ Произошла ошибка при активации пользователя. Попробуйте еще раз.",
+            "❌ Произошла ошибка при активации пользователя. Попробуй еще раз.",
             reply_markup=get_main_menu_keyboard()
         )
         
@@ -945,7 +945,7 @@ async def callback_show_new_users(callback: CallbackQuery, state: FSMContext, se
     await callback.message.answer(
         f"📋 <b>Новые пользователи</b>\n\n"
         f"📊 <b>Всего новых пользователей:</b> {len(unactivated_users)}\n\n"
-        "Выберите пользователя для активации:",
+        "Выбери пользователя для активации:",
         parse_mode="HTML",
         reply_markup=keyboard
     )

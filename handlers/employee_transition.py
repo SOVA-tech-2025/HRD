@@ -47,7 +47,7 @@ async def callback_become_employee(callback: CallbackQuery, state: FSMContext, s
         if not success:
             await callback.message.edit_text(
                 "❌ Произошла ошибка при смене роли.\n"
-                "Обратитесь к администратору."
+                "Обратись к администратору."
             )
             return
             

@@ -48,7 +48,7 @@ async def cmd_manager_attestations(message: Message, state: FSMContext, session:
             await message.answer(
                 "❌ <b>Недостаточно прав</b>\n\n"
                 "У тебя нет прав для проведения аттестаций.\n"
-                "Обратитесь к администратору.",
+                "Обратись к администратору.",
                 parse_mode="HTML"
             )
             return
@@ -61,7 +61,7 @@ async def cmd_manager_attestations(message: Message, state: FSMContext, session:
                 "🔍<b>Аттестация🔍</b>\n\n"
                 "❌ <b>Стажеры не найдены</b>\n\n"
                 "У тебя нет назначенных стажеров на аттестацию.\n"
-                "Обратитесь к наставнику для назначения стажеров.",
+                "Обратись к наставнику для назначения стажеров.",
                 parse_mode="HTML",
                 reply_markup=get_main_menu_keyboard()
             )
@@ -96,7 +96,7 @@ async def cmd_manager_attestations(message: Message, state: FSMContext, session:
                 )
             ])
 
-        message_text += "Выберите стажёра на клавиатуре"
+        message_text += "Выбери стажёра на клавиатуре"
 
         # Кнопка "Назад"
         keyboard.inline_keyboard.append([
@@ -484,7 +484,7 @@ async def show_attestation_question(callback: CallbackQuery, state: FSMContext, 
             f"<b>Вопрос {current_index + 1}:</b>\n\n"
             f"{question.question_text}\n\n"
             f"🎯 <b>Максимальный балл:</b> {question.max_points}\n\n"
-            "💡 <b>Инструкция:</b> Задайте вопрос стажеру голосом, выслушайте ответ и введите балл согласно критериям в вопросе."
+            "💡 <b>Инструкция:</b> Задай вопрос стажеру голосом, выслушай ответ и введи балл согласно критериям в вопросе."
         )
 
         await callback.message.edit_text(
@@ -513,7 +513,7 @@ async def process_question_score(message: Message, state: FSMContext, session: A
         try:
             score = float(message.text.strip())
         except ValueError:
-            await message.answer("❌ Введите корректный балл (число)")
+            await message.answer("❌ Введи корректный балл (число)")
             return
 
         state_data = await state.get_data()
@@ -815,7 +815,7 @@ async def callback_make_employee_anyway(callback: CallbackQuery, state: FSMConte
                 f"👨‍💼 <b>Руководитель:</b> {manager.full_name}\n"
                 f"📅 <b>Дата перевода:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
                 "<i>Ты переведён в сотрудники по решению руководителя.</i>\n\n"
-                "🚀 <b>Используйте /start чтобы обновить меню</b>"
+                "🚀 <b>Используй /start чтобы обновить меню</b>"
             ),
             parse_mode="HTML"
         )
@@ -849,7 +849,7 @@ async def callback_back_to_attestations(callback: CallbackQuery, state: FSMConte
             await callback.message.edit_text(
                 "❌ <b>Недостаточно прав</b>\n\n"
                 "У тебя нет прав для проведения аттестаций.\n"
-                "Обратитесь к администратору.",
+                "Обратись к администратору.",
                 parse_mode="HTML"
             )
             return
@@ -918,7 +918,7 @@ async def callback_back_to_attestations(callback: CallbackQuery, state: FSMConte
             f"👨‍💼 <b>Руководитель:</b> {user.full_name}\n"
             f"📊 <b>Всего аттестаций:</b> {len(manager_attestations)}\n\n"
             f"{attestations_display}\n\n"
-            "Выберите стажера для управления аттестацией:",
+            "Выбери стажера для управления аттестацией:",
             reply_markup=keyboard,
             parse_mode="HTML"
         )

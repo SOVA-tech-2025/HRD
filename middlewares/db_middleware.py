@@ -39,7 +39,7 @@ class DatabaseMiddleware(BaseMiddleware):
                 
                 if isinstance(event, Message):
                     try:
-                        await event.answer("Произошла ошибка при обработке запроса. Пожалуйста, попробуйте позже.")
+                        await event.answer("Произошла ошибка при обработке запроса. Пожалуйста, попробуй позже.")
                     except:
                         pass
                 

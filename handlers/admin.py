@@ -70,7 +70,7 @@ async def show_user_list(message: Message, state: FSMContext, session: AsyncSess
     keyboard = get_user_selection_keyboard(users)
     
     await message.answer(
-        "Выберите пользователя для управления:",
+        "Выбери пользователя для управления:",
         reply_markup=keyboard
     )
     
@@ -162,7 +162,7 @@ async def process_change_role(callback: CallbackQuery, state: FSMContext, sessio
     keyboard = get_role_change_keyboard(user.id, roles)
     
     await callback.message.edit_text(
-        f"Выберите новую роль для пользователя {user.full_name}:",
+        f"Выбери новую роль для пользователя {user.full_name}:",
         reply_markup=keyboard
     )
 
@@ -237,7 +237,7 @@ async def process_confirm_role_change(callback: CallbackQuery, state: FSMContext
         await callback.message.edit_text(
             "❌ <b>Недостаточно прав</b>\n\n"
             "У тебя нет прав для изменения ролей пользователей.\n"
-            "Обратитесь к администратору.",
+            "Обратись к администратору.",
             parse_mode="HTML"
         )
         await callback.answer()

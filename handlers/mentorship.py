@@ -125,7 +125,7 @@ async def cmd_my_mentor(message: Message, state: FSMContext, session: AsyncSessi
         await message.answer(
             "👨‍🏫 <b>Информация о наставнике</b>\n\n"
             "У тебя пока не назначен наставник.\n"
-            "Обратитесь к рекрутеру для назначения наставника.",
+            "Обратись к рекрутеру для назначения наставника.",
             parse_mode="HTML"
         )
         return
@@ -162,7 +162,7 @@ async def cmd_mentor_trainees(message: Message, state: FSMContext, session: Asyn
         await message.answer(
             "👥 <b>Твои стажеры</b>\n\n"
             "У тебя пока нет назначенных стажеров.\n"
-            "Обратитесь к рекрутеру для назначения стажеров.",
+            "Обратись к рекрутеру для назначения стажеров.",
             parse_mode="HTML"
         )
         return
@@ -361,7 +361,7 @@ async def process_assignment_confirmation(callback: CallbackQuery, state: FSMCon
             "Произошла ошибка при назначении наставника. Возможные причины:\n"
             "• Стажер уже имеет наставника\n"
             "• Технические проблемы с базой данных\n\n"
-            "Попробуйте еще раз или обратитесь к администратору.",
+            "Попробуй еще раз или обратись к администратору.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🔄 Попробовать еще раз", callback_data="assign_another_mentor")],
@@ -900,7 +900,7 @@ async def cmd_list_unassigned_trainees(message: Message, state: FSMContext, sess
         f"📋 <b>Стажеры без наставника</b>\n\n"
         f"Стажеров без наставника: <b>{len(unassigned_trainees)}</b>\n\n"
         f"{users_list}\n\n"
-        f"💡 <b>Рекомендация:</b> Используйте команду 'Назначить наставника' для назначения наставников этим стажерам.",
+        f"💡 <b>Рекомендация:</b> Используй команду 'Назначить наставника' для назначения наставников этим стажерам.",
         parse_mode="HTML"
     )
     
@@ -1155,7 +1155,7 @@ async def callback_assign_trajectory(callback: CallbackQuery, session: AsyncSess
         await callback.message.edit_text(
             "❌ <b>Ошибка назначения траектории</b>\n\n"
             "Не удалось назначить траекторию стажеру.\n"
-            "Попробуйте позже.",
+            "Попробуй позже.",
             parse_mode="HTML"
         )
 
@@ -1365,7 +1365,7 @@ async def process_my_trainees_callback(callback: CallbackQuery, session: AsyncSe
         await callback.message.edit_text(
             "👥 <b>Твои стажеры</b>\n\n"
             "У тебя пока нет назначенных стажеров.\n"
-            "Обратитесь к рекрутеру для назначения стажеров.",
+            "Обратись к рекрутеру для назначения стажеров.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
@@ -1488,7 +1488,7 @@ async def process_grant_test_access_callback(callback: CallbackQuery, session: A
         await callback.message.edit_text(
             "❌ <b>Недостаточно прав</b>\n\n"
             "У тебя нет прав для предоставления доступа к тестам.\n"
-            "Обратитесь к администратору.",
+            "Обратись к администратору.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
@@ -1504,7 +1504,7 @@ async def process_grant_test_access_callback(callback: CallbackQuery, session: A
         await callback.message.edit_text(
             "❌ <b>Нет стажеров</b>\n\n"
             "У тебя нет назначенных стажеров.\n"
-            "Обратитесь к рекрутеру для назначения стажеров.",
+            "Обратись к рекрутеру для назначения стажеров.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
@@ -1563,7 +1563,7 @@ async def process_my_mentor_info(callback: CallbackQuery, session: AsyncSession)
         await callback.message.edit_text(
             "👨‍🏫 <b>Информация о наставнике</b>\n\n"
             "У тебя пока не назначен наставник.\n"
-            "Обратитесь к администратору или дождитесь назначения.",
+            "Обратись к администратору или дождись назначения.",
             parse_mode="HTML"
         )
         await callback.answer()
@@ -1712,7 +1712,7 @@ async def process_add_test_access(callback: CallbackQuery, state: FSMContext, se
         await callback.message.edit_text(
             "❌ <b>Недостаточно прав</b>\n\n"
             "У тебя нет прав для предоставления доступа к тестам.\n"
-            "Обратитесь к администратору.",
+            "Обратись к администратору.",
             parse_mode="HTML"
         )
         await callback.answer()
@@ -1725,7 +1725,7 @@ async def process_add_test_access(callback: CallbackQuery, state: FSMContext, se
         await callback.message.edit_text(
             "❌ <b>Нет доступных тестов</b>\n\n"
             "В системе пока нет созданных тестов.\n"
-            "Обратитесь к рекрутеру для создания тестов.",
+            "Обратись к рекрутеру для создания тестов.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="⬅️ Назад к стажеру", callback_data=f"trainee:{trainee_id}")]
@@ -1882,7 +1882,7 @@ async def process_back_to_trainees(callback: CallbackQuery, state: FSMContext, s
         await callback.message.edit_text(
             "👥 <b>Твои стажеры</b>\n\n"
             "У тебя пока нет назначенных стажеров.\n"
-            "Обратитесь к рекрутеру для назначения стажеров.",
+            "Обратись к рекрутеру для назначения стажеров.",
             parse_mode="HTML"
         )
         await callback.answer()
@@ -1920,7 +1920,7 @@ async def process_assign_mentor_callback(callback: CallbackQuery, state: FSMCont
         await callback.message.edit_text(
             "❌ <b>Недостаточно прав</b>\n\n"
             "У тебя нет прав для назначения наставников.\n"
-            "Обратитесь к администратору.",
+            "Обратись к администратору.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
@@ -1975,7 +1975,7 @@ async def process_new_trainees_list_callback(callback: CallbackQuery, session: A
         await callback.message.edit_text(
             "❌ <b>Недостаточно прав</b>\n\n"
             "У тебя нет прав для просмотра списка стажёров.\n"
-            "Обратитесь к администратору.",
+            "Обратись к администратору.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
@@ -2016,7 +2016,7 @@ async def process_new_trainees_list_callback(callback: CallbackQuery, session: A
         f"📋 <b>Список новых стажёров</b>\n\n"
         f"Стажёров без наставника: <b>{len(unassigned_trainees)}</b>\n\n"
         f"{users_list}\n\n"
-        f"💡 <b>Рекомендация:</b> Используйте кнопку ниже для назначения наставников этим стажёрам.",
+        f"💡 <b>Рекомендация:</b> Используй кнопку ниже для назначения наставников этим стажёрам.",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="👨‍🏫 Назначить наставника", callback_data="assign_mentor")],
@@ -2047,7 +2047,7 @@ async def callback_assign_trajectory(callback: CallbackQuery, state: FSMContext,
             await callback.message.edit_text(
                 "👥 <b>Твои стажеры</b>\n\n"
                 "У тебя пока нет назначенных стажеров.\n"
-                "Обратитесь к рекрутеру для назначения стажеров.",
+                "Обратись к рекрутеру для назначения стажеров.",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
@@ -2228,7 +2228,7 @@ async def callback_confirm_trajectory_assignment(callback: CallbackQuery, state:
             await callback.message.edit_text(
                     "❌ <b>Ошибка назначения траектории</b>\n\n"
                     "Произошла ошибка при назначении траектории.\n"
-                    "Попробуйте позже или обратитесь к администратору.",
+                    "Попробуй позже или обратись к администратору.",
                 parse_mode="HTML"
             )
             log_user_error(mentor_id, "trajectory_assignment_failed", f"Ошибка назначения траектории {trajectory_id} стажеру {trainee_id}")
@@ -2565,7 +2565,7 @@ async def callback_open_stage(callback: CallbackQuery, state: FSMContext, sessio
             await callback.message.edit_text(
                 "❌ <b>Ошибка открытия этапа</b>\n\n"
                 "Произошла ошибка при открытии этапа.\n"
-                "Попробуйте позже или обратитесь к администратору.",
+                "Попробуй позже или обратись к администратору.",
                 parse_mode="HTML"
             )
             log_user_error(callback.from_user.id, "stage_open_failed", f"Ошибка открытия этапа {stage_id} для стажера {trainee_id}")
@@ -2958,7 +2958,7 @@ async def callback_view_trainee_attestation(callback: CallbackQuery, state: FSMC
         if not managers:
             await callback.message.edit_text(
                 "❌ Нет доступных руководителей для проведения аттестации.\n"
-                "Обратитесь к администратору."
+                "Обратись к администратору."
             )
             return
         

@@ -180,7 +180,7 @@ async def cmd_trajectory(message: Message, state: FSMContext, session: AsyncSess
         keyboard_buttons = []
 
         if available_stages:
-            stages_info += "Выберите этап траектории👇"
+            stages_info += "Выбери этап траектории👇"
             for stage_progress in available_stages:
                 keyboard_buttons.append([
                     InlineKeyboardButton(
@@ -330,7 +330,7 @@ async def callback_trajectory_command(callback: CallbackQuery, state: FSMContext
         keyboard_buttons = []
 
         if available_stages:
-            stages_info += "Выберите этап траектории👇"
+            stages_info += "Выбери этап траектории👇"
             for stage_progress in available_stages:
                 keyboard_buttons.append([
                     InlineKeyboardButton(
@@ -480,7 +480,7 @@ async def callback_select_stage(callback: CallbackQuery, state: FSMContext, sess
         # Создаем клавиатуру с доступными сессиями согласно ТЗ
         keyboard_buttons = []
 
-        full_trajectory_info += "Выберите сессию в этапе\n\n"
+        full_trajectory_info += "Выбери сессию в этапе\n\n"
 
         if available_sessions:
             for session_progress in available_sessions:
@@ -914,7 +914,7 @@ async def callback_show_materials(callback: CallbackQuery, state: FSMContext, se
 
         if test.material_link:
             materials_info += f"📎 <b>Ссылка на материалы:</b>\n{test.material_link}\n\n"
-            materials_info += "💡 Изучите материалы перед прохождением теста"
+            materials_info += "💡 Изучи материалы перед прохождением теста"
         else:
             materials_info += "❌ Материалы для этого теста отсутствуют"
 
@@ -1050,7 +1050,7 @@ async def callback_contact_mentor(callback: CallbackQuery, state: FSMContext, se
             await callback.message.edit_text(
                 "❌ <b>Наставник не назначен</b>\n\n"
                 "Тебе еще не назначен наставник.\n"
-                "Обратитесь к рекрутеру для назначения наставника.",
+                "Обратись к рекрутеру для назначения наставника.",
                 parse_mode="HTML"
             )
             return
@@ -1062,7 +1062,7 @@ async def callback_contact_mentor(callback: CallbackQuery, state: FSMContext, se
 📞 <b>Телефон:</b> {mentor.phone_number}
 👤 <b>Username:</b> @{mentor.username or 'не указан'}
 
-💬 <b>Свяжитесь с наставником для назначения траектории обучения</b>"""
+💬 <b>Свяжись с наставником для назначения траектории обучения</b>"""
         
         await callback.message.edit_text(
             mentor_info,
