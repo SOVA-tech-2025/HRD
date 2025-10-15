@@ -607,26 +607,6 @@ async def get_users_by_role(session: AsyncSession, role_name: str) -> List[User]
         logger.error(f"Ошибка получения пользователей с ролью {role_name}: {e}")
         return []
 
-async def delete_user(session: AsyncSession, user_id: int) -> bool:
-    """Удаление пользователя из системы"""
-
-    try:
-        await session.execute(
-            delete(user_roles).where(user_roles.c.user_id == user_id)
-        )
-        
-        await session.execute(
-            delete(User).where(User.id == user_id)
-        )
-        
-        await session.commit()
-        return True
-    except Exception as e:
-        logger.error(f"Ошибка удаления пользователя {user_id}: {e}")
-        await session.rollback()
-        return False
-
-
 # ========== ФУНКЦИИ ДЛЯ АКТИВАЦИИ ПОЛЬЗОВАТЕЛЕЙ ==========
 
 async def get_unactivated_users(session: AsyncSession) -> List[User]:
@@ -1420,6 +1400,7 @@ async def create_test(session: AsyncSession, test_data: dict) -> Optional[Test]:
             max_score=max(0, test_data.get('max_score', 0)),
             material_link=material_link,
             material_file_path=test_data.get('material_file_path'),
+            material_type=test_data.get('material_type'),
             stage_id=test_data.get('stage_id'),
             creator_id=test_data['creator_id']
         )
@@ -1474,8 +1455,8 @@ async def update_test(session: AsyncSession, test_id: int, update_data: dict) ->
     """Обновление теста"""
     try:
         valid_fields = ['name', 'description', 'threshold_score', 'max_score', 
-                       'material_link', 'material_file_path', 'stage_id', 
-                       'shuffle_questions', 'max_attempts']
+                       'material_link', 'material_file_path', 'material_type', 
+                       'stage_id', 'shuffle_questions', 'max_attempts']
         update_values = {k: v for k, v in update_data.items() if k in valid_fields}
         
         if not update_values:
@@ -3932,6 +3913,56 @@ async def migrate_new_tables():
                 logger.info("✅ Столбец role_assigned_date добавлен в таблицу users")
             except Exception as e:
                 logger.info(f"Столбец role_assigned_date уже существует или ошибка: {e}")
+            
+            # Миграция: делаем поля создателя nullable для корректного удаления пользователей
+            try:
+                await conn.execute(text("ALTER TABLE groups ALTER COLUMN created_by_id DROP NOT NULL"))
+                logger.info("✅ groups.created_by_id теперь nullable")
+            except Exception as e:
+                logger.info(f"groups.created_by_id уже nullable или ошибка: {e}")
+                
+            try:
+                await conn.execute(text("ALTER TABLE objects ALTER COLUMN created_by_id DROP NOT NULL"))
+                logger.info("✅ objects.created_by_id теперь nullable")
+            except Exception as e:
+                logger.info(f"objects.created_by_id уже nullable или ошибка: {e}")
+                
+            try:
+                await conn.execute(text("ALTER TABLE tests ALTER COLUMN creator_id DROP NOT NULL"))
+                logger.info("✅ tests.creator_id теперь nullable")
+            except Exception as e:
+                logger.info(f"tests.creator_id уже nullable или ошибка: {e}")
+                
+            try:
+                await conn.execute(text("ALTER TABLE learning_paths ALTER COLUMN created_by_id DROP NOT NULL"))
+                logger.info("✅ learning_paths.created_by_id теперь nullable")
+            except Exception as e:
+                logger.info(f"learning_paths.created_by_id уже nullable или ошибка: {e}")
+                
+            try:
+                await conn.execute(text("ALTER TABLE attestations ALTER COLUMN created_by_id DROP NOT NULL"))
+                logger.info("✅ attestations.created_by_id теперь nullable")
+            except Exception as e:
+                logger.info(f"attestations.created_by_id уже nullable или ошибка: {e}")
+                
+            try:
+                await conn.execute(text("ALTER TABLE knowledge_folders ALTER COLUMN created_by_id DROP NOT NULL"))
+                logger.info("✅ knowledge_folders.created_by_id теперь nullable")
+            except Exception as e:
+                logger.info(f"knowledge_folders.created_by_id уже nullable или ошибка: {e}")
+                
+            try:
+                await conn.execute(text("ALTER TABLE knowledge_materials ALTER COLUMN created_by_id DROP NOT NULL"))
+                logger.info("✅ knowledge_materials.created_by_id теперь nullable")
+            except Exception as e:
+                logger.info(f"knowledge_materials.created_by_id уже nullable или ошибка: {e}")
+            
+            # Миграция: добавляем поле material_type для тестов
+            try:
+                await conn.execute(text("ALTER TABLE tests ADD COLUMN IF NOT EXISTS material_type VARCHAR(20)"))
+                logger.info("✅ tests.material_type добавлен")
+            except Exception as e:
+                logger.info(f"tests.material_type уже существует или ошибка: {e}")
                 
         logger.info("✅ Миграция новых таблиц для траекторий ЗАВЕРШЕНА УСПЕШНО")
     except Exception as e:

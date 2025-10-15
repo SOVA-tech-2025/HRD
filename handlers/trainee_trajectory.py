@@ -32,16 +32,44 @@ async def format_trajectory_info(user, trainee_path=None, header="ВЫБОР Э�
             "Обратись к своему наставнику для назначения траектории, пока курс не выбран"
         )
     
-    return (
-        f"🗺️<b>ТРАЕКТОРИЯ</b>🗺️\n"
-        f"<b>{header}</b>\n"
-        f"🧑 <b>ФИО:</b> {user.full_name}\n"
-        f"👑 <b>Роли:</b> {', '.join([role.name for role in user.roles]) if user.roles else 'Не указаны'}\n"
-        f"🗂️<b>Группа:</b> {', '.join([group.name for group in user.groups]) if user.groups else 'Не указана'}\n"
-        f"📍<b>1️⃣Объект стажировки:</b> {user.internship_object.name if user.internship_object else 'Не указан'}\n"
-        f"📍<b>2️⃣Объект работы:</b> {user.work_object.name if user.work_object else 'Не указан'}\n\n"
-        f"📚<b>Название траектории:</b> {trainee_path.learning_path.name if trainee_path.learning_path else 'Не найдена'}\n\n"
-    )
+    # Форматирование username
+    username_display = f"@{user.username}" if user.username else "Не указан"
+    
+    # Получаем роль и группу
+    primary_role = user.roles[0].name if user.roles else "Не указана"
+    group_name = user.groups[0].name if user.groups else "Не указана"
+    
+    # Объекты
+    internship_obj = user.internship_object.name if user.internship_object else "Не указан"
+    work_obj = user.work_object.name if user.work_object else "Не указан"
+    
+    return f"""🗺️ <b>ТРАЕКТОРИЯ ОБУЧЕНИЯ</b> 🗺️
+<b>{header}</b>
+
+🦸🏻‍♂️ <b>Пользователь:</b> {user.full_name}
+
+<b>Телефон:</b> {user.phone_number}
+<b>Username:</b> {username_display}
+<b>Номер:</b> #{user.id}
+<b>Дата регистрации:</b> {user.registration_date.strftime('%d.%m.%Y %H:%M')}
+
+━━━━━━━━━━━━
+
+🗂️ <b>Статус:</b>
+<b>Группа:</b> {group_name}
+<b>Роль:</b> {primary_role}
+
+━━━━━━━━━━━━
+
+📍 <b>Объект:</b>
+<b>Стажировки:</b> {internship_obj}
+<b>Работы:</b> {work_obj}
+
+━━━━━━━━━━━━
+
+<b>Название траектории:</b> {trainee_path.learning_path.name if trainee_path.learning_path else 'Не найдена'}
+
+"""
 
 
 @router.message(Command("trajectory"))
@@ -685,6 +713,20 @@ async def callback_take_test(callback: CallbackQuery, state: FSMContext, session
         # Формат с 2 частями (из уведомлений) должен обрабатываться в test_taking.py
         if len(parts) != 3:
             return
+        
+        # Удаляем медиа-файл с материалами, если он был отправлен
+        data = await state.get_data()
+        if 'material_message_id' in data:
+            try:
+                await callback.bot.delete_message(
+                    chat_id=callback.message.chat.id,
+                    message_id=data['material_message_id']
+                )
+            except Exception:
+                pass  # Сообщение уже удалено или недоступно
+        
+        # Очищаем сохраненные message_id
+        await state.update_data(material_message_id=None, material_text_message_id=None)
             
         session_id = int(parts[1])
         test_id = int(parts[2])
@@ -698,19 +740,13 @@ async def callback_take_test(callback: CallbackQuery, state: FSMContext, session
             return
 
         # Формируем информацию о тесте
-        test_info = (
-            f"📋 <b>Информация о тесте</b>\n\n"
-            f"📌 <b>Название:</b> {test.name}\n"
-            f"📝 <b>Описание:</b> {test.description or 'Не указано'}\n"
-            f"❓ <b>Количество вопросов:</b> {len(test.questions) if test.questions else 0}\n"
-            f"🎯 <b>Порог:</b> {test.threshold_score}/{test.max_score} баллов\n"
-        )
+        test_info = f"""📌 <b>{test.name}</b>
 
-        if test.material_link:
-            material_display = test.material_link.replace("Файл: ", "") if test.material_link else ""
-            test_info += f"📚 <b>Материалы для изучения:</b>\n{material_display}\n\n"
-        else:
-            test_info += "📚 <b>Материалы:</b> Отсутствуют\n\n"
+<b>Порог:</b> {test.threshold_score}/{test.max_score} баллов
+
+{test.description or 'Описание отсутствует'}
+
+Если есть сомнения по теме, сначала прочти прикреплённые обучающие материалы, а потом переходи к тесту"""
 
         # Клавиатура действий
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -907,29 +943,76 @@ async def callback_show_materials(callback: CallbackQuery, state: FSMContext, se
             await callback.message.edit_text("Тест не найден")
             return
 
-        materials_info = (
-            f"📚 <b>Материалы для изучения</b>\n\n"
-            f"📌 <b>Тест:</b> {test.name}\n\n"
-        )
+        # Если материалов нет
+        if not test.material_link:
+            await callback.message.edit_text(
+                "📚 <b>Материалы для изучения</b>\n\n"
+                "К этому тесту не прикреплены материалы.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="▶️ Начать тест", callback_data=f"start_test:{test_id}")],
+                    [InlineKeyboardButton(text="⬅️ Назад к тесту", callback_data=f"take_test:{session_id}:{test_id}")]
+                ])
+            )
+            return
 
-        if test.material_link:
-            materials_info += f"📎 <b>Ссылка на материалы:</b>\n{test.material_link}\n\n"
-            materials_info += "💡 Изучи материалы перед прохождением теста"
+        # Если есть файл - отправляем по типу (используем file_id)
+        if test.material_file_path:
+            try:
+                if test.material_type == "photo":
+                    sent_media = await callback.bot.send_photo(
+                        chat_id=callback.message.chat.id,
+                        photo=test.material_file_path  # file_id
+                    )
+                elif test.material_type == "video":
+                    sent_media = await callback.bot.send_video(
+                        chat_id=callback.message.chat.id,
+                        video=test.material_file_path  # file_id
+                    )
+                else:
+                    sent_media = await callback.bot.send_document(
+                        chat_id=callback.message.chat.id,
+                        document=test.material_file_path  # file_id
+                    )
+                
+                # Сохраняем message_id медиа-файла для последующего удаления
+                await state.update_data(material_message_id=sent_media.message_id)
+
+                # Отправляем кнопки отдельно
+                sent_text = await callback.message.answer(
+                    "📎 Материал отправлен выше.",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="▶️ Начать тест", callback_data=f"start_test:{test_id}")],
+                        [InlineKeyboardButton(text="⬅️ Назад к тесту", callback_data=f"take_test:{session_id}:{test_id}")]
+                    ])
+                )
+                # Сохраняем message_id текстового сообщения
+                await state.update_data(material_text_message_id=sent_text.message_id)
+            except Exception as e:
+                # Ошибка отправки файла
+                await callback.message.edit_text(
+                    f"❌ <b>Ошибка загрузки файла</b>\n\n"
+                    f"Не удалось загрузить материал.\n\n"
+                    f"📌 <b>Тест:</b> {test.name}",
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="▶️ Начать тест", callback_data=f"start_test:{test_id}")],
+                        [InlineKeyboardButton(text="⬅️ Назад к тесту", callback_data=f"take_test:{session_id}:{test_id}")]
+                    ])
+                )
         else:
-            materials_info += "❌ Материалы для этого теста отсутствуют"
-
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text="▶️ Начать тест", callback_data=f"start_test:{test_id}"),
-                InlineKeyboardButton(text="⬅️ Назад к тесту", callback_data=f"take_test:{session_id}:{test_id}")
-            ]
-        ])
-
-        await callback.message.edit_text(
-            materials_info,
-            reply_markup=keyboard,
-            parse_mode="HTML"
-        )
+            # Если это ссылка
+            await callback.message.edit_text(
+                f"📚 <b>Материалы для изучения</b>\n\n"
+                f"📌 <b>Тест:</b> {test.name}\n\n"
+                f"🔗 <b>Ссылка:</b>\n{test.material_link}\n\n"
+                f"💡 Изучи материалы перед прохождением теста!",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="▶️ Начать тест", callback_data=f"start_test:{test_id}")],
+                    [InlineKeyboardButton(text="⬅️ Назад к тесту", callback_data=f"take_test:{session_id}:{test_id}")]
+                ])
+            )
 
         log_user_action(callback.from_user.id, "materials_viewed", f"Просмотрены материалы для теста {test.name}")
 

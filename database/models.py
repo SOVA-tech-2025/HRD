@@ -113,7 +113,7 @@ class Group(Base):
     
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
-    created_by_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    created_by_id = Column(Integer, ForeignKey('users.id'), nullable=True)  # Было: nullable=False
     created_date = Column(DateTime, default=datetime.now)
     is_active = Column(Boolean, default=True)
     
@@ -132,7 +132,7 @@ class Object(Base):
     
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
-    created_by_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    created_by_id = Column(Integer, ForeignKey('users.id'), nullable=True)  # Было: nullable=False
     created_date = Column(DateTime, default=datetime.now)
     is_active = Column(Boolean, default=True)
     
@@ -185,8 +185,9 @@ class Test(Base):
     max_score = Column(Float, nullable=False, default=0)
     material_link = Column(String, nullable=True)
     material_file_path = Column(String, nullable=True)
+    material_type = Column(String, nullable=True)  # 'photo' или 'document'
     stage_id = Column(Integer, ForeignKey('internship_stages.id'), nullable=True)
-    creator_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    creator_id = Column(Integer, ForeignKey('users.id'), nullable=True)  # Было: nullable=False
     created_date = Column(DateTime, default=datetime.now)
     is_active = Column(Boolean, default=True)
     
@@ -307,7 +308,7 @@ class LearningPath(Base):
     description = Column(Text, nullable=True)
     group_id = Column(Integer, ForeignKey('groups.id'), nullable=False)  # Группа, для которой предназначена
     attestation_id = Column(Integer, ForeignKey('attestations.id'), nullable=True)  # Аттестация траектории
-    created_by_id = Column(Integer, ForeignKey('users.id'), nullable=False)  # Рекрутер-создатель
+    created_by_id = Column(Integer, ForeignKey('users.id'), nullable=True)  # Рекрутер-создатель, было: nullable=False
     created_date = Column(DateTime, default=datetime.now)
     is_active = Column(Boolean, default=True)
     
@@ -374,7 +375,7 @@ class Attestation(Base):
     description = Column(Text, nullable=True)
     passing_score = Column(Float, nullable=False)  # Проходной балл
     max_score = Column(Float, nullable=False, default=0)  # Максимальный балл (сумма всех вопросов)
-    created_by_id = Column(Integer, ForeignKey('users.id'), nullable=False)  # Рекрутер-создатель
+    created_by_id = Column(Integer, ForeignKey('users.id'), nullable=True)  # Рекрутер-создатель, было: nullable=False
     created_date = Column(DateTime, default=datetime.now)
     is_active = Column(Boolean, default=True)
     
@@ -586,7 +587,7 @@ class KnowledgeFolder(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)  # Название папки
     description = Column(Text, nullable=True)  # Описание папки
-    created_by_id = Column(Integer, ForeignKey('users.id'), nullable=False)  # Рекрутер-создатель
+    created_by_id = Column(Integer, ForeignKey('users.id'), nullable=True)  # Рекрутер-создатель, было: nullable=False
     created_date = Column(DateTime, default=datetime.now)
     is_active = Column(Boolean, default=True)
     
@@ -612,7 +613,7 @@ class KnowledgeMaterial(Base):
     content = Column(String, nullable=False)  # Путь к файлу или URL ссылки
     photos = Column(JSONB, nullable=True)  # Список file_id фотографий (опционально)
     order_number = Column(Integer, nullable=False, default=1)  # Порядок материала в папке
-    created_by_id = Column(Integer, ForeignKey('users.id'), nullable=False)  # Рекрутер-создатель
+    created_by_id = Column(Integer, ForeignKey('users.id'), nullable=True)  # Рекрутер-создатель, было: nullable=False
     created_date = Column(DateTime, default=datetime.now)
     is_active = Column(Boolean, default=True)
 

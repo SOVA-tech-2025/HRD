@@ -19,6 +19,7 @@ from database.db import (
     get_user_mentor
 )
 from handlers.mentorship import get_days_word
+from handlers.trainee_trajectory import format_trajectory_info
 from database.models import InternshipStage, TestResult
 from sqlalchemy import select
 from keyboards.keyboards import get_simple_test_selection_keyboard, get_test_start_keyboard, get_test_selection_for_taking_keyboard, get_mentor_contact_keyboard
@@ -396,52 +397,13 @@ async def process_test_selection_for_taking(callback: CallbackQuery, state: FSMC
     # Проверяем, есть ли уже результат
     existing_result = await get_user_test_result(session, user.id, test_id)
     
-    # Получаем информацию о тесте
-    questions = await get_test_questions(session, test_id)
-    questions_count = len(questions)
-    
-    stage_info = ""
-    if test.stage_id:
-        stage = await session.execute(select(InternshipStage).where(InternshipStage.id == test.stage_id))
-        stage_obj = stage.scalar_one_or_none()
-        if stage_obj:
-            stage_info = f"🎯 <b>Этап:</b> {stage_obj.name}\n"
-    
-    materials_info = ""
-    if test.material_link:
-        if test.material_file_path:
-            # Если есть прикрепленный файл
-            material_display = test.material_link.replace("Файл: ", "") if test.material_link else ""
-            materials_info = f"📚 <b>Материалы для изучения:</b>\n🔗 {material_display}\n\n"
-        else:
-            # Если это ссылка
-            materials_info = f"📚 <b>Материалы для изучения:</b>\n{test.material_link}\n\n"
-    
-    # Информация о попытках
-    attempts_info = ""
-    if test.max_attempts > 0:
-        attempts_info = f"🔢 <b>Попытки:</b> {attempts_count}/{test.max_attempts}\n"
-    else:
-        attempts_info = f"♾️ <b>Попытки:</b> бесконечно (текущая: {attempts_count + 1})\n"
-    
-    previous_result_info = ""
-    if existing_result:
-        status = "пройден" if existing_result.is_passed else "не пройден"
-        previous_result_info = f"""
-🔄 <b>Предыдущий результат:</b>
-   • Статус: {status}
-   • Баллы: {existing_result.score}/{existing_result.max_possible_score}
-   • Дата: {existing_result.created_date.strftime('%d.%m.%Y %H:%M')}
+    test_info = f"""📌 <b>{test.name}</b>
 
-"""
-    
-    test_info = f"""📋 <b>Информация о тесте</b>
+<b>Порог:</b> {test.threshold_score}/{test.max_score} баллов
 
-📌 <b>Название:</b> {test.name}
-📝 <b>Описание:</b> {test.description or 'Не указано'}
-{stage_info}❓ <b>Количество вопросов:</b> {questions_count}
-🎯 <b>Порог:</b> {test.threshold_score}/{test.max_score} баллов
-{attempts_info}{materials_info}{previous_result_info}"""
+{test.description or 'Описание отсутствует'}
+
+Если есть сомнения по теме, сначала прочти прикреплённые обучающие материалы, а потом переходи к тесту"""
     
     await callback.message.edit_text(
         test_info,
@@ -1068,23 +1030,35 @@ async def process_view_materials(callback: CallbackQuery, state: FSMContext, ses
     if test.material_file_path:
         # Если есть прикрепленный файл - отправляем его
         try:
-            await callback.message.answer_document(
-                document=test.material_file_path,
-                caption=f"📚 <b>Материалы для изучения</b>\n\n"
-                       f"📌 <b>Тест:</b> {test.name}\n\n"
-                       f"💡 <b>Рекомендация:</b> Внимательно изучите материалы перед прохождением теста!",
-                parse_mode="HTML"
-            )
-            await callback.message.edit_text(
-                f"✅ <b>Материалы отправлены!</b>\n\n"
-                f"📌 <b>Тест:</b> {test.name}\n\n"
-                f"📎 Документ с материалами отправлен выше.",
-                parse_mode="HTML",
+            # Определяем тип и используем правильный метод
+            if test.material_type == "photo":
+                sent_media = await callback.bot.send_photo(
+                    chat_id=callback.message.chat.id,
+                    photo=test.material_file_path
+                )
+            elif test.material_type == "video":
+                sent_media = await callback.bot.send_video(
+                    chat_id=callback.message.chat.id,
+                    video=test.material_file_path
+                )
+            else:
+                sent_media = await callback.bot.send_document(
+                    chat_id=callback.message.chat.id,
+                    document=test.material_file_path
+                )
+            
+            # Сохраняем message_id медиа-файла для последующего удаления
+            await state.update_data(material_message_id=sent_media.message_id)
+            
+            sent_text = await callback.message.answer(
+                "📎 Материал отправлен выше.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="⬅️ Назад к тесту", callback_data=f"take_test:{test_id}")],
                     [InlineKeyboardButton(text="📋 К списку тестов", callback_data="back_to_test_list")]
                 ])
             )
+            # Сохраняем message_id текстового сообщения
+            await state.update_data(material_text_message_id=sent_text.message_id)
         except Exception as e:
             await callback.message.edit_text(
                 f"❌ <b>Ошибка загрузки файла</b>\n\n"
@@ -1269,6 +1243,20 @@ async def process_take_test_from_notification(callback: CallbackQuery, state: FS
     """Обработчик кнопки 'Перейти к тесту' из уведомления"""
     parts = callback.data.split(':')
     
+    # Удаляем медиа-файл с материалами, если он был отправлен
+    data = await state.get_data()
+    if 'material_message_id' in data:
+        try:
+            await callback.bot.delete_message(
+                chat_id=callback.message.chat.id,
+                message_id=data['material_message_id']
+            )
+        except Exception:
+            pass  # Сообщение уже удалено или недоступно
+    
+    # Очищаем сохраненные message_id
+    await state.update_data(material_message_id=None, material_text_message_id=None)
+    
     # Поддерживаем два формата:
     # take_test:{test_id} - из уведомлений
     # take_test:{session_id}:{test_id} - из траектории (обрабатывается в trainee_trajectory.py)
@@ -1311,52 +1299,13 @@ async def process_take_test_from_notification(callback: CallbackQuery, state: FS
     # Проверяем, есть ли уже результат
     existing_result = await get_user_test_result(session, user.id, test_id)
     
-    # Получаем информацию о тесте
-    questions = await get_test_questions(session, test_id)
-    questions_count = len(questions)
-    
-    stage_info = ""
-    if test.stage_id:
-        stage = await session.execute(select(InternshipStage).where(InternshipStage.id == test.stage_id))
-        stage_obj = stage.scalar_one_or_none()
-        if stage_obj:
-            stage_info = f"🎯 <b>Этап:</b> {stage_obj.name}\n"
-    
-    materials_info = ""
-    if test.material_link:
-        if test.material_file_path:
-            # Если есть прикрепленный файл
-            material_display = test.material_link.replace("Файл: ", "") if test.material_link else ""
-            materials_info = f"📚 <b>Материалы для изучения:</b>\n🔗 {material_display}\n\n"
-        else:
-            # Если это ссылка
-            materials_info = f"📚 <b>Материалы для изучения:</b>\n{test.material_link}\n\n"
-    
-    # Информация о попытках
-    attempts_info = ""
-    if test.max_attempts > 0:
-        attempts_info = f"🔢 <b>Попытки:</b> {attempts_count}/{test.max_attempts}\n"
-    else:
-        attempts_info = f"♾️ <b>Попытки:</b> бесконечно (текущая: {attempts_count + 1})\n"
-    
-    previous_result_info = ""
-    if existing_result:
-        status = "пройден" if existing_result.is_passed else "не пройден"
-        previous_result_info = f"""
-🔄 <b>Предыдущий результат:</b>
-   • Статус: {status}
-   • Баллы: {existing_result.score}/{existing_result.max_possible_score}
-   • Дата: {existing_result.created_date.strftime('%d.%m.%Y %H:%M')}
+    test_info = f"""📌 <b>{test.name}</b>
 
-"""
-    
-    test_info = f"""📋 <b>Информация о тесте</b>
+<b>Порог:</b> {test.threshold_score}/{test.max_score} баллов
 
-📌 <b>Название:</b> {test.name}
-📝 <b>Описание:</b> {test.description or 'Не указано'}
-{stage_info}❓ <b>Количество вопросов:</b> {questions_count}
-🎯 <b>Порог:</b> {test.threshold_score}/{test.max_score} баллов
-{attempts_info}{materials_info}{previous_result_info}"""
+{test.description or 'Описание отсутствует'}
+
+Если есть сомнения по теме, сначала прочти прикреплённые обучающие материалы, а потом переходи к тесту"""
     
     await callback.message.edit_text(
         test_info,
@@ -1763,16 +1712,7 @@ async def callback_trajectory_from_test(callback: CallbackQuery, state: FSMConte
         stages_progress = await get_trainee_stage_progress(session, trainee_path.id)
 
         # Формируем информацию о траектории
-        trajectory_info = (
-            f"🗺️<b>ТРАЕКТОРИЯ</b>🗺️\n"
-            f"<b>ВЫБОР ЭТАПА</b>\n"
-            f"🧑 <b>ФИО:</b> {user.full_name}\n"
-            f"👑 <b>Роли:</b> {', '.join([role.name for role in user.roles]) if user.roles else 'Не указаны'}\n"
-            f"🗂️<b>Группа:</b> {', '.join([group.name for group in user.groups]) if user.groups else 'Не указана'}\n"
-        f"📍<b>1️⃣Объект стажировки:</b> {user.internship_object.name if user.internship_object else 'Не указан'}\n"
-        f"📍<b>2️⃣Объект работы:</b> {user.work_object.name if user.work_object else 'Не указан'}\n\n"
-        f"📚<b>Название траектории:</b> {trainee_path.learning_path.name if trainee_path.learning_path else 'Не найдена'}\n\n"
-        )
+        trajectory_info = await format_trajectory_info(user, trainee_path)
 
         # Формируем информацию об этапах
         stages_info = ""

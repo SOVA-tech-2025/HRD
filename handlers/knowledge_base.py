@@ -4,16 +4,12 @@
 """
 
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, Document, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from aiogram.types import Message, CallbackQuery, Document, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 import os
-import aiofiles
-import uuid
-from pathlib import Path
-import tempfile
 
 from database.db import (
     get_user_by_tg_id, check_user_permission,
@@ -44,77 +40,6 @@ router = Router()
 # ===============================
 # Вспомогательные функции
 # ===============================
-
-async def download_and_save_file(bot, file_id: str, filename: str, max_file_size: int = 50 * 1024 * 1024) -> Optional[str]:
-    """
-    Скачивает файл с Telegram серверов и сохраняет в локальную файловую систему.
-    Оптимизировано для production использования.
-
-    Args:
-        bot: Экземпляр бота для скачивания файла
-        file_id: ID файла в Telegram
-        filename: Имя файла для сохранения
-        max_file_size: Максимальный размер файла в байтах (по умолчанию 50MB)
-
-    Returns:
-        str: Путь к сохраненному файлу или None при ошибке
-    """
-    try:
-        # Получаем информацию о файле перед скачиванием
-        file_info = await bot.get_file(file_id)
-
-        # Проверяем размер файла
-        if file_info.file_size > max_file_size:
-            logger.error(f"Файл {filename} слишком большой: {file_info.file_size} байт (макс: {max_file_size})")
-            return None
-
-        # Создаем папку для хранения файлов базы знаний
-        # Используем абсолютный путь относительно корня проекта
-        base_dir = Path(__file__).parent.parent  # Корень проекта
-        upload_dir = base_dir / "uploads" / "knowledge_base"
-        upload_dir.mkdir(parents=True, exist_ok=True)
-
-        # Генерируем уникальное имя файла с проверкой расширения
-        original_extension = Path(filename).suffix.lower()
-
-        # Разрешенные расширения для безопасности
-        allowed_extensions = {
-            '.pdf', '.doc', '.docx', 
-            '.xls', '.xlsx', 
-            '.ppt', '.pptx',
-            '.jpg', '.jpeg', '.png', '.gif', '.webp',
-            '.txt', '.rtf', '.odt'
-        }
-
-        if original_extension not in allowed_extensions:
-            logger.error(f"Недопустимое расширение файла: {original_extension}")
-            return None
-
-        # Создаем уникальное имя файла, сохраняя оригинальное название для удобства
-        base_name = Path(filename).stem  # Имя файла без расширения
-        unique_suffix = str(uuid.uuid4())[:8]  # Короткий уникальный суффикс
-        unique_filename = f"{base_name}_{unique_suffix}{original_extension}"
-        file_path = upload_dir / unique_filename
-
-        # Скачиваем файл
-        file_bytes = await bot.download_file(file_info.file_path)
-
-        # Дополнительная проверка размера после скачивания
-        if len(file_bytes.getvalue()) > max_file_size:
-            logger.error(f"Файл {filename} превысил допустимый размер после скачивания")
-            return None
-
-        # Сохраняем файл
-        async with aiofiles.open(file_path, 'wb') as f:
-            await f.write(file_bytes.getvalue())
-
-        # Возвращаем относительный путь для хранения в БД
-        return f"uploads/knowledge_base/{unique_filename}"
-
-    except Exception as e:
-        logger.error(f"Ошибка при загрузке файла {filename}: {e}")
-        return None
-
 
 # ===============================
 # Обработчики для рекрутера и сотрудника (база знаний)
@@ -406,7 +331,9 @@ async def process_material_content(message: Message, state: FSMContext, session:
                 'image/jpeg', 'image/png', 'image/gif', 'image/webp',
                 'text/plain',  # .txt
                 'application/rtf',  # .rtf
-                'application/vnd.oasis.opendocument.text'  # .odt
+                'application/vnd.oasis.opendocument.text',  # .odt
+                'video/mp4',  # .mp4
+                'video/quicktime'  # .mov
             }
             
             if message.document.mime_type in allowed_mimes:
@@ -416,33 +343,40 @@ async def process_material_content(message: Message, state: FSMContext, session:
                     await message.answer(f"❌ Файл слишком большой. Максимальный размер: {max_size // (1024*1024)}MB")
                     return
 
-                # Загружаем и сохраняем файл
-                await message.answer("📥 Загружаю документ...")
-                saved_file_path = await download_and_save_file(message.bot, message.document.file_id, message.document.file_name)
-
-                if saved_file_path:
-                    material_content = saved_file_path
-                    # Определяем тип материала по расширению
-                    ext = Path(message.document.file_name).suffix.lower()
-                    if ext in {'.jpg', '.jpeg', '.png', '.gif', '.webp'}:
-                        material_type = "image"
-                    elif ext in {'.xls', '.xlsx'}:
-                        material_type = "excel"
-                    elif ext in {'.ppt', '.pptx'}:
-                        material_type = "presentation"
-                    elif ext in {'.doc', '.docx'}:
-                        material_type = "document"
-                    else:
-                        material_type = "pdf"
-                    await message.answer("✅ Документ успешно загружен и сохранен!")
+                # Сохраняем file_id (как в тестах)
+                material_content = message.document.file_id
+                # Определяем тип материала по расширению
+                ext = os.path.splitext(message.document.file_name)[1].lower()
+                if ext in {'.jpg', '.jpeg', '.png', '.gif', '.webp'}:
+                    material_type = "photo"
+                elif ext in {'.mp4', '.mov'}:
+                    material_type = "video"
+                elif ext in {'.xls', '.xlsx'}:
+                    material_type = "excel"
+                elif ext in {'.ppt', '.pptx'}:
+                    material_type = "presentation"
+                elif ext in {'.doc', '.docx'}:
+                    material_type = "document"
                 else:
-                    await message.answer("❌ Ошибка при загрузке документа. Проверь размер файла и тип.")
-                    return
+                    material_type = "pdf"
+                await message.answer("✅ Документ успешно добавлен!")
             else:
                 await message.answer(
                     "❌ Неподдерживаемый формат файла."
                 )
                 return
+        elif message.photo:
+            # Пользователь отправил фото напрямую
+            photo_file_id = message.photo[-1].file_id
+            material_content = photo_file_id
+            material_type = "photo"
+            await message.answer("✅ Изображение добавлено!")
+        elif message.video:
+            # Пользователь отправил видео напрямую
+            video_file_id = message.video.file_id
+            material_content = video_file_id
+            material_type = "video"
+            await message.answer("✅ Видео добавлено!")
         elif message.text:
             # Ссылка
             material_content = message.text.strip()
@@ -930,32 +864,24 @@ async def callback_view_material(callback: CallbackQuery, state: FSMContext, ses
             )
 
         # Затем отправляем файл
-        if material.material_type != "link" and material.material_type != "photo":
+        if material.material_type != "link":
             try:
-                # Определяем полный путь к файлу
-                base_dir = Path(__file__).parent.parent  # Корень проекта
-                file_path = base_dir / material.content
-
-                if file_path.exists() and file_path.is_file():
-                    # Проверяем размер файла (не более 50MB для отправки)
-                    file_size = file_path.stat().st_size
-                    max_send_size = 50 * 1024 * 1024  # 50MB
-
-                    if file_size > max_send_size:
-                        await callback.bot.send_message(
-                            chat_id=callback.message.chat.id,
-                            text=f"⚠️ Файл {material.name} слишком большой для отправки ({file_size // (1024*1024)}MB)."
-                        )
-                    else:
-                        # Отправляем файл
-                        await callback.bot.send_document(
-                            chat_id=callback.message.chat.id,
-                            document=FSInputFile(file_path)
-                        )
-                else:
-                    await callback.bot.send_message(
+                # Отправляем файл по file_id в зависимости от типа
+                if material.material_type == "video":
+                    await callback.bot.send_video(
                         chat_id=callback.message.chat.id,
-                        text=f"⚠️ Файл {material.name} не найден на сервере."
+                        video=material.content  # file_id
+                    )
+                elif material.material_type == "photo":
+                    await callback.bot.send_photo(
+                        chat_id=callback.message.chat.id,
+                        photo=material.content  # file_id
+                    )
+                else:
+                    # Документы (pdf, doc, excel, etc.)
+                    await callback.bot.send_document(
+                        chat_id=callback.message.chat.id,
+                        document=material.content  # file_id
                     )
             except Exception as file_error:
                 logger.error(f"Ошибка отправки файла {material.name}: {file_error}")
@@ -1000,9 +926,8 @@ async def callback_delete_material(callback: CallbackQuery, state: FSMContext, s
         if material.material_type == "link":
             content_display = material.content  # Показываем сам URL для ссылок
         else:
-            # Для файлов показываем имя файла
-            filename = Path(material.content).name if material.content else "Файл"
-            content_display = f"📎 {filename}"
+            # Для файлов показываем тип файла
+            content_display = f"📎 {material.material_type.title()}"
 
         description_display = material.description if material.description else "Описание не указано"
 
@@ -1066,32 +991,24 @@ async def callback_delete_material(callback: CallbackQuery, state: FSMContext, s
             )
 
         # Затем отправляем файл (если это не ссылка)
-        if material.material_type != "link" and material.material_type != "photo":
+        if material.material_type != "link":
             try:
-                # Определяем полный путь к файлу
-                base_dir = Path(__file__).parent.parent  # Корень проекта
-                file_path = base_dir / material.content
-
-                if file_path.exists() and file_path.is_file():
-                    # Проверяем размер файла (не более 50MB для отправки)
-                    file_size = file_path.stat().st_size
-                    max_send_size = 50 * 1024 * 1024  # 50MB
-
-                    if file_size > max_send_size:
-                        await callback.bot.send_message(
-                            chat_id=callback.message.chat.id,
-                            text=f"⚠️ Файл {material.name} слишком большой для отправки ({file_size // (1024*1024)}MB)."
-                        )
-                    else:
-                        # Отправляем файл
-                        await callback.bot.send_document(
-                            chat_id=callback.message.chat.id,
-                            document=FSInputFile(file_path)
-                        )
-                else:
-                    await callback.bot.send_message(
+                # Отправляем файл по file_id в зависимости от типа
+                if material.material_type == "video":
+                    await callback.bot.send_video(
                         chat_id=callback.message.chat.id,
-                        text=f"⚠️ Файл {material.name} не найден на сервере."
+                        video=material.content  # file_id
+                    )
+                elif material.material_type == "photo":
+                    await callback.bot.send_photo(
+                        chat_id=callback.message.chat.id,
+                        photo=material.content  # file_id
+                    )
+                else:
+                    # Документы (pdf, doc, excel, etc.)
+                    await callback.bot.send_document(
+                        chat_id=callback.message.chat.id,
+                        document=material.content  # file_id
                     )
             except Exception as file_error:
                 logger.error(f"Ошибка отправки файла {material.name}: {file_error}")
@@ -1857,32 +1774,24 @@ async def callback_employee_view_material(callback: CallbackQuery, state: FSMCon
             )
 
         # Затем отправляем файл
-        if material.material_type != "link" and material.material_type != "photo":
+        if material.material_type != "link":
             try:
-                # Определяем полный путь к файлу
-                base_dir = Path(__file__).parent.parent  # Корень проекта
-                file_path = base_dir / material.content
-
-                if file_path.exists() and file_path.is_file():
-                    # Проверяем размер файла (не более 50MB для отправки)
-                    file_size = file_path.stat().st_size
-                    max_send_size = 50 * 1024 * 1024  # 50MB
-
-                    if file_size > max_send_size:
-                        await callback.bot.send_message(
-                            chat_id=callback.message.chat.id,
-                            text=f"⚠️ Файл {material.name} слишком большой для отправки ({file_size // (1024*1024)}MB). Обратись к администратору."
-                        )
-                    else:
-                        # Отправляем файл
-                        await callback.bot.send_document(
-                            chat_id=callback.message.chat.id,
-                            document=FSInputFile(file_path)
-                        )
-                else:
-                    await callback.bot.send_message(
+                # Отправляем файл по file_id в зависимости от типа
+                if material.material_type == "video":
+                    await callback.bot.send_video(
                         chat_id=callback.message.chat.id,
-                        text=f"⚠️ Файл {material.name} не найден на сервере. Обратись к администратору."
+                        video=material.content  # file_id
+                    )
+                elif material.material_type == "photo":
+                    await callback.bot.send_photo(
+                        chat_id=callback.message.chat.id,
+                        photo=material.content  # file_id
+                    )
+                else:
+                    # Документы (pdf, doc, excel, etc.)
+                    await callback.bot.send_document(
+                        chat_id=callback.message.chat.id,
+                        document=material.content  # file_id
                     )
             except Exception as file_error:
                 logger.error(f"Ошибка отправки файла {material.name}: {file_error}")

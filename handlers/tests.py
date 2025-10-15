@@ -438,7 +438,9 @@ async def process_materials_input(message: Message, state: FSMContext):
             'image/jpeg', 'image/png', 'image/gif', 'image/webp',
             'text/plain',  # .txt
             'application/rtf',  # .rtf
-            'application/vnd.oasis.opendocument.text'  # .odt
+            'application/vnd.oasis.opendocument.text',  # .odt
+            'video/mp4',  # .mp4
+            'video/quicktime'  # .mov
         }
         
         if message.document.mime_type not in allowed_mimes:
@@ -450,13 +452,18 @@ async def process_materials_input(message: Message, state: FSMContext):
         
         # Пользователь отправил документ
         file_info = f"Файл: {message.document.file_name}"
-        await state.update_data(material_link=file_info, material_file_id=message.document.file_id)
+        await state.update_data(material_link=file_info, material_file_id=message.document.file_id, material_type="document")
         await message.answer(f"✅ Документ '{message.document.file_name}' добавлен к тесту.")
     elif message.photo:
         # Пользователь отправил фото
         photo_file_id = message.photo[-1].file_id
-        await state.update_data(material_link="Изображение", material_file_id=photo_file_id)
+        await state.update_data(material_link="Изображение", material_file_id=photo_file_id, material_type="photo")
         await message.answer("✅ Изображение добавлено к тесту.")
+    elif message.video:
+        # Пользователь отправил видео напрямую
+        video_file_id = message.video.file_id
+        await state.update_data(material_link="Видео", material_file_id=video_file_id, material_type="video")
+        await message.answer("✅ Видео добавлено к тесту.")
     elif message.text:
         # Пользователь отправил текст
         if message.text.lower() == 'пропустить':
@@ -759,6 +766,7 @@ async def process_threshold_and_create_test(message: Message, state: FSMContext,
         'max_score': max_score,
         'material_link': data.get('material_link'),
         'material_file_path': data.get('material_file_id'),
+        'material_type': data.get('material_type'),
         'creator_id': data['creator_id']
     }
     test = await create_test(session, test_data)
@@ -807,6 +815,20 @@ async def process_threshold_and_create_test(message: Message, state: FSMContext,
 async def process_test_selection(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Обработчик выбора теста"""
     test_id = int(callback.data.split(':')[1])
+    
+    # Удаляем медиа-файл с материалами, если он был отправлен
+    data = await state.get_data()
+    if 'material_message_id' in data:
+        try:
+            await callback.bot.delete_message(
+                chat_id=callback.message.chat.id,
+                message_id=data['material_message_id']
+            )
+        except Exception:
+            pass  # Сообщение уже удалено или недоступно
+    
+    # Очищаем сохраненные message_id
+    await state.update_data(material_message_id=None, material_text_message_id=None)
     
     test = await get_test_by_id(session, test_id)
     
@@ -869,8 +891,8 @@ async def process_test_selection(callback: CallbackQuery, state: FSMContext, ses
             reply_markup=get_test_actions_keyboard(test_id, user_role)
         )
         await callback.answer()
-    elif (is_trainee or is_employee or (is_mentor and has_access and context == 'taking')):
-        # Для стажёров, сотрудников и наставников с доступом - интерфейс прохождения теста
+    elif (is_trainee or is_employee) and has_access:
+        # Для стажёров и сотрудников с доступом - интерфейс прохождения теста
         # Проверяем доступ к конкретному тесту
         
         if not has_access:
@@ -885,45 +907,13 @@ async def process_test_selection(callback: CallbackQuery, state: FSMContext, ses
         # Проверяем, есть ли уже результат
         existing_result = await get_user_test_result(session, user.id, test_id)
         
-        # Получаем информацию о тесте для прохождения
-        questions = await get_test_questions(session, test_id)
-        questions_count = len(questions)
-        
-        stage_info = ""
-        if test.stage_id:
-            stage = await session.execute(select(InternshipStage).where(InternshipStage.id == test.stage_id))
-            stage_obj = stage.scalar_one_or_none()
-            if stage_obj:
-                stage_info = f"🎯 <b>Этап:</b> {stage_obj.name}\n"
-        
-        materials_info = ""
-        if test.material_link:
-            if test.material_file_path:
-                # Если есть прикрепленный файл
-                material_display = test.material_link.replace("Файл: ", "") if test.material_link else ""
-                materials_info = f"📚 <b>Материалы для изучения:</b>\n🔗 {material_display}\n\n"
-            else:
-                # Если это ссылка
-                materials_info = f"📚 <b>Материалы для изучения:</b>\n{test.material_link}\n\n"
-        
-        previous_result_info = ""
-        if existing_result:
-            status = "пройден" if existing_result.is_passed else "не пройден"
-            previous_result_info = f"""
-🔄 <b>Предыдущий результат:</b>
-   • Статус: {status}
-   • Баллы: {existing_result.score}/{existing_result.max_possible_score}
-   • Дата: {existing_result.created_date.strftime('%d.%m.%Y %H:%M')}
+        test_info_for_user = f"""📌 <b>{test.name}</b>
 
-"""
-        
-        test_info_for_user = f"""📋 <b>Информация о тесте</b>
+<b>Порог:</b> {test.threshold_score}/{test.max_score} баллов
 
-📌 <b>Название:</b> {test.name}
-📝 <b>Описание:</b> {test.description or 'Не указано'}
-{stage_info}❓ <b>Количество вопросов:</b> {questions_count}
-🎯 <b>Порог:</b> {test.threshold_score}/{test.max_score} баллов
-{materials_info}{previous_result_info}"""
+{test.description or 'Описание отсутствует'}
+
+Если есть сомнения по теме, сначала прочти прикреплённые обучающие материалы, а потом переходи к тесту"""
         
         await callback.message.edit_text(
             test_info_for_user,
@@ -2017,7 +2007,9 @@ async def save_new_materials(message: Message, state: FSMContext, session: Async
             'image/jpeg', 'image/png', 'image/gif', 'image/webp',
             'text/plain',  # .txt
             'application/rtf',  # .rtf
-            'application/vnd.oasis.opendocument.text'  # .odt
+            'application/vnd.oasis.opendocument.text',  # .odt
+            'video/mp4',  # .mp4
+            'video/quicktime'  # .mov
         }
         
         if message.document.mime_type not in allowed_mimes:
@@ -2030,7 +2022,8 @@ async def save_new_materials(message: Message, state: FSMContext, session: Async
         file_info = f"Файл: {message.document.file_name}"
         update_data = {
             "material_link": file_info,
-            "material_file_path": message.document.file_id
+            "material_file_path": message.document.file_id,
+            "material_type": "document"
         }
         await message.answer(f"✅ Документ '{message.document.file_name}' добавлен к тесту.")
     elif message.photo:
@@ -2038,20 +2031,32 @@ async def save_new_materials(message: Message, state: FSMContext, session: Async
         photo_file_id = message.photo[-1].file_id
         update_data = {
             "material_link": "Изображение",
-            "material_file_path": photo_file_id
+            "material_file_path": photo_file_id,
+            "material_type": "photo"
         }
         await message.answer("✅ Изображение добавлено к тесту.")
+    elif message.video:
+        # Пользователь отправил видео напрямую
+        video_file_id = message.video.file_id
+        update_data = {
+            "material_link": "Видео",
+            "material_file_path": video_file_id,
+            "material_type": "video"
+        }
+        await message.answer("✅ Видео добавлено к тесту.")
     elif message.text:
         # Пользователь отправил текст
         if message.text.lower() == 'удалить':
             update_data = {
                 "material_link": None,
-                "material_file_path": None
+                "material_file_path": None,
+                "material_type": None
             }
         else:
             update_data = {
                 "material_link": message.text.strip(),
-                "material_file_path": None
+                "material_file_path": None,
+                "material_type": None
             }
     else:
         # Неподдерживаемый тип сообщения
@@ -2370,19 +2375,34 @@ async def process_view_materials_admin(callback: CallbackQuery, state: FSMContex
     if test.material_file_path:
         # Если есть прикрепленный файл - отправляем его
         try:
-            await callback.message.answer_document(
-                document=test.material_file_path,
-                caption=f"📚 <b>Материалы к тесту: «{test.name}»</b>",
-                parse_mode="HTML"
-            )
-            await callback.message.edit_text(
-                f"✅ <b>Материалы к тесту: «{test.name}»</b>\n\n"
-                f"📎 Документ отправлен ниже.",
-                parse_mode="HTML",
+            # Определяем тип и используем правильный метод
+            if test.material_type == "photo":
+                sent_media = await callback.bot.send_photo(
+                    chat_id=callback.message.chat.id,
+                    photo=test.material_file_path
+                )
+            elif test.material_type == "video":
+                sent_media = await callback.bot.send_video(
+                    chat_id=callback.message.chat.id,
+                    video=test.material_file_path
+                )
+            else:
+                sent_media = await callback.bot.send_document(
+                    chat_id=callback.message.chat.id,
+                    document=test.material_file_path
+                )
+            
+            # Сохраняем message_id медиа-файла для последующего удаления
+            await state.update_data(material_message_id=sent_media.message_id)
+            
+            sent_text = await callback.message.answer(
+                "📎 Материал отправлен выше.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="⬅️ Назад к тесту", callback_data=f"test:{test_id}")]
                 ])
             )
+            # Сохраняем message_id текстового сообщения
+            await state.update_data(material_text_message_id=sent_text.message_id)
         except Exception as e:
             await callback.message.edit_text(
                 f"❌ <b>Ошибка загрузки файла</b>\n\n"
