@@ -275,6 +275,34 @@ async def callback_objects_pagination(callback: CallbackQuery, state: FSMContext
         log_user_error(callback.from_user.id, "objects_pagination_error", str(e))
 
 
+@router.callback_query(F.data == "cancel_edit", ObjectManagementStates.waiting_for_object_selection)
+async def callback_cancel_object_edit(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик отмены выбора объекта - возврат в меню управления объектами"""
+    try:
+        # Получение пользователя для логирования
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        
+        await callback.message.edit_text(
+            "📍<b>УПРАВЛЕНИЕ ОБЪЕКТАМИ</b>📍\n\n"
+            "В данном меню ты можешь:\n"
+            "1. Создавать объекты\n"
+            "2. Посмотреть существующие объекты\n"
+            "3. Менять названия объектам\n"
+            "4. Удалять объекты",
+            reply_markup=get_object_management_keyboard(),
+            parse_mode="HTML"
+        )
+        await state.clear()
+        await callback.answer()
+        
+        if user:
+            log_user_action(user.tg_id, "object_edit_cancelled", "Отменил выбор объекта")
+    except Exception as e:
+        await callback.message.edit_text("Произошла ошибка")
+        log_user_error(callback.from_user.id, "object_edit_cancel_error", str(e))
+        await state.clear()
+
+
 @router.message(ObjectManagementStates.waiting_for_new_object_name)
 async def process_new_object_name(message: Message, state: FSMContext, session: AsyncSession):
     """Обработка нового названия объекта"""

@@ -276,6 +276,32 @@ async def callback_groups_pagination(callback: CallbackQuery, state: FSMContext,
         log_user_error(callback.from_user.id, "groups_pagination_error", str(e))
 
 
+@router.callback_query(F.data == "cancel_edit", GroupManagementStates.waiting_for_group_selection)
+async def callback_cancel_group_edit(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Обработчик отмены выбора группы - возврат в меню управления группами"""
+    try:
+        # Получение пользователя для логирования
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        
+        await callback.message.edit_text(
+            "🗂️<b>УПРАВЛЕНИЕ ГРУППАМИ</b>🗂️\n\n"
+            "В данном меню ты можешь:\n"
+            "1. Создавать группы\n"
+            "2. Изменять названия групп",
+            reply_markup=get_group_management_keyboard(),
+            parse_mode="HTML"
+        )
+        await state.clear()
+        await callback.answer()
+        
+        if user:
+            log_user_action(user.tg_id, "group_edit_cancelled", "Отменил выбор группы")
+    except Exception as e:
+        await callback.message.edit_text("Произошла ошибка")
+        log_user_error(callback.from_user.id, "group_edit_cancel_error", str(e))
+        await state.clear()
+
+
 @router.callback_query(F.data == "page_info")
 async def callback_page_info(callback: CallbackQuery):
     """Обработчик информации о странице (заглушка)"""

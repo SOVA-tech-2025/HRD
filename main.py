@@ -35,7 +35,6 @@ dp.include_router(role_permissions.router)
 dp.include_router(broadcast.router)  # Массовая рассылка тестов (Task 8) - ДОЛЖЕН БЫТЬ РАНЬШЕ tests.router
 dp.include_router(tests.router)
 dp.include_router(user_activation.router)  # ВАЖНО: РАНЬШЕ mentorship.router
-dp.include_router(user_edit.router)
 dp.include_router(mentorship.router)
 dp.include_router(mentor_assignment.router)  # Назначение наставников
 dp.include_router(manager_attestation.router)  # Проведение аттестаций руководителями
@@ -44,6 +43,7 @@ dp.include_router(test_taking.router)  # Прохождение тестов (д
 dp.include_router(trainee_trajectory.router)  # Прохождение траекторий стажерами
 dp.include_router(groups.router)
 dp.include_router(objects.router)
+dp.include_router(user_edit.router)  # ПОСЛЕ groups/objects, т.к. имеет глобальный обработчик cancel_edit
 dp.include_router(learning_paths.router)  # Траектории обучения
 dp.include_router(knowledge_base.router)  # База знаний (Task 9)
 dp.include_router(employee_transition.router)  # Переход стажеров в сотрудники (Task 7)
