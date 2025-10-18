@@ -161,58 +161,6 @@ async def process_contact(message: Message, state: FSMContext, session: AsyncSes
             await state.clear()
             return
 
-    # Проверяем настройки для показа опции токена администратора (только для обычной регистрации)
-    max_admins, admin_tokens_str = await get_admin_settings()
-    existing_managers = await get_users_by_role(session, "Руководитель")
-    allow_auto_role = os.getenv("ALLOW_AUTO_ROLE_ASSIGNMENT", "false").lower() == "true"
-
-    # ПРИОРИТЕТ 1: Если есть токены админов и не достигнут лимит - ВСЕГДА показываем возможность стать админом
-    if admin_tokens_str and len(existing_managers) < max_admins:
-        await show_admin_token_prompt(message, state, max_admins, existing_managers)
-        return
-    
-    # ПРИОРИТЕТ 2: Автоматическое назначение роли (если включено)
-    if allow_auto_role:
-        # Автоматическое назначение роли по умолчанию
-        default_role = os.getenv("DEFAULT_ROLE", "Стажер")
-        user_data = await state.get_data()
-        user_data['tg_id'] = message.from_user.id
-        user_data['username'] = message.from_user.username
-        
-        try:
-            await create_user(session, user_data, default_role, bot)
-            
-            auto_auth_allowed = os.getenv("ALLOW_AUTO_AUTH", "true").lower() == "true"
-            if auto_auth_allowed:
-                await message.answer(
-                    f"🎉 <b>Добро пожаловать!</b>\n\n"
-                    f"Ты автоматически зарегистрирован как <b>{default_role}</b>.\n"
-                    f"Ты можешь сразу начать работу - авторизация произойдет автоматически.\n\n"
-                    f"При необходимости администратор может изменить твою роль.",
-                    parse_mode="HTML"
-                )
-            else:
-                await message.answer(
-                    f"🎉 <b>Добро пожаловать!</b>\n\n"
-                    f"Ты автоматически зарегистрирован как <b>{default_role}</b>.\n"
-                    f"Используй команду /login для входа.\n\n"
-                    f"При необходимости администратор может изменить твою роль.",
-                    parse_mode="HTML"
-                )
-            
-            log_user_action(
-                message.from_user.id, 
-                message.from_user.username, 
-                "auto registration completed", 
-                {"role": default_role, "full_name": user_data['full_name']}
-            )
-            
-            await state.clear()
-            return
-        except Exception as e:
-            log_user_error(message.from_user.id, message.from_user.username, "auto registration error", e)
-            await message.answer(f"Произошла ошибка при автоматической регистрации. Попробуем зарегистрировать тебя для активации рекрутером.")
-    
     # Создаем пользователя без роли для последующей активации рекрутером
     user_data = await state.get_data()
     user_data['tg_id'] = message.from_user.id
@@ -321,58 +269,6 @@ async def process_phone_manually(message: Message, state: FSMContext, session: A
             await state.clear()
             return
 
-    # Проверяем настройки для показа опции токена администратора (только для обычной регистрации)
-    max_admins, admin_tokens_str = await get_admin_settings()
-    existing_managers = await get_users_by_role(session, "Руководитель")
-    allow_auto_role = os.getenv("ALLOW_AUTO_ROLE_ASSIGNMENT", "false").lower() == "true"
-
-    # ПРИОРИТЕТ 1: Если есть токены админов и не достигнут лимит - ВСЕГДА показываем возможность стать админом
-    if admin_tokens_str and len(existing_managers) < max_admins:
-        await show_admin_token_prompt(message, state, max_admins, existing_managers)
-        return
-    
-    # ПРИОРИТЕТ 2: Автоматическое назначение роли (если включено)
-    if allow_auto_role:
-        # Автоматическое назначение роли по умолчанию
-        default_role = os.getenv("DEFAULT_ROLE", "Стажер")
-        user_data = await state.get_data()
-        user_data['tg_id'] = message.from_user.id
-        user_data['username'] = message.from_user.username
-        
-        try:
-            await create_user(session, user_data, default_role, bot)
-            
-            auto_auth_allowed = os.getenv("ALLOW_AUTO_AUTH", "true").lower() == "true"
-            if auto_auth_allowed:
-                await message.answer(
-                    f"🎉 <b>Добро пожаловать!</b>\n\n"
-                    f"Ты автоматически зарегистрирован как <b>{default_role}</b>.\n"
-                    f"Ты можешь сразу начать работу - авторизация произойдет автоматически.\n\n"
-                    f"При необходимости администратор может изменить твою роль.",
-                    parse_mode="HTML"
-                )
-            else:
-                await message.answer(
-                    f"🎉 <b>Добро пожаловать!</b>\n\n"
-                    f"Ты автоматически зарегистрирован как <b>{default_role}</b>.\n"
-                    f"Используй команду /login для входа.\n\n"
-                    f"При необходимости администратор может изменить твою роль.",
-                    parse_mode="HTML"
-                )
-            
-            log_user_action(
-                message.from_user.id, 
-                message.from_user.username, 
-                "auto registration completed", 
-                {"role": default_role, "full_name": user_data['full_name']}
-            )
-            
-            await state.clear()
-            return
-        except Exception as e:
-            log_user_error(message.from_user.id, message.from_user.username, "auto registration error", e)
-            await message.answer(f"Произошла ошибка при автоматической регистрации. Попробуем зарегистрировать тебя для активации рекрутером.")
-    
     # Создаем пользователя без роли для последующей активации рекрутером
     user_data = await state.get_data()
     user_data['tg_id'] = message.from_user.id
