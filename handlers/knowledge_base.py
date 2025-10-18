@@ -45,6 +45,47 @@ router = Router()
 # Обработчики для рекрутера и сотрудника (база знаний)
 # ===============================
 
+async def start_material_addition(callback: CallbackQuery, state: FSMContext, session: AsyncSession, folder_id: int) -> bool:
+    """
+    Общая логика начала добавления материала в папку.
+    
+    Args:
+        callback: Callback query от пользователя
+        state: FSM контекст
+        session: Сессия БД
+        folder_id: ID папки для добавления материала
+        
+    Returns:
+        bool: True если успешно, False если ошибка
+    """
+    try:
+        # Получаем информацию о папке
+        folder = await get_knowledge_folder_by_id(session, folder_id)
+        if not folder:
+            await callback.message.edit_text("❌ Папка не найдена")
+            await state.clear()
+            return False
+            
+        # Сохраняем folder_id в состояние
+        await state.update_data(current_folder_id=folder_id)
+        
+        # ТЗ 9-1 шаг 8: Запрашиваем название материала
+        await callback.message.edit_text(
+            "📚РЕДАКТОР БАЗЫ ЗНАНИЙ📚\n\n"
+            f"📁Папка: {folder.name}\n\n"
+            "🟡Введи название материала:",
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(KnowledgeBaseStates.waiting_for_material_name)
+        log_user_action(callback.from_user.id, "material_creation_started", f"Начато создание материала в папке {folder.name}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Ошибка начала добавления материала: {e}")
+        return False
+
+
 @router.message(F.text.in_(["База знаний", "База знаний 📁"]))
 async def cmd_knowledge_base_universal(message: Message, state: FSMContext, session: AsyncSession):
     """Универсальный обработчик кнопки 'База знаний' для рекрутера, сотрудника и стажера (ТЗ 9-1 шаг 1)"""
@@ -221,28 +262,34 @@ async def callback_add_material(callback: CallbackQuery, state: FSMContext, sess
             await callback.message.edit_text("❌ Ошибка: папка не найдена")
             await state.clear()
             return
-            
-        # Получаем информацию о папке
-        folder = await get_knowledge_folder_by_id(session, folder_id)
-        if not folder:
-            await callback.message.edit_text("❌ Папка не найдена")
-            await state.clear()
-            return
-            
-        # ТЗ 9-1 шаг 8
-        await callback.message.edit_text(
-            "📚РЕДАКТОР БАЗЫ ЗНАНИЙ📚\n\n"
-            f"📁Папка: {folder.name}\n\n"
-            "🟡Введи название материала:",
-            parse_mode="HTML"
-        )
         
-        await state.set_state(KnowledgeBaseStates.waiting_for_material_name)
-        log_user_action(callback.from_user.id, "material_creation_started", f"Начато создание материала в папке {folder.name}")
+        # Используем общую функцию для начала добавления материала
+        success = await start_material_addition(callback, state, session, folder_id)
+        if not success:
+            await callback.message.edit_text("Произошла ошибка при добавлении материала")
         
     except Exception as e:
         await callback.message.edit_text("Произошла ошибка при добавлении материала")
         log_user_error(callback.from_user.id, "add_material_error", str(e))
+
+
+@router.callback_query(F.data.startswith("kb_add_material_to_folder:"))
+async def callback_add_material_to_existing_folder(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Начало добавления материала в существующую папку"""
+    try:
+        await callback.answer()
+        
+        # Извлекаем folder_id из callback_data
+        folder_id = int(callback.data.split(":")[1])
+        
+        # Используем общую функцию для начала добавления материала
+        success = await start_material_addition(callback, state, session, folder_id)
+        if not success:
+            await callback.message.edit_text("Произошла ошибка при добавлении материала")
+        
+    except Exception as e:
+        await callback.message.edit_text("Произошла ошибка при добавлении материала")
+        log_user_error(callback.from_user.id, "add_material_to_existing_folder_error", str(e))
 
 
 @router.message(StateFilter(KnowledgeBaseStates.waiting_for_material_name))
@@ -682,9 +729,10 @@ async def callback_save_material(callback: CallbackQuery, state: FSMContext, ses
         # Обновляем данные папки с новым материалом для правильного отображения
         updated_folder = await get_knowledge_folder_by_id(session, folder_id)
         
-        # ТЗ 9-1 шаг 16: Материал сохранен - показываем ВСЕ материалы в папке
+        # ТЗ 9-1 шаг 16: Материал сохранен - показываем только активные материалы в папке
         materials_display = []
-        for i, mat in enumerate(updated_folder.materials, 1):
+        active_materials = [mat for mat in updated_folder.materials if mat.is_active]
+        for i, mat in enumerate(active_materials, 1):
             mat_content = mat.content if mat.material_type == "link" else "Документ"
             mat_description = mat.description if mat.description else "Без описания"
             photos_info = ""
@@ -705,7 +753,7 @@ async def callback_save_material(callback: CallbackQuery, state: FSMContext, ses
             f"{materials_text}\n\n"
             "✅Ты успешно сохранил материал!\n"
             "Теперь ты можешь его найти в базе знаний",
-            reply_markup=get_material_saved_keyboard(),
+            reply_markup=get_material_saved_keyboard(folder_id),
             parse_mode="HTML"
         )
         
@@ -1434,13 +1482,9 @@ async def callback_confirm_rename(callback: CallbackQuery, state: FSMContext, se
             "📚РЕДАКТОР БАЗЫ ЗНАНИЙ📚\n\n"
             "✅Ты успешно изменил название папки\n"
             f"🟡Новое название для папки: {new_name}",
-            reply_markup=get_folder_deleted_keyboard(),  # Используем ту же клавиатуру с "Главное меню"
+            reply_markup=get_folder_deleted_keyboard(folder_id),  # Передаем folder_id для возврата к папке
             parse_mode="HTML"
         )
-        
-        # Через некоторое время возвращаемся к списку папок
-        await asyncio.sleep(2)
-        await show_main_folders_list(callback, state, session)
         
         log_user_action(callback.from_user.id, "folder_renamed", f"Папка переименована в: {new_name}")
         
@@ -1549,10 +1593,6 @@ async def callback_confirm_delete_folder(callback: CallbackQuery, state: FSMCont
             reply_markup=get_folder_deleted_keyboard(),
             parse_mode="HTML"
         )
-        
-        # Через некоторое время возвращаемся к списку папок
-        await asyncio.sleep(2)
-        await show_main_folders_list(callback, state, session)
         
         log_user_action(callback.from_user.id, "folder_deleted", f"Удалена папка: {folder_name}")
         
@@ -1860,7 +1900,3 @@ async def callback_employee_back_to_folders(callback: CallbackQuery, state: FSMC
 # ===============================
 # Общие обработчики
 # ===============================
-
-
-
-import asyncio

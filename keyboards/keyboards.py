@@ -1662,12 +1662,18 @@ def get_material_save_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
-def get_material_saved_keyboard() -> InlineKeyboardMarkup:
+def get_material_saved_keyboard(folder_id: int = None) -> InlineKeyboardMarkup:
     """Клавиатура после сохранения материала (ТЗ 9-1 шаг 16)"""
     keyboard = [
-        [InlineKeyboardButton(text="Добавить материал", callback_data="kb_add_material")],
-        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+        [InlineKeyboardButton(text="Добавить материал", callback_data="kb_add_material")]
     ]
+    
+    # Добавляем кнопку возврата к папке, если передан folder_id
+    if folder_id:
+        keyboard.append([InlineKeyboardButton(text="📁 К папке", callback_data=f"kb_folder:{folder_id}")])
+    
+    keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
+    
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
@@ -1686,6 +1692,7 @@ def get_folder_view_keyboard(folder_id: int, materials: list) -> InlineKeyboardM
     
     # Кнопки управления папкой
     keyboard.extend([
+        [InlineKeyboardButton(text="➕ Добавить материал", callback_data=f"kb_add_material_to_folder:{folder_id}")],
         [InlineKeyboardButton(text="Доступ", callback_data=f"kb_access:{folder_id}")],
         [InlineKeyboardButton(text="Удалить папку", callback_data=f"kb_delete_folder:{folder_id}")],
         [InlineKeyboardButton(text="Изменить название", callback_data=f"kb_rename_folder:{folder_id}")],
@@ -1759,11 +1766,19 @@ def get_folder_delete_confirmation_keyboard(folder_id: int) -> InlineKeyboardMar
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
-def get_folder_deleted_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура после удаления папки (ТЗ 9-5 шаг 7)"""
-    keyboard = [
-        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
-    ]
+def get_folder_deleted_keyboard(folder_id: int = None) -> InlineKeyboardMarkup:
+    """Клавиатура после удаления/переименования папки (ТЗ 9-5 шаг 7)"""
+    keyboard = []
+    
+    # Если передан folder_id (переименование), показываем кнопку возврата к папке
+    if folder_id:
+        keyboard.append([InlineKeyboardButton(text="📁 К папке", callback_data=f"kb_folder:{folder_id}")])
+    else:
+        # Если folder_id нет (удаление), показываем возврат к списку
+        keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="kb_back")])
+    
+    keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
+    
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
