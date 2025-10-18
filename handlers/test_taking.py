@@ -1381,6 +1381,8 @@ async def process_trajectory_tests_shortcut(callback: CallbackQuery, state: FSMC
         reply_markup=get_test_selection_for_taking_keyboard(available_tests)
     )
     
+    # КРИТИЧЕСКИ ВАЖНО: Устанавливаем контекст "taking" для стажера
+    await state.update_data(test_context='taking')
     await state.set_state(TestTakingStates.waiting_for_test_selection)
     await callback.answer()
 

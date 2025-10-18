@@ -257,7 +257,10 @@ class AttestationAssignmentStates(StatesGroup):
 
 class BroadcastStates(StatesGroup):
     """Состояния для массовой рассылки тестов по группам (Task 8)"""
-    selecting_test = State()  # Выбор теста для рассылки
+    waiting_for_script = State()  # Ввод текста рассылки
+    waiting_for_photos = State()  # Загрузка фото
+    selecting_material = State()  # Выбор материала из базы знаний
+    selecting_test = State()  # Выбор теста для рассылки (опционально)
     selecting_groups = State()  # Выбор групп для рассылки
     confirming_broadcast = State()  # Подтверждение рассылки
 

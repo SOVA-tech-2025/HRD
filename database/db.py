@@ -2515,6 +2515,59 @@ async def send_test_notification(bot, trainee_tg_id: int, test_name: str, mentor
         logger.error(f"Ошибка отправки уведомления стажеру {trainee_tg_id}: {e}")
         return False
 
+
+async def send_broadcast_notification(bot, user_tg_id: int, broadcast_script: str, 
+                                     broadcast_photos: list, broadcast_material_id: int = None, 
+                                     test_id: int = None) -> bool:
+    """
+    Отправка расширенного уведомления о рассылке
+    
+    Args:
+        bot: Экземпляр бота
+        user_tg_id: Telegram ID получателя
+        broadcast_script: Текст рассылки
+        broadcast_photos: Список file_id фотографий
+        broadcast_material_id: ID материала из базы знаний
+        test_id: ID теста (опционально)
+    
+    Returns:
+        bool: True если успешно, False если ошибка
+    """
+    try:
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
+        
+        # 1. Если есть фото - отправляем медиа-группу
+        if broadcast_photos:
+            media_group = [InputMediaPhoto(media=photo_id) for photo_id in broadcast_photos]
+            await bot.send_media_group(chat_id=user_tg_id, media=media_group)
+        
+        # 2. Формируем клавиатуру
+        keyboard = []
+        
+        if test_id:
+            keyboard.append([InlineKeyboardButton(text="🚀 Перейти к тесту", callback_data=f"take_test:{test_id}")])
+        
+        if broadcast_material_id:
+            keyboard.append([InlineKeyboardButton(text="📚 Материалы", callback_data=f"broadcast_material:{broadcast_material_id}")])
+        
+        keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
+        
+        # 3. Отправляем текст с кнопками
+        await bot.send_message(
+            chat_id=user_tg_id,
+            text=broadcast_script,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+        )
+        
+        logger.info(f"Расширенное уведомление отправлено пользователю {user_tg_id}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Ошибка отправки расширенного уведомления пользователю {user_tg_id}: {e}")
+        return False
+
+
 async def send_mentor_assignment_notification(bot, trainee_tg_id: int, mentor_tg_id: int, mentor_name: str, mentor_phone: str, mentor_username: str = None, assigned_by_name: str = None, trainee_internship_object: str = None, trainee_work_object: str = None, mentor_work_object: str = None):
     """Отправка уведомления стажеру о назначении наставника"""
     try:
@@ -6078,17 +6131,32 @@ async def get_trainee_attestation_status(session: AsyncSession, trainee_id: int,
 # ===============================
 
 async def broadcast_test_to_groups(session: AsyncSession, test_id: int, group_ids: list, 
-                                  sent_by_id: int, bot=None) -> dict:
+                                  sent_by_id: int, bot=None, broadcast_script: str = None,
+                                  broadcast_photos: list = None, broadcast_material_id: int = None) -> dict:
     """
-    Массовая рассылка теста пользователям по группам (Task 8)
-    Возвращает статистику рассылки
+    Массовая рассылка пользователям по группам (Task 8 + расширенная версия)
+    
+    Args:
+        session: Сессия БД
+        test_id: ID теста (опционально)
+        group_ids: Список ID групп
+        sent_by_id: ID отправителя
+        bot: Экземпляр бота
+        broadcast_script: Текст рассылки (обязательно для новой версии)
+        broadcast_photos: Список file_id фотографий
+        broadcast_material_id: ID материала из базы знаний
+    
+    Returns:
+        dict: Статистика рассылки
     """
     try:
-        # Получаем тест
-        test = await get_test_by_id(session, test_id)
-        if not test:
-            logger.error(f"Тест {test_id} не найден для рассылки")
-            return {"success": False, "error": "Тест не найден"}
+        # Получаем тест (опционально)
+        test = None
+        if test_id:
+            test = await get_test_by_id(session, test_id)
+            if not test:
+                logger.error(f"Тест {test_id} не найден для рассылки")
+                return {"success": False, "error": "Тест не найден"}
         
         # Получаем отправителя
         sender = await get_user_by_id(session, sent_by_id)
@@ -6139,9 +6207,27 @@ async def broadcast_test_to_groups(session: AsyncSession, test_id: int, group_id
         # Отправляем уведомления каждому пользователю
         for user in final_users:
             try:
-                # Предоставляем доступ к тесту
-                access_granted = await grant_test_access(session, user.id, test_id, sent_by_id, bot)
-                if access_granted:
+                # Если есть тест - предоставляем доступ
+                if test_id:
+                    await grant_test_access(session, user.id, test_id, sent_by_id, bot=None)
+                
+                # Отправляем расширенное уведомление
+                if broadcast_script and bot:
+                    success = await send_broadcast_notification(
+                        bot=bot,
+                        user_tg_id=user.tg_id,
+                        broadcast_script=broadcast_script,
+                        broadcast_photos=broadcast_photos or [],
+                        broadcast_material_id=broadcast_material_id,
+                        test_id=test_id
+                    )
+                    if success:
+                        total_sent += 1
+                    else:
+                        failed_sends += 1
+                elif test_id and bot:
+                    # Старая логика для обратной совместимости
+                    await send_notification_about_new_test(session, bot, user.id, test_id, sent_by_id)
                     total_sent += 1
                 else:
                     failed_sends += 1
@@ -6151,11 +6237,12 @@ async def broadcast_test_to_groups(session: AsyncSession, test_id: int, group_id
                 failed_sends += 1
         
         # Логируем результат рассылки
-        logger.info(f"Рассылка теста {test.name} завершена: {total_sent} отправлено, {failed_sends} ошибок")
+        test_name = test.name if test else "без теста"
+        logger.info(f"Рассылка ({test_name}) завершена: {total_sent} отправлено, {failed_sends} ошибок")
         
         return {
             "success": True,
-            "test_name": test.name,
+            "test_name": test.name if test else None,
             "group_names": group_names,
             "total_users": len(final_users),
             "total_sent": total_sent,

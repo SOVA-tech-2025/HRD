@@ -411,7 +411,7 @@ def get_simple_test_selection_keyboard(tests: list) -> InlineKeyboardMarkup:
         )
         keyboard.append([button])
     
-    keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_tests_menu")])
+    keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -473,6 +473,97 @@ def get_broadcast_success_keyboard() -> InlineKeyboardMarkup:
         ]
     )
     return keyboard
+
+
+def get_broadcast_photos_keyboard(has_photos: bool = False) -> InlineKeyboardMarkup:
+    """Клавиатура для загрузки фото в рассылку"""
+    keyboard = []
+    
+    if has_photos:
+        keyboard.append([InlineKeyboardButton(text="✅ Завершить загрузку", callback_data="broadcast_finish_photos")])
+    
+    keyboard.append([InlineKeyboardButton(text="⏩ Пропустить", callback_data="broadcast_skip_photos")])
+    keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_broadcast_folders_keyboard(folders: list) -> InlineKeyboardMarkup:
+    """Клавиатура выбора папки для материала в рассылке"""
+    keyboard = []
+    
+    for folder in folders:
+        folder_name = folder.name[:30] + "..." if len(folder.name) > 30 else folder.name
+        keyboard.append([InlineKeyboardButton(
+            text=f"📁 {folder_name}",
+            callback_data=f"broadcast_folder:{folder.id}"
+        )])
+    
+    keyboard.append([InlineKeyboardButton(text="⏩ Пропустить материал", callback_data="broadcast_skip_material")])
+    keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_broadcast_materials_keyboard(folder_name: str, materials: list) -> InlineKeyboardMarkup:
+    """Клавиатура выбора материала из папки для рассылки"""
+    keyboard = []
+    
+    for material in materials:
+        if material.is_active:
+            material_name = material.name[:35] + "..." if len(material.name) > 35 else material.name
+            material_icon = "🔗" if material.material_type == "link" else "📄"
+            keyboard.append([InlineKeyboardButton(
+                text=f"{material_icon} {material_name}",
+                callback_data=f"broadcast_select_material:{material.id}"
+            )])
+    
+    keyboard.append([InlineKeyboardButton(text="⬅️ Назад к папкам", callback_data="broadcast_back_to_folders")])
+    keyboard.append([InlineKeyboardButton(text="⏩ Пропустить материал", callback_data="broadcast_skip_material")])
+    keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_broadcast_tests_keyboard(tests: list) -> InlineKeyboardMarkup:
+    """Клавиатура выбора теста для рассылки (опционально)"""
+    keyboard = []
+    
+    for test in tests:
+        test_name = test.name[:40] + "..." if len(test.name) > 40 else test.name
+        keyboard.append([InlineKeyboardButton(
+            text=test_name,
+            callback_data=f"broadcast_test:{test.id}"
+        )])
+    
+    keyboard.append([InlineKeyboardButton(text="⏩ Пропустить тест", callback_data="broadcast_skip_test")])
+    keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_broadcast_notification_keyboard(test_id: int = None, material_id: int = None) -> InlineKeyboardMarkup:
+    """Клавиатура для уведомления о рассылке"""
+    keyboard = []
+    
+    if test_id:
+        keyboard.append([InlineKeyboardButton(text="🚀 Перейти к тесту", callback_data=f"take_test:{test_id}")])
+    
+    if material_id:
+        keyboard.append([InlineKeyboardButton(text="📚 Материалы", callback_data=f"broadcast_material:{material_id}")])
+    
+    keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_broadcast_main_menu_keyboard() -> InlineKeyboardMarkup:
+    """Главное меню раздела рассылки"""
+    keyboard = [
+        [InlineKeyboardButton(text="📝 Создать рассылку", callback_data="create_broadcast")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 def get_question_edit_keyboard(question_id: int) -> InlineKeyboardMarkup:

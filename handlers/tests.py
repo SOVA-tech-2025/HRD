@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -141,6 +141,9 @@ async def cmd_list_tests(message: Message, state: FSMContext, session: AsyncSess
     is_auth = await check_auth(message, state, session)
     if not is_auth:
         return
+    
+    # Очищаем состояние при входе в управление тестами
+    await state.clear()
 
     user = await get_user_by_tg_id(session, message.from_user.id)
     if not user:
@@ -236,6 +239,9 @@ async def callback_list_tests(callback: CallbackQuery, state: FSMContext, sessio
     try:
         await callback.answer()
         
+        # Очищаем состояние при входе в управление тестами
+        await state.clear()
+        
         # Получаем пользователя и проверяем права
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
@@ -284,42 +290,38 @@ async def callback_list_tests(callback: CallbackQuery, state: FSMContext, sessio
 
 @router.callback_query(F.data == "back_to_tests_menu")
 async def callback_back_to_tests_menu(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
-    """Обработчик кнопки 'Назад' - возврат к меню управления тестами"""
+    """Обработчик кнопки 'Назад' - возврат к меню (для рекрутеров) или главному меню (для наставников)"""
     try:
         await callback.answer()
         
-        # Получаем пользователя и проверяем права
+        # Получаем пользователя
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
             await callback.message.edit_text("❌ Ты не зарегистрирован в системе.")
             return
         
-        # Проверяем права на создание тестов (только рекрутеры)
-        has_permission = await check_user_permission(session, user.id, "create_tests")
-        if not has_permission:
-            await callback.message.edit_text(
-                "❌ <b>Недостаточно прав</b>\n\n"
-                "У тебя нет прав для управления тестами.\n"
-                "Обратись к администратору.",
-                parse_mode="HTML"
-            )
-            return
+        # Проверяем права на создание тестов
+        has_create_permission = await check_user_permission(session, user.id, "create_tests")
         
-        # Возвращаемся к меню управления тестами
-        await callback.message.edit_text(
-            "📄 <b>УПРАВЛЕНИЕ ТЕСТАМИ</b>\n\n"
-            "Выбери действие:",
-            parse_mode="HTML",
-            reply_markup=get_tests_main_keyboard()
-        )
+        if has_create_permission:
+            # Рекрутер - возврат к меню управления тестами
+            await callback.message.edit_text(
+                "📄 <b>УПРАВЛЕНИЕ ТЕСТАМИ</b>\n\n"
+                "Выбери действие:",
+                parse_mode="HTML",
+                reply_markup=get_tests_main_keyboard()
+            )
+            log_user_action(user.tg_id, "back_to_tests_menu", "Возврат к меню управления тестами")
+        else:
+            # Наставник - удаляем сообщение (возврат к главному меню через reply клавиатуру)
+            await callback.message.delete()
+            log_user_action(user.tg_id, "back_to_tests_menu", "Возврат к главному меню (наставник)")
         
         # Очищаем состояние FSM
         await state.clear()
         
-        log_user_action(user.tg_id, "back_to_tests_menu", "Возврат к меню управления тестами")
-        
     except Exception as e:
-        await callback.message.edit_text("Произошла ошибка при возврате к меню тестов")
+        await callback.message.answer("Произошла ошибка при возврате к меню")
         log_user_error(callback.from_user.id, "callback_back_to_tests_menu_error", str(e))
 
 
@@ -811,9 +813,12 @@ async def process_threshold_and_create_test(message: Message, state: FSMContext,
     
     await state.clear()
 
-@router.callback_query(F.data.startswith("test:"))
+@router.callback_query(
+    F.data.startswith("test:"),
+    ~StateFilter(TestTakingStates.waiting_for_test_selection)
+)
 async def process_test_selection(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
-    """Обработчик выбора теста"""
+    """Обработчик выбора теста для управления (не для прохождения)"""
     test_id = int(callback.data.split(':')[1])
     
     # Удаляем медиа-файл с материалами, если он был отправлен
@@ -855,7 +860,7 @@ async def process_test_selection(callback: CallbackQuery, state: FSMContext, ses
 🎲 <b>Максимальный балл:</b> {test.max_score}
 🎯 <b>Порог:</b> {test.threshold_score} баллов
 {stage_info}📅 <b>Дата создания:</b> {test.created_date.strftime('%d.%m.%Y %H:%M')}
-🔗 <b>Материалы:</b> {f"📎 {test.material_link}" if test.material_link else 'Отсутствуют'}
+🔗 <b>Материалы:</b> {test.material_link if test.material_link else 'Отсутствуют'}
 """
     
     # Определяем роль пользователя для показа подходящих кнопок
@@ -2350,9 +2355,12 @@ async def cancel_question_creation(callback: CallbackQuery, state: FSMContext, s
     
     await callback.answer()
 
-@router.callback_query(F.data.startswith("view_materials:"))
+@router.callback_query(
+    F.data.startswith("view_materials:"),
+    ~StateFilter(TestTakingStates.waiting_for_test_selection, TestTakingStates.waiting_for_test_start)
+)
 async def process_view_materials_admin(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
-    """Обработчик просмотра материалов для рекрутера/наставника"""
+    """Обработчик просмотра материалов для рекрутера/наставника (только в контексте управления)"""
     test_id = int(callback.data.split(':')[1])
     
     test = await get_test_by_id(session, test_id)
