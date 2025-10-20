@@ -2518,7 +2518,7 @@ async def send_test_notification(bot, trainee_tg_id: int, test_name: str, mentor
 
 async def send_broadcast_notification(bot, user_tg_id: int, broadcast_script: str, 
                                      broadcast_photos: list, broadcast_material_id: int = None, 
-                                     test_id: int = None) -> bool:
+                                     test_id: int = None, broadcast_docs: list | None = None) -> bool:
     """
     Отправка расширенного уведомления о рассылке
     
@@ -2534,12 +2534,23 @@ async def send_broadcast_notification(bot, user_tg_id: int, broadcast_script: st
         bool: True если успешно, False если ошибка
     """
     try:
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, InputMediaDocument
         
-        # 1. Если есть фото - отправляем медиа-группу
-        if broadcast_photos:
-            media_group = [InputMediaPhoto(media=photo_id) for photo_id in broadcast_photos]
+        # 1. Если есть фото/документы-превью - отправляем медиагруппы
+        photos = []
+        docs = []
+        # Фото приходят отдельным списком; документы могут прийти в broadcast_docs
+        for item in (broadcast_photos or []):
+            photos.append(item)
+        for item in (broadcast_docs or []):
+            docs.append(item)
+
+        if photos:
+            media_group = [InputMediaPhoto(media=pid) for pid in photos]
             await bot.send_media_group(chat_id=user_tg_id, media=media_group)
+        if docs:
+            docs_group = [InputMediaDocument(media=did) for did in docs]
+            await bot.send_media_group(chat_id=user_tg_id, media=docs_group)
         
         # 2. Формируем клавиатуру
         keyboard = []
@@ -6132,7 +6143,8 @@ async def get_trainee_attestation_status(session: AsyncSession, trainee_id: int,
 
 async def broadcast_test_to_groups(session: AsyncSession, test_id: int, group_ids: list, 
                                   sent_by_id: int, bot=None, broadcast_script: str = None,
-                                  broadcast_photos: list = None, broadcast_material_id: int = None) -> dict:
+                                  broadcast_photos: list = None, broadcast_material_id: int = None,
+                                  broadcast_docs: list | None = None) -> dict:
     """
     Массовая рассылка пользователям по группам (Task 8 + расширенная версия)
     
@@ -6197,7 +6209,6 @@ async def broadcast_test_to_groups(session: AsyncSession, test_id: int, group_id
         unique_users = {}
         for user in all_users:
             unique_users[user.id] = user
-        
         final_users = list(unique_users.values())
         
         # Статистика рассылки
@@ -6219,7 +6230,8 @@ async def broadcast_test_to_groups(session: AsyncSession, test_id: int, group_id
                         broadcast_script=broadcast_script,
                         broadcast_photos=broadcast_photos or [],
                         broadcast_material_id=broadcast_material_id,
-                        test_id=test_id
+                        test_id=test_id,
+                        broadcast_docs=broadcast_docs or []
                     )
                     if success:
                         total_sent += 1

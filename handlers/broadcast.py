@@ -4,7 +4,7 @@
 """
 
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, InputMediaDocument
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -136,6 +136,8 @@ async def process_broadcast_script(message: Message, state: FSMContext, session:
         )
         
         await state.set_state(BroadcastStates.waiting_for_photos)
+        # Инициализируем списки для фото и документов-изображений
+        await state.update_data(broadcast_photos=[], broadcast_docs=[])
         log_user_action(message.from_user.id, "broadcast_script_set", f"Текст рассылки установлен ({len(script_text)} символов)")
         
     except Exception as e:
@@ -169,6 +171,34 @@ async def process_broadcast_photos(message: Message, state: FSMContext, session:
     except Exception as e:
         await message.answer("Произошла ошибка при загрузке фото")
         log_user_error(message.from_user.id, "process_broadcast_photos_error", str(e))
+
+
+@router.message(F.document, StateFilter(BroadcastStates.waiting_for_photos))
+async def process_broadcast_image_docs(message: Message, state: FSMContext, session: AsyncSession):
+    """Принимаем изображения, отправленные как документы (без сжатия) для рассылки"""
+    try:
+        if not message.document or not message.document.mime_type or not message.document.mime_type.startswith("image/"):
+            await message.answer("❌ Пришли изображение-документ (jpg/png) или используй обычные фото")
+            return
+
+        data = await state.get_data()
+        docs = data.get("broadcast_docs", []) or []
+        docs.append(message.document.file_id)
+
+        await state.update_data(broadcast_docs=docs)
+
+        total_photos = len(data.get("broadcast_photos", []))
+        await message.answer(
+            f"✅ Изображение-документ добавлен! Всего: фото {total_photos}, документов {len(docs)}\n\n"
+            "Можешь отправить ещё или завершить загрузку.",
+            reply_markup=get_broadcast_photos_keyboard(has_photos=True)
+        )
+
+        log_user_action(message.from_user.id, "broadcast_image_doc_added", f"Добавлено доков: {len(docs)}")
+
+    except Exception as e:
+        await message.answer("Произошла ошибка при загрузке документа-изображения")
+        log_user_error(message.from_user.id, "process_broadcast_image_docs_error", str(e))
 
 
 @router.callback_query(F.data == "broadcast_skip_photos")
@@ -218,9 +248,11 @@ async def callback_finish_photos(callback: CallbackQuery, state: FSMContext, ses
         
         data = await state.get_data()
         photos = data.get("broadcast_photos", [])
+        docs = data.get("broadcast_docs", [])
+        total = len(photos) + len(docs)
         
-        if not photos:
-            await callback.answer("Сначала загрузи хотя бы одно фото!", show_alert=True)
+        if total == 0:
+            await callback.answer("Сначала загрузи хотя бы одно изображение!", show_alert=True)
             return
         
         # Показываем выбор материалов
@@ -242,7 +274,7 @@ async def callback_finish_photos(callback: CallbackQuery, state: FSMContext, ses
         await callback.message.edit_text(
             "✉️<b>РЕДАКТОР РАССЫЛКИ</b>✉️\n\n"
             "📝 <b>Шаг 3 из 5: Материалы</b>\n\n"
-            f"✅ Загружено фото: {len(photos)}\n\n"
+            f"✅ Загружено: фото {len(photos)}, документов {len(docs)}\n\n"
             "🟡 Выбери папку с материалом для рассылки.\n\n"
             "💡 <i>Материал будет отправлен получателям по кнопке 'Материалы'.</i>",
             parse_mode="HTML",
@@ -544,7 +576,9 @@ async def callback_toggle_broadcast_group(callback: CallbackQuery, state: FSMCon
         data = await state.get_data()
         selected_test_id = data.get("selected_test_id")
         selected_groups = data.get("selected_groups", [])
+        broadcast_docs = data.get("broadcast_docs", [])
         broadcast_material_id = data.get("broadcast_material_id")
+        broadcast_docs = data.get("broadcast_docs", [])
         
         # Получаем информацию о тесте (опционально) и группе
         test = None
@@ -628,6 +662,7 @@ async def callback_send_broadcast(callback: CallbackQuery, state: FSMContext, se
         broadcast_material_id = data.get("broadcast_material_id")
         selected_test_id = data.get("selected_test_id")
         selected_groups = data.get("selected_groups", [])
+        broadcast_docs = data.get("broadcast_docs", [])
         
         # Проверяем обязательные поля
         if not broadcast_script or not selected_groups:
@@ -649,7 +684,8 @@ async def callback_send_broadcast(callback: CallbackQuery, state: FSMContext, se
             bot=bot,
             broadcast_script=broadcast_script,
             broadcast_photos=broadcast_photos,
-            broadcast_material_id=broadcast_material_id
+            broadcast_material_id=broadcast_material_id,
+            broadcast_docs=broadcast_docs
         )
         
         if not result["success"]:
@@ -678,6 +714,8 @@ async def callback_send_broadcast(callback: CallbackQuery, state: FSMContext, se
         
         if broadcast_photos:
             success_parts.append(f"🟢 <b>Фото:</b> {len(broadcast_photos)} шт.\n")
+        if broadcast_docs:
+            success_parts.append(f"🟢 <b>Документы-изображения:</b> {len(broadcast_docs)} шт.\n")
         
         success_parts.append(f"🟢 <b>Группы:</b> {groups_text}\n\n")
         success_parts.append("✅ <b>Ты успешно отправил рассылку!</b>\n\n")
@@ -718,25 +756,59 @@ async def callback_broadcast_material(callback: CallbackQuery, state: FSMContext
             await callback.answer("Материал недоступен", show_alert=True)
             return
         
-        # Отправляем материал в зависимости от типа
-        if material.material_type == "link":
-            # Ссылка
+        # Готовим текст для превью/сообщения
+        is_link = material.material_type == "link"
+        if is_link:
             message_text = f"📚 <b>{material.name}</b>\n\n"
             if material.description:
                 message_text += f"{material.description}\n\n"
             message_text += f"🔗 {material.content}"
-            
-            await callback.message.answer(message_text, parse_mode="HTML")
         else:
-            # Документ (PDF, DOC, и т.д.)
             caption = f"📄 {material.name}"
             if material.description:
                 caption += f"\n\n{material.description}"
-            
+
+        # Превью: сначала отправляем фото/документы-превью, если есть
+        if material.photos and len(material.photos) > 0:
+            # Разделяем фото и документы-изображения
+            photo_ids = []
+            doc_ids = []
+            for item in material.photos:
+                if isinstance(item, dict):
+                    (doc_ids if item.get("kind") == "document" else photo_ids).append(item.get("id"))
+                else:
+                    photo_ids.append(item)
+
+            # Фото — одной медиагруппой, caption у первого (если ссылка — используем message_text как caption)
+            if photo_ids:
+                media_group = []
+                for i, file_id in enumerate(photo_ids, 1):
+                    if i == 1:
+                        media_group.append(InputMediaPhoto(media=file_id, caption=(message_text if is_link else None), parse_mode="HTML" if is_link else None))
+                    else:
+                        media_group.append(InputMediaPhoto(media=file_id))
+                await callback.bot.send_media_group(chat_id=callback.message.chat.id, media=media_group)
+            else:
+                # Нет фото — отправим текст отдельно перед группой документов, если ссылка
+                if is_link:
+                    await callback.message.answer(message_text, parse_mode="HTML")
+
+            # Документы-изображения — отдельной медиагруппой документов без caption (текст уже отправлен/прикреплён)
+            if doc_ids:
+                docs_group = [InputMediaDocument(media=fid) for fid in doc_ids]
+                await callback.bot.send_media_group(chat_id=callback.message.chat.id, media=docs_group)
+
+        else:
+            # Превью нет
+            if is_link:
+                await callback.message.answer(message_text, parse_mode="HTML")
+
+        # Затем основной материал
+        if not is_link:
             await callback.bot.send_document(
                 chat_id=callback.message.chat.id,
-                document=material.content,  # file_id
-                caption=caption[:1024] if len(caption) > 1024 else caption  # Лимит caption
+                document=material.content,
+                caption=caption[:1024] if len(caption) > 1024 else caption
             )
         
         log_user_action(callback.from_user.id, "broadcast_material_viewed", f"Просмотрен материал: {material.name}")
