@@ -2546,11 +2546,17 @@ async def send_broadcast_notification(bot, user_tg_id: int, broadcast_script: st
             docs.append(item)
 
         if photos:
-            media_group = [InputMediaPhoto(media=pid) for pid in photos]
-            await bot.send_media_group(chat_id=user_tg_id, media=media_group)
+            if len(photos) == 1:
+                await bot.send_photo(chat_id=user_tg_id, photo=photos[0])
+            else:
+                media_group = [InputMediaPhoto(media=pid) for pid in photos]
+                await bot.send_media_group(chat_id=user_tg_id, media=media_group)
         if docs:
-            docs_group = [InputMediaDocument(media=did) for did in docs]
-            await bot.send_media_group(chat_id=user_tg_id, media=docs_group)
+            if len(docs) == 1:
+                await bot.send_document(chat_id=user_tg_id, document=docs[0])
+            else:
+                docs_group = [InputMediaDocument(media=did) for did in docs]
+                await bot.send_media_group(chat_id=user_tg_id, media=docs_group)
         
         # 2. Формируем клавиатуру
         keyboard = []
@@ -3671,8 +3677,8 @@ async def cleanup_all_duplicate_attestations_on_startup():
                     user_name = user.full_name if user else f"ID:{trainee_id}"
                     logger.warning(f"   • Стажер {user_name}: {count} назначений аттестации {attestation_id}")
                 logger.info("💡 Для очистки используй команду администратора или редактор пользователя")
-            else:
-                logger.info("✅ Дублирующие аттестации не найдены - целостность данных в порядке")
+            # else:
+            #     logger.info("✅ Дублирующие аттестации не найдены - целостность данных в порядке")  # Проверка пройдена
                 
     except Exception as e:
         logger.error(f"Ошибка при проверке целостности аттестаций: {e}")
@@ -3974,61 +3980,61 @@ async def migrate_new_tables():
                     ALTER TABLE users 
                     ADD COLUMN IF NOT EXISTS role_assigned_date TIMESTAMP DEFAULT NOW()
                 """))
-                logger.info("✅ Столбец role_assigned_date добавлен в таблицу users")
+                # logger.info("✅ Столбец role_assigned_date добавлен в таблицу users")  # Миграция применена
             except Exception as e:
                 logger.info(f"Столбец role_assigned_date уже существует или ошибка: {e}")
             
             # Миграция: делаем поля создателя nullable для корректного удаления пользователей
             try:
                 await conn.execute(text("ALTER TABLE groups ALTER COLUMN created_by_id DROP NOT NULL"))
-                logger.info("✅ groups.created_by_id теперь nullable")
+                # logger.info("✅ groups.created_by_id теперь nullable")  # Миграция применена
             except Exception as e:
                 logger.info(f"groups.created_by_id уже nullable или ошибка: {e}")
                 
             try:
                 await conn.execute(text("ALTER TABLE objects ALTER COLUMN created_by_id DROP NOT NULL"))
-                logger.info("✅ objects.created_by_id теперь nullable")
+                # logger.info("✅ objects.created_by_id теперь nullable")  # Миграция применена
             except Exception as e:
                 logger.info(f"objects.created_by_id уже nullable или ошибка: {e}")
                 
             try:
                 await conn.execute(text("ALTER TABLE tests ALTER COLUMN creator_id DROP NOT NULL"))
-                logger.info("✅ tests.creator_id теперь nullable")
+                # logger.info("✅ tests.creator_id теперь nullable")  # Миграция применена
             except Exception as e:
                 logger.info(f"tests.creator_id уже nullable или ошибка: {e}")
                 
             try:
                 await conn.execute(text("ALTER TABLE learning_paths ALTER COLUMN created_by_id DROP NOT NULL"))
-                logger.info("✅ learning_paths.created_by_id теперь nullable")
+                # logger.info("✅ learning_paths.created_by_id теперь nullable")  # Миграция применена
             except Exception as e:
                 logger.info(f"learning_paths.created_by_id уже nullable или ошибка: {e}")
                 
             try:
                 await conn.execute(text("ALTER TABLE attestations ALTER COLUMN created_by_id DROP NOT NULL"))
-                logger.info("✅ attestations.created_by_id теперь nullable")
+                # logger.info("✅ attestations.created_by_id теперь nullable")  # Миграция применена
             except Exception as e:
                 logger.info(f"attestations.created_by_id уже nullable или ошибка: {e}")
                 
             try:
                 await conn.execute(text("ALTER TABLE knowledge_folders ALTER COLUMN created_by_id DROP NOT NULL"))
-                logger.info("✅ knowledge_folders.created_by_id теперь nullable")
+                # logger.info("✅ knowledge_folders.created_by_id теперь nullable")  # Миграция применена
             except Exception as e:
                 logger.info(f"knowledge_folders.created_by_id уже nullable или ошибка: {e}")
                 
             try:
                 await conn.execute(text("ALTER TABLE knowledge_materials ALTER COLUMN created_by_id DROP NOT NULL"))
-                logger.info("✅ knowledge_materials.created_by_id теперь nullable")
+                # logger.info("✅ knowledge_materials.created_by_id теперь nullable")  # Миграция применена
             except Exception as e:
                 logger.info(f"knowledge_materials.created_by_id уже nullable или ошибка: {e}")
             
             # Миграция: добавляем поле material_type для тестов
             try:
                 await conn.execute(text("ALTER TABLE tests ADD COLUMN IF NOT EXISTS material_type VARCHAR(20)"))
-                logger.info("✅ tests.material_type добавлен")
+                # logger.info("✅ tests.material_type добавлен")  # Миграция применена
             except Exception as e:
                 logger.info(f"tests.material_type уже существует или ошибка: {e}")
                 
-        logger.info("✅ Миграция новых таблиц для траекторий ЗАВЕРШЕНА УСПЕШНО")
+        # logger.info("✅ Миграция новых таблиц для траекторий ЗАВЕРШЕНА УСПЕШНО")  # Миграции выполнены
     except Exception as e:
         logger.error(f"❌ ОШИБКА МИГРАЦИИ новых таблиц: {type(e).__name__}: {e}")
 

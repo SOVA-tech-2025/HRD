@@ -15,7 +15,6 @@ from database.db import (
     get_employees_in_group, get_all_knowledge_folders, get_knowledge_folder_by_id,
     get_knowledge_material_by_id
 )
-from handlers.auth import check_auth
 from states.states import BroadcastStates
 from keyboards.keyboards import (
     get_broadcast_test_selection_keyboard, get_broadcast_groups_selection_keyboard,
@@ -86,7 +85,7 @@ async def callback_create_broadcast(callback: CallbackQuery, state: FSMContext, 
         )
         
         await state.set_state(BroadcastStates.waiting_for_script)
-        await state.update_data(broadcast_photos=[], broadcast_material_id=None, selected_test_id=None)
+        await state.update_data(broadcast_photos=[], broadcast_docs=[], broadcast_material_id=None, selected_test_id=None)
         log_user_action(callback.from_user.id, "broadcast_creation_started", "Начато создание рассылки")
         
     except Exception as e:
@@ -152,6 +151,17 @@ async def process_broadcast_photos(message: Message, state: FSMContext, session:
         # Получаем текущие фото
         data = await state.get_data()
         photos = data.get("broadcast_photos", [])
+        docs = data.get("broadcast_docs", [])
+        
+        # Проверяем лимит
+        if len(photos) + len(docs) >= 10:
+            await message.answer(
+                "❌ Достигнут лимит!\n\n"
+                "Telegram позволяет отправить максимум 10 изображений.\n"
+                "Нажми 'Завершить загрузку' для продолжения.",
+                reply_markup=get_broadcast_photos_keyboard(has_photos=True)
+            )
+            return
         
         # Добавляем новое фото (берем самое большое разрешение)
         photo_file_id = message.photo[-1].file_id
@@ -201,7 +211,17 @@ async def process_broadcast_image_docs(message: Message, state: FSMContext, sess
         log_user_error(message.from_user.id, "process_broadcast_image_docs_error", str(e))
 
 
-@router.callback_query(F.data == "broadcast_skip_photos")
+@router.message(StateFilter(BroadcastStates.waiting_for_photos))
+async def process_broadcast_wrong_content(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработка неправильного типа контента"""
+    await message.answer(
+        "❌ Неподдерживаемый тип!\n\n"
+        "Отправь фотографию или изображение-документ.",
+        reply_markup=get_broadcast_photos_keyboard(has_photos=False)
+    )
+
+
+@router.callback_query(F.data == "broadcast_skip_photos", StateFilter(BroadcastStates.waiting_for_photos))
 async def callback_skip_photos(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Пропуск загрузки фото"""
     try:
@@ -240,7 +260,7 @@ async def callback_skip_photos(callback: CallbackQuery, state: FSMContext, sessi
         log_user_error(callback.from_user.id, "skip_photos_error", str(e))
 
 
-@router.callback_query(F.data == "broadcast_finish_photos")
+@router.callback_query(F.data == "broadcast_finish_photos", StateFilter(BroadcastStates.waiting_for_photos))
 async def callback_finish_photos(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Завершение загрузки фото"""
     try:
@@ -364,7 +384,7 @@ async def show_groups_selection(callback: CallbackQuery, state: FSMContext, sess
     await state.set_state(BroadcastStates.selecting_groups)
 
 
-@router.callback_query(F.data.startswith("broadcast_folder:"))
+@router.callback_query(F.data.startswith("broadcast_folder:"), StateFilter(BroadcastStates.selecting_material))
 async def callback_show_folder_materials(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Показ материалов из выбранной папки"""
     try:
@@ -403,7 +423,7 @@ async def callback_show_folder_materials(callback: CallbackQuery, state: FSMCont
         log_user_error(callback.from_user.id, "show_folder_materials_error", str(e))
 
 
-@router.callback_query(F.data == "broadcast_back_to_folders")
+@router.callback_query(F.data == "broadcast_back_to_folders", StateFilter(BroadcastStates.selecting_material))
 async def callback_back_to_folders(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Возврат к выбору папок"""
     try:
@@ -424,7 +444,7 @@ async def callback_back_to_folders(callback: CallbackQuery, state: FSMContext, s
         log_user_error(callback.from_user.id, "back_to_folders_error", str(e))
 
 
-@router.callback_query(F.data.startswith("broadcast_select_material:"))
+@router.callback_query(F.data.startswith("broadcast_select_material:"), StateFilter(BroadcastStates.selecting_material))
 async def callback_broadcast_material_selected(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Выбор материала для рассылки"""
     try:
@@ -450,7 +470,7 @@ async def callback_broadcast_material_selected(callback: CallbackQuery, state: F
         log_user_error(callback.from_user.id, "material_selected_error", str(e))
 
 
-@router.callback_query(F.data == "broadcast_skip_material")
+@router.callback_query(F.data == "broadcast_skip_material", StateFilter(BroadcastStates.selecting_material))
 async def callback_skip_material(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Пропуск выбора материала"""
     try:
@@ -548,7 +568,7 @@ async def callback_select_broadcast_test(callback: CallbackQuery, state: FSMCont
         log_user_error(callback.from_user.id, "broadcast_test_select_error", str(e))
 
 
-@router.callback_query(F.data == "broadcast_skip_test")
+@router.callback_query(F.data == "broadcast_skip_test", StateFilter(BroadcastStates.selecting_test))
 async def callback_skip_test(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Пропуск выбора теста"""
     try:
@@ -578,7 +598,6 @@ async def callback_toggle_broadcast_group(callback: CallbackQuery, state: FSMCon
         selected_groups = data.get("selected_groups", [])
         broadcast_docs = data.get("broadcast_docs", [])
         broadcast_material_id = data.get("broadcast_material_id")
-        broadcast_docs = data.get("broadcast_docs", [])
         
         # Получаем информацию о тесте (опционально) и группе
         test = None
@@ -673,6 +692,12 @@ async def callback_send_broadcast(callback: CallbackQuery, state: FSMContext, se
         user = await get_user_by_tg_id(session, callback.from_user.id)
         if not user:
             await callback.message.edit_text("❌ Пользователь не найден")
+            return
+        
+        # Проверяем права на рассылку
+        has_permission = await check_user_permission(session, user.id, "create_tests")
+        if not has_permission:
+            await callback.message.edit_text("❌ У тебя нет прав для массовой рассылки.")
             return
         
         # Выполняем массовую рассылку с новыми параметрами
@@ -781,13 +806,23 @@ async def callback_broadcast_material(callback: CallbackQuery, state: FSMContext
 
             # Фото — одной медиагруппой, caption у первого (если ссылка — используем message_text как caption)
             if photo_ids:
-                media_group = []
-                for i, file_id in enumerate(photo_ids, 1):
-                    if i == 1:
-                        media_group.append(InputMediaPhoto(media=file_id, caption=(message_text if is_link else None), parse_mode="HTML" if is_link else None))
-                    else:
-                        media_group.append(InputMediaPhoto(media=file_id))
-                await callback.bot.send_media_group(chat_id=callback.message.chat.id, media=media_group)
+                if len(photo_ids) == 1:
+                    # Одно фото — отправляем через send_photo
+                    await callback.bot.send_photo(
+                        chat_id=callback.message.chat.id,
+                        photo=photo_ids[0],
+                        caption=(message_text if is_link else None),
+                        parse_mode="HTML" if is_link else None
+                    )
+                else:
+                    # Несколько фото — используем media_group
+                    media_group = []
+                    for i, file_id in enumerate(photo_ids, 1):
+                        if i == 1:
+                            media_group.append(InputMediaPhoto(media=file_id, caption=(message_text if is_link else None), parse_mode="HTML" if is_link else None))
+                        else:
+                            media_group.append(InputMediaPhoto(media=file_id))
+                    await callback.bot.send_media_group(chat_id=callback.message.chat.id, media=media_group)
             else:
                 # Нет фото — отправим текст отдельно перед группой документов, если ссылка
                 if is_link:
@@ -795,8 +830,16 @@ async def callback_broadcast_material(callback: CallbackQuery, state: FSMContext
 
             # Документы-изображения — отдельной медиагруппой документов без caption (текст уже отправлен/прикреплён)
             if doc_ids:
-                docs_group = [InputMediaDocument(media=fid) for fid in doc_ids]
-                await callback.bot.send_media_group(chat_id=callback.message.chat.id, media=docs_group)
+                if len(doc_ids) == 1:
+                    # Один документ — отправляем через send_document
+                    await callback.bot.send_document(
+                        chat_id=callback.message.chat.id,
+                        document=doc_ids[0]
+                    )
+                else:
+                    # Несколько документов — используем media_group
+                    docs_group = [InputMediaDocument(media=fid) for fid in doc_ids]
+                    await callback.bot.send_media_group(chat_id=callback.message.chat.id, media=docs_group)
 
         else:
             # Превью нет
@@ -805,11 +848,33 @@ async def callback_broadcast_material(callback: CallbackQuery, state: FSMContext
 
         # Затем основной материал
         if not is_link:
-            await callback.bot.send_document(
-                chat_id=callback.message.chat.id,
-                document=material.content,
-                caption=caption[:1024] if len(caption) > 1024 else caption
-            )
+            if material.material_type == "video":
+                await callback.bot.send_video(
+                    chat_id=callback.message.chat.id,
+                    video=material.content,
+                    caption=caption[:1024] if len(caption) > 1024 else caption
+                )
+            elif material.material_type == "photo":
+                try:
+                    await callback.bot.send_photo(
+                        chat_id=callback.message.chat.id,
+                        photo=material.content,
+                        caption=caption[:1024] if len(caption) > 1024 else caption
+                    )
+                except Exception as inner_error:
+                    logger.error(f"Ошибка отправки фото в рассылке: {inner_error}")
+                    await callback.bot.send_document(
+                        chat_id=callback.message.chat.id,
+                        document=material.content,
+                        caption=caption[:1024] if len(caption) > 1024 else caption
+                    )
+            else:
+                # Документы (pdf, doc, excel, презентации и т.д.)
+                await callback.bot.send_document(
+                    chat_id=callback.message.chat.id,
+                    document=material.content,
+                    caption=caption[:1024] if len(caption) > 1024 else caption
+                )
         
         log_user_action(callback.from_user.id, "broadcast_material_viewed", f"Просмотрен материал: {material.name}")
         

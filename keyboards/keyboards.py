@@ -457,7 +457,7 @@ def get_broadcast_groups_selection_keyboard(groups: list, selected_groups: list 
     # Кнопка отправки доступна только если выбрана хотя бы одна группа
     if selected_groups:
         keyboard.append([
-            InlineKeyboardButton(text="📤 Отправить тест", callback_data="broadcast_send")
+            InlineKeyboardButton(text="📤 Отправить", callback_data="broadcast_send")
         ])
     
     keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])

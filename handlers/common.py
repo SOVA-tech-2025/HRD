@@ -40,16 +40,16 @@ async def format_profile_text(user, session: AsyncSession) -> str:
     
     profile_text = f"""🦸🏻‍♂️ <b>Пользователь:</b> {user.full_name}
 
-📞 <b>Телефон:</b> {user.phone_number}
-👤 <b>Username:</b> {username_display}
-🔢 <b>Номер:</b> #{user.id}
-📅 <b>Дата регистрации:</b> {user.registration_date.strftime('%d.%m.%Y %H:%M')}
+<b>Телефон:</b> {user.phone_number}
+<b>Username:</b> {username_display}
+<b>Номер:</b> #{user.id}
+<b>Дата регистрации:</b> {user.registration_date.strftime('%d.%m.%Y %H:%M')}
 
 ━━━━━━━━━━━━
 
 🗂️ <b>Статус:</b>
-👥 <b>Группа:</b> {groups_str}
-👑 <b>Роль:</b> {primary_role}
+<b>Группа:</b> {groups_str}
+<b>Роль:</b> {primary_role}
 
 ━━━━━━━━━━━━
 
@@ -58,11 +58,11 @@ async def format_profile_text(user, session: AsyncSession) -> str:
     # Добавляем информацию об объектах в зависимости от роли
     if primary_role == "Стажер":
         profile_text += f"""
-🏢 <b>Стажировки:</b> {internship_obj}
-💼 <b>Работы:</b> {work_obj}"""
+<b>Стажировки:</b> {internship_obj}
+<b>Работы:</b> {work_obj}"""
     else:
         profile_text += f"""
-💼 <b>Работы:</b> {work_obj}"""
+<b>Работы:</b> {work_obj}"""
     
     return profile_text
 

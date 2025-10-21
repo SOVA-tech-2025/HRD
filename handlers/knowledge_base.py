@@ -4,7 +4,7 @@
 """
 
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, Document, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, InputMediaDocument
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -189,11 +189,22 @@ async def cmd_knowledge_base_universal(message: Message, state: FSMContext, sess
         log_user_error(message.from_user.id, "knowledge_base_universal_error", str(e))
 
 
-@router.callback_query(F.data == "kb_create_folder")
+@router.callback_query(F.data == "kb_create_folder", StateFilter(KnowledgeBaseStates.main_menu))
 async def callback_create_folder(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Начало создания папки (ТЗ 9-1 шаг 3)"""
     try:
         await callback.answer()
+        
+        # Проверяем права
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.message.edit_text("❌ Пользователь не найден")
+            return
+            
+        has_permission = await check_user_permission(session, user.id, "manage_groups")
+        if not has_permission:
+            await callback.message.edit_text("❌ У тебя нет прав для этой операции.")
+            return
         
         # ТЗ 9-1 шаг 4
         await callback.message.edit_text(
@@ -234,7 +245,13 @@ async def process_folder_name(message: Message, state: FSMContext, session: Asyn
             await message.answer("❌ Не удалось создать папку. Возможно, папка с таким названием уже существует.")
             return
             
-        await session.commit()
+        try:
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Ошибка БД при commit: {e}")
+            await message.answer("❌ Произошла ошибка при сохранении данных")
+            return
         
         # ТЗ 9-1 шаг 6: Папка создана успешно
         await message.answer(
@@ -257,11 +274,22 @@ async def process_folder_name(message: Message, state: FSMContext, session: Asyn
         log_user_error(message.from_user.id, "process_folder_name_error", str(e))
 
 
-@router.callback_query(F.data == "kb_add_material")
+@router.callback_query(F.data == "kb_add_material", StateFilter(KnowledgeBaseStates.folder_created_add_material))
 async def callback_add_material(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Начало добавления материала в папку (ТЗ 9-1 шаг 7)"""
     try:
         await callback.answer()
+        
+        # Проверяем права
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.message.edit_text("❌ Пользователь не найден")
+            return
+            
+        has_permission = await check_user_permission(session, user.id, "manage_groups")
+        if not has_permission:
+            await callback.message.edit_text("❌ У тебя нет прав для этой операции.")
+            return
         
         data = await state.get_data()
         folder_id = data.get("current_folder_id")
@@ -281,11 +309,22 @@ async def callback_add_material(callback: CallbackQuery, state: FSMContext, sess
         log_user_error(callback.from_user.id, "add_material_error", str(e))
 
 
-@router.callback_query(F.data.startswith("kb_add_material_to_folder:"))
+@router.callback_query(F.data.startswith("kb_add_material_to_folder:"), StateFilter(KnowledgeBaseStates.main_menu, KnowledgeBaseStates.viewing_folder))
 async def callback_add_material_to_existing_folder(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Начало добавления материала в существующую папку"""
     try:
         await callback.answer()
+        
+        # Проверяем права
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.message.edit_text("❌ Пользователь не найден")
+            return
+            
+        has_permission = await check_user_permission(session, user.id, "manage_groups")
+        if not has_permission:
+            await callback.message.edit_text("❌ У тебя нет прав для этой операции.")
+            return
         
         # Извлекаем folder_id из callback_data
         folder_id = int(callback.data.split(":")[1])
@@ -502,7 +541,7 @@ async def callback_skip_photos(callback: CallbackQuery, state: FSMContext, sessi
         log_user_error(callback.from_user.id, "skip_photos_error", str(e))
 
 
-@router.message(StateFilter(KnowledgeBaseStates.waiting_for_material_photos))
+@router.message(F.photo, StateFilter(KnowledgeBaseStates.waiting_for_material_photos))
 async def process_material_photos(message: Message, state: FSMContext, session: AsyncSession):
     """Обработка фотографий для материала"""
     try:
@@ -517,9 +556,10 @@ async def process_material_photos(message: Message, state: FSMContext, session: 
             photos = [{"id": message.document.file_id, "kind": "document"}]
         elif message.media_group_id:
             # Несколько фотографий (альбом)
-            # В этом случае Telegram отправляет несколько отдельных сообщений
-            # Но для простоты будем обрабатывать только первое сообщение из группы
-            # Более сложная логика потребовала бы дополнительной обработки
+            await message.answer(
+                "⚠️ При отправке альбома фото обрабатываются по отдельности.\n"
+                "Рекомендуется отправлять по одному."
+            )
             if message.photo:
                 photos = [{"id": message.photo[-1].file_id, "kind": "photo"}]
         else:
@@ -538,6 +578,17 @@ async def process_material_photos(message: Message, state: FSMContext, session: 
             else:
                 normalized.append({"id": item, "kind": "photo"})
         normalized.extend(photos)
+        
+        # Проверяем лимит
+        if len(normalized) >= 10:
+            await message.answer(
+                "❌ Достигнут лимит!\n\n"
+                "Можно добавить максимум 10 фотографий к материалу.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="✅Продолжить", callback_data="kb_finish_photos")]
+                ])
+            )
+            return
 
         # Обновляем состояние
         await state.update_data(material_photos=normalized)
@@ -559,6 +610,77 @@ async def process_material_photos(message: Message, state: FSMContext, session: 
     except Exception as e:
         await message.answer("Произошла ошибка при обработке фотографий")
         log_user_error(message.from_user.id, "process_material_photos_error", str(e))
+
+
+@router.message(F.document, StateFilter(KnowledgeBaseStates.waiting_for_material_photos))
+async def process_material_image_docs(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработка изображений-документов (фото без сжатия) для материала"""
+    try:
+        # Проверяем, что это изображение
+        if not message.document or not message.document.mime_type or not message.document.mime_type.startswith("image/"):
+            await message.answer("❌ Пришли изображение или используй обычные фото")
+            return
+        
+        # Создаём объект фото с пометкой "document"
+        photos = [{"id": message.document.file_id, "kind": "document"}]
+        
+        # Получаем текущие фотографии из состояния
+        data = await state.get_data()
+        current_photos = data.get('material_photos') or []
+        
+        # Нормализуем существующие
+        normalized = []
+        for item in current_photos:
+            if isinstance(item, dict):
+                normalized.append(item)
+            else:
+                normalized.append({"id": item, "kind": "photo"})
+        normalized.extend(photos)
+        
+        # Проверяем лимит
+        if len(normalized) >= 10:
+            await message.answer(
+                "❌ Достигнут лимит!\n\n"
+                "Можно добавить максимум 10 фотографий к материалу.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="✅Продолжить", callback_data="kb_finish_photos")]
+                ])
+            )
+            return
+        
+        # Обновляем состояние
+        await state.update_data(material_photos=normalized)
+        
+        # Показываем результат
+        photos_count = len(normalized)
+        response_text = f"🖼️ Добавлено фотографий: {photos_count}\n\n"
+        response_text += "Отправь еще фотографии или нажми кнопку для продолжения."
+        
+        keyboard_buttons = [
+            [InlineKeyboardButton(text="✅Продолжить", callback_data="kb_finish_photos")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+        ]
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+        
+        await message.answer(response_text, reply_markup=keyboard)
+        log_user_action(message.from_user.id, "material_image_doc_added", f"Добавлен image-document к материалу, всего: {photos_count}")
+        
+    except Exception as e:
+        await message.answer("Произошла ошибка при загрузке изображения-документа")
+        log_user_error(message.from_user.id, "process_material_image_docs_error", str(e))
+
+
+@router.message(StateFilter(KnowledgeBaseStates.waiting_for_material_photos))
+async def process_material_wrong_content(message: Message, state: FSMContext, session: AsyncSession):
+    """Обработка неправильного типа контента"""
+    await message.answer(
+        "❌ Неподдерживаемый тип!\n\n"
+        "Отправь фотографию или изображение-документ.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅Продолжить", callback_data="kb_finish_photos")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+        ])
+    )
 
 
 @router.callback_query(F.data == "kb_finish_photos", KnowledgeBaseStates.waiting_for_material_photos)
@@ -723,6 +845,17 @@ async def callback_save_material(callback: CallbackQuery, state: FSMContext, ses
     try:
         await callback.answer()
         
+        # Проверяем права
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.message.edit_text("❌ Пользователь не найден")
+            return
+            
+        has_permission = await check_user_permission(session, user.id, "manage_groups")
+        if not has_permission:
+            await callback.message.edit_text("❌ У тебя нет прав для этой операции.")
+            return
+        
         data = await state.get_data()
         folder_id = data.get("current_folder_id")
         material_name = data.get("material_name")
@@ -748,17 +881,20 @@ async def callback_save_material(callback: CallbackQuery, state: FSMContext, ses
             await callback.message.edit_text("❌ Не удалось создать материал")
             return
             
-        await session.commit()
+        try:
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Ошибка БД при commit: {e}")
+            await callback.message.edit_text("❌ Произошла ошибка при сохранении данных")
+            return
         
         # Получаем папку для отображения
         folder = await get_knowledge_folder_by_id(session, folder_id)
         
-        # Обновляем данные папки с новым материалом для правильного отображения
-        updated_folder = await get_knowledge_folder_by_id(session, folder_id)
-        
         # ТЗ 9-1 шаг 16: Материал сохранен - показываем только активные материалы в папке
         materials_display = []
-        active_materials = [mat for mat in updated_folder.materials if mat.is_active]
+        active_materials = [mat for mat in folder.materials if mat.is_active]
         for i, mat in enumerate(active_materials, 1):
             mat_content = mat.content if mat.material_type == "link" else "Документ"
             mat_description = mat.description if mat.description else "Без описания"
@@ -774,12 +910,26 @@ async def callback_save_material(callback: CallbackQuery, state: FSMContext, ses
         
         materials_text = "\n\n".join(materials_display)
         
-        await callback.message.edit_text(
+        # Формируем финальное сообщение
+        final_message = (
             "📚РЕДАКТОР БАЗЫ ЗНАНИЙ📚\n\n"
             f"📁Папка: {folder.name}\n\n"
             f"{materials_text}\n\n"
             "✅Ты успешно сохранил материал!\n"
-            "Теперь ты можешь его найти в базе знаний",
+            "Теперь ты можешь его найти в базе знаний"
+        )
+        
+        # Проверяем длину текста
+        if len(final_message) > 4096:
+            final_message = (
+                "📚РЕДАКТОР БАЗЫ ЗНАНИЙ📚\n\n"
+                f"📁Папка: {folder.name}\n\n"
+                "✅Ты успешно сохранил материал!\n\n"
+                f"В папке теперь {len(active_materials)} материалов."
+            )
+        
+        await callback.message.edit_text(
+            final_message,
             reply_markup=get_material_saved_keyboard(folder_id),
             parse_mode="HTML"
         )
@@ -834,7 +984,7 @@ async def callback_cancel_material(callback: CallbackQuery, state: FSMContext, s
         log_user_error(callback.from_user.id, "cancel_material_error", str(e))
 
 
-@router.callback_query(F.data.startswith("kb_folder:"))
+@router.callback_query(F.data.startswith("kb_folder:"), StateFilter(KnowledgeBaseStates.main_menu, KnowledgeBaseStates.folder_created_add_material, KnowledgeBaseStates.viewing_folder))
 async def callback_view_folder(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Просмотр содержимого папки (ТЗ 9-2 шаг 3)"""
     try:
@@ -872,7 +1022,7 @@ async def callback_view_folder(callback: CallbackQuery, state: FSMContext, sessi
         log_user_error(callback.from_user.id, "view_folder_error", str(e))
 
 
-@router.callback_query(F.data.startswith("kb_material:"))
+@router.callback_query(F.data.startswith("kb_material:"), StateFilter(KnowledgeBaseStates.viewing_folder))
 async def callback_view_material(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Просмотр материала (ТЗ 9-2 шаг 5)"""
     try:
@@ -908,7 +1058,6 @@ async def callback_view_material(callback: CallbackQuery, state: FSMContext, ses
         # Сначала отправляем фото/документы БЕЗ кнопок, соблюдая ограничения Telegram
         if material.photos and len(material.photos) > 0:
             try:
-                from aiogram.types import InputMediaPhoto
                 photo_ids = []
                 doc_ids = []
                 for item in material.photos:
@@ -919,23 +1068,40 @@ async def callback_view_material(callback: CallbackQuery, state: FSMContext, ses
 
                 # 1) Если есть фото — отправляем их одним media group, caption на первом
                 if photo_ids:
-                    media_group = []
-                    for i, file_id in enumerate(photo_ids, 1):
-                        if i == 1:
-                            media_group.append(InputMediaPhoto(media=file_id, caption=message_text, parse_mode="HTML"))
-                        else:
-                            media_group.append(InputMediaPhoto(media=file_id))
-                    await callback.bot.send_media_group(chat_id=callback.message.chat.id, media=media_group)
+                    if len(photo_ids) == 1:
+                        # Одно фото — отправляем через send_photo
+                        await callback.bot.send_photo(
+                            chat_id=callback.message.chat.id,
+                            photo=photo_ids[0],
+                            caption=message_text,
+                            parse_mode="HTML"
+                        )
+                    else:
+                        # Несколько фото — используем media_group
+                        media_group = []
+                        for i, file_id in enumerate(photo_ids, 1):
+                            if i == 1:
+                                media_group.append(InputMediaPhoto(media=file_id, caption=message_text, parse_mode="HTML"))
+                            else:
+                                media_group.append(InputMediaPhoto(media=file_id))
+                        await callback.bot.send_media_group(chat_id=callback.message.chat.id, media=media_group)
                 else:
                     # Если фото нет — отправим текст отдельным сообщением
                     await callback.message.edit_text(message_text, parse_mode="HTML")
 
                 # 2) Документы (изображения без сжатия) нельзя смешивать с фото — отправляем группой документов
                 if doc_ids:
-                    from aiogram.types import InputMediaDocument
-                    docs_group = [InputMediaDocument(media=fid) for fid in doc_ids]
-                    # Текст уже отправлен: как caption первого фото или отдельным сообщением
-                    await callback.bot.send_media_group(chat_id=callback.message.chat.id, media=docs_group)
+                    if len(doc_ids) == 1:
+                        # Один документ — отправляем через send_document
+                        await callback.bot.send_document(
+                            chat_id=callback.message.chat.id,
+                            document=doc_ids[0]
+                        )
+                    else:
+                        # Несколько документов — используем media_group
+                        docs_group = [InputMediaDocument(media=fid) for fid in doc_ids]
+                        # Текст уже отправлен: как caption первого фото или отдельным сообщением
+                        await callback.bot.send_media_group(chat_id=callback.message.chat.id, media=docs_group)
 
             except Exception as media_error:
                 logger.error(f"Ошибка отправки media для материала {material.name}: {media_error}")
@@ -1041,7 +1207,6 @@ async def callback_delete_material(callback: CallbackQuery, state: FSMContext, s
         # Сначала отправляем фото/документы БЕЗ кнопок, соблюдая ограничения Telegram
         if material.photos and len(material.photos) > 0:
             try:
-                from aiogram.types import InputMediaPhoto, InputMediaDocument
                 photo_ids = []
                 doc_ids = []
                 for item in material.photos:
@@ -1052,21 +1217,39 @@ async def callback_delete_material(callback: CallbackQuery, state: FSMContext, s
 
                 # 1) Если есть фото — отправляем их одним media group, caption на первом
                 if photo_ids:
-                    media_group = []
-                    for i, file_id in enumerate(photo_ids, 1):
-                        if i == 1:
-                            media_group.append(InputMediaPhoto(media=file_id, caption=message_text, parse_mode="HTML"))
-                        else:
-                            media_group.append(InputMediaPhoto(media=file_id))
-                    await callback.bot.send_media_group(chat_id=callback.message.chat.id, media=media_group)
+                    if len(photo_ids) == 1:
+                        # Одно фото — отправляем через send_photo
+                        await callback.bot.send_photo(
+                            chat_id=callback.message.chat.id,
+                            photo=photo_ids[0],
+                            caption=message_text,
+                            parse_mode="HTML"
+                        )
+                    else:
+                        # Несколько фото — используем media_group
+                        media_group = []
+                        for i, file_id in enumerate(photo_ids, 1):
+                            if i == 1:
+                                media_group.append(InputMediaPhoto(media=file_id, caption=message_text, parse_mode="HTML"))
+                            else:
+                                media_group.append(InputMediaPhoto(media=file_id))
+                        await callback.bot.send_media_group(chat_id=callback.message.chat.id, media=media_group)
                 else:
                     # Если фото нет — отправим текст отдельным сообщением
                     await callback.message.edit_text(message_text, parse_mode="HTML")
 
                 # 2) Документы (изображения без сжатия) — отдельная медиагруппа из документов
                 if doc_ids:
-                    docs_group = [InputMediaDocument(media=fid) for fid in doc_ids]
-                    await callback.bot.send_media_group(chat_id=callback.message.chat.id, media=docs_group)
+                    if len(doc_ids) == 1:
+                        # Один документ — отправляем через send_document
+                        await callback.bot.send_document(
+                            chat_id=callback.message.chat.id,
+                            document=doc_ids[0]
+                        )
+                    else:
+                        # Несколько документов — используем media_group
+                        docs_group = [InputMediaDocument(media=fid) for fid in doc_ids]
+                        await callback.bot.send_media_group(chat_id=callback.message.chat.id, media=docs_group)
 
             except Exception as media_error:
                 logger.error(f"Ошибка отправки media для материала {material.name}: {media_error}")
@@ -1119,11 +1302,22 @@ async def callback_delete_material(callback: CallbackQuery, state: FSMContext, s
         log_user_error(callback.from_user.id, "delete_material_error", str(e))
 
 
-@router.callback_query(F.data.startswith("kb_confirm_delete_material:"))
+@router.callback_query(F.data.startswith("kb_confirm_delete_material:"), StateFilter(KnowledgeBaseStates.confirming_material_deletion))
 async def callback_confirm_delete_material(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Подтверждение удаления материала (ТЗ 9-2 шаг 7-3)"""
     try:
         await callback.answer()
+        
+        # Проверяем права
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.message.edit_text("❌ Пользователь не найден")
+            return
+            
+        has_permission = await check_user_permission(session, user.id, "manage_groups")
+        if not has_permission:
+            await callback.message.edit_text("❌ У тебя нет прав для этой операции.")
+            return
         
         material_id = int(callback.data.split(":")[1])
         
@@ -1152,7 +1346,13 @@ async def callback_confirm_delete_material(callback: CallbackQuery, state: FSMCo
             await callback.message.edit_text("❌ Не удалось удалить материал")
             return
             
-        await session.commit()
+        try:
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Ошибка БД при commit: {e}")
+            await callback.message.edit_text("❌ Произошла ошибка при сохранении данных")
+            return
         
         # ТЗ 9-2 шаг 7-4
         await callback.message.edit_text(
@@ -1262,11 +1462,22 @@ async def show_main_folders_list(callback: CallbackQuery, state: FSMContext, ses
 # Обработчики изменения доступа к папке (ТЗ 9-3)
 # ===============================
 
-@router.callback_query(F.data.startswith("kb_access:"))
+@router.callback_query(F.data.startswith("kb_access:"), StateFilter(KnowledgeBaseStates.viewing_folder))
 async def callback_folder_access(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Настройка доступа к папке (ТЗ 9-3 шаг 4)"""
     try:
         await callback.answer()
+        
+        # Проверяем права
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.message.edit_text("❌ Пользователь не найден")
+            return
+            
+        has_permission = await check_user_permission(session, user.id, "manage_groups")
+        if not has_permission:
+            await callback.message.edit_text("❌ У тебя нет прав для этой операции.")
+            return
         
         folder_id = int(callback.data.split(":")[1])
         
@@ -1318,6 +1529,17 @@ async def callback_toggle_group_access(callback: CallbackQuery, state: FSMContex
     """Переключение доступа для группы (ТЗ 9-3 шаги 6-9)"""
     try:
         await callback.answer()
+        
+        # Проверяем права
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.message.edit_text("❌ Пользователь не найден")
+            return
+            
+        has_permission = await check_user_permission(session, user.id, "manage_groups")
+        if not has_permission:
+            await callback.message.edit_text("❌ У тебя нет прав для этой операции.")
+            return
         
         group_id = int(callback.data.split(":")[1])
         data = await state.get_data()
@@ -1374,11 +1596,22 @@ async def callback_toggle_group_access(callback: CallbackQuery, state: FSMContex
         log_user_error(callback.from_user.id, "toggle_group_access_error", str(e))
 
 
-@router.callback_query(F.data == "kb_save_access")
+@router.callback_query(F.data == "kb_save_access", StateFilter(KnowledgeBaseStates.selecting_access_groups))
 async def callback_save_access(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Сохранение настроек доступа (ТЗ 9-3 шаг 10)"""
     try:
         await callback.answer()
+        
+        # Проверяем права
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.message.edit_text("❌ Пользователь не найден")
+            return
+            
+        has_permission = await check_user_permission(session, user.id, "manage_groups")
+        if not has_permission:
+            await callback.message.edit_text("❌ У тебя нет прав для этой операции.")
+            return
         
         data = await state.get_data()
         folder_id = data.get("current_folder_id")
@@ -1400,7 +1633,13 @@ async def callback_save_access(callback: CallbackQuery, state: FSMContext, sessi
             await callback.message.edit_text("❌ Не удалось сохранить настройки доступа")
             return
             
-        await session.commit()
+        try:
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Ошибка БД при commit: {e}")
+            await callback.message.edit_text("❌ Произошла ошибка при сохранении данных")
+            return
         
         # Возвращаемся к просмотру папки
         await callback_view_folder_by_id(callback, state, session, folder_id)
@@ -1416,11 +1655,22 @@ async def callback_save_access(callback: CallbackQuery, state: FSMContext, sessi
 # Обработчики изменения названия папки (ТЗ 9-4)
 # ===============================
 
-@router.callback_query(F.data.startswith("kb_rename_folder:"))
+@router.callback_query(F.data.startswith("kb_rename_folder:"), StateFilter(KnowledgeBaseStates.viewing_folder))
 async def callback_rename_folder(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Начало переименования папки (ТЗ 9-4 шаг 4)"""
     try:
         await callback.answer()
+        
+        # Проверяем права
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.message.edit_text("❌ Пользователь не найден")
+            return
+            
+        has_permission = await check_user_permission(session, user.id, "manage_groups")
+        if not has_permission:
+            await callback.message.edit_text("❌ У тебя нет прав для этой операции.")
+            return
         
         folder_id = int(callback.data.split(":")[1])
         
@@ -1493,6 +1743,17 @@ async def callback_confirm_rename(callback: CallbackQuery, state: FSMContext, se
     try:
         await callback.answer()
         
+        # Проверяем права
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.message.edit_text("❌ Пользователь не найден")
+            return
+            
+        has_permission = await check_user_permission(session, user.id, "manage_groups")
+        if not has_permission:
+            await callback.message.edit_text("❌ У тебя нет прав для этой операции.")
+            return
+        
         data = await state.get_data()
         folder_id = data.get("current_folder_id")
         new_name = data.get("new_folder_name")
@@ -1513,7 +1774,13 @@ async def callback_confirm_rename(callback: CallbackQuery, state: FSMContext, se
             await callback.message.edit_text("❌ Не удалось переименовать папку. Возможно, папка с таким названием уже существует.")
             return
             
-        await session.commit()
+        try:
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Ошибка БД при commit: {e}")
+            await callback.message.edit_text("❌ Произошла ошибка при сохранении данных")
+            return
         
         # ТЗ 9-4 шаг 9
         await callback.message.edit_text(
@@ -1556,11 +1823,22 @@ async def callback_cancel_rename(callback: CallbackQuery, state: FSMContext, ses
 # Обработчики удаления папки (ТЗ 9-5)
 # ===============================
 
-@router.callback_query(F.data.startswith("kb_delete_folder:"))
+@router.callback_query(F.data.startswith("kb_delete_folder:"), StateFilter(KnowledgeBaseStates.viewing_folder))
 async def callback_delete_folder(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Подтверждение удаления папки (ТЗ 9-5 шаг 4)"""
     try:
         await callback.answer()
+        
+        # Проверяем права
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.message.edit_text("❌ Пользователь не найден")
+            return
+            
+        has_permission = await check_user_permission(session, user.id, "manage_groups")
+        if not has_permission:
+            await callback.message.edit_text("❌ У тебя нет прав для этой операции.")
+            return
         
         folder_id = int(callback.data.split(":")[1])
         
@@ -1592,11 +1870,22 @@ async def callback_delete_folder(callback: CallbackQuery, state: FSMContext, ses
         log_user_error(callback.from_user.id, "delete_folder_error", str(e))
 
 
-@router.callback_query(F.data.startswith("kb_confirm_delete_folder:"))
+@router.callback_query(F.data.startswith("kb_confirm_delete_folder:"), StateFilter(KnowledgeBaseStates.confirming_folder_deletion))
 async def callback_confirm_delete_folder(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Подтверждение удаления папки (ТЗ 9-5 шаг 6)"""
     try:
         await callback.answer()
+        
+        # Проверяем права
+        user = await get_user_by_tg_id(session, callback.from_user.id)
+        if not user:
+            await callback.message.edit_text("❌ Пользователь не найден")
+            return
+            
+        has_permission = await check_user_permission(session, user.id, "manage_groups")
+        if not has_permission:
+            await callback.message.edit_text("❌ У тебя нет прав для этой операции.")
+            return
         
         folder_id = int(callback.data.split(":")[1])
         
@@ -1621,7 +1910,13 @@ async def callback_confirm_delete_folder(callback: CallbackQuery, state: FSMCont
             await callback.message.edit_text("❌ Не удалось удалить папку")
             return
             
-        await session.commit()
+        try:
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Ошибка БД при commit: {e}")
+            await callback.message.edit_text("❌ Произошла ошибка при сохранении данных")
+            return
         
         # ТЗ 9-5 шаг 7
         await callback.message.edit_text(
@@ -1812,7 +2107,6 @@ async def callback_employee_view_material(callback: CallbackQuery, state: FSMCon
         # Сначала отправляем фото/документы БЕЗ кнопок, соблюдая ограничения Telegram
         if material.photos and len(material.photos) > 0:
             try:
-                from aiogram.types import InputMediaPhoto, InputMediaDocument
                 photo_ids = []
                 doc_ids = []
                 for item in material.photos:
@@ -1823,21 +2117,39 @@ async def callback_employee_view_material(callback: CallbackQuery, state: FSMCon
 
                 # 1) Фото — одной медиагруппой с caption на первом
                 if photo_ids:
-                    media_group = []
-                    for i, file_id in enumerate(photo_ids, 1):
-                        if i == 1:
-                            media_group.append(InputMediaPhoto(media=file_id, caption=message_text, parse_mode="HTML"))
-                        else:
-                            media_group.append(InputMediaPhoto(media=file_id))
-                    await callback.bot.send_media_group(chat_id=callback.message.chat.id, media=media_group)
+                    if len(photo_ids) == 1:
+                        # Одно фото — отправляем через send_photo
+                        await callback.bot.send_photo(
+                            chat_id=callback.message.chat.id,
+                            photo=photo_ids[0],
+                            caption=message_text,
+                            parse_mode="HTML"
+                        )
+                    else:
+                        # Несколько фото — используем media_group
+                        media_group = []
+                        for i, file_id in enumerate(photo_ids, 1):
+                            if i == 1:
+                                media_group.append(InputMediaPhoto(media=file_id, caption=message_text, parse_mode="HTML"))
+                            else:
+                                media_group.append(InputMediaPhoto(media=file_id))
+                        await callback.bot.send_media_group(chat_id=callback.message.chat.id, media=media_group)
                 else:
                     # Если фото нет — отправим текст отдельным сообщением
                     await callback.message.edit_text(message_text, parse_mode="HTML")
 
                 # 2) Документы-изображения — отдельной медиагруппой документов
                 if doc_ids:
-                    docs_group = [InputMediaDocument(media=fid) for fid in doc_ids]
-                    await callback.bot.send_media_group(chat_id=callback.message.chat.id, media=docs_group)
+                    if len(doc_ids) == 1:
+                        # Один документ — отправляем через send_document
+                        await callback.bot.send_document(
+                            chat_id=callback.message.chat.id,
+                            document=doc_ids[0]
+                        )
+                    else:
+                        # Несколько документов — используем media_group
+                        docs_group = [InputMediaDocument(media=fid) for fid in doc_ids]
+                        await callback.bot.send_media_group(chat_id=callback.message.chat.id, media=docs_group)
 
             except Exception as media_error:
                 logger.error(f"Ошибка отправки media group для материала {material.name}: {media_error}")
@@ -1863,10 +2175,17 @@ async def callback_employee_view_material(callback: CallbackQuery, state: FSMCon
                         video=material.content  # file_id
                     )
                 elif material.material_type == "photo":
-                    await callback.bot.send_photo(
-                        chat_id=callback.message.chat.id,
-                        photo=material.content  # file_id
-                    )
+                    try:
+                        await callback.bot.send_photo(
+                            chat_id=callback.message.chat.id,
+                            photo=material.content  # file_id
+                        )
+                    except Exception as inner_error:
+                        logger.error(f"Ошибка отправки фото: {inner_error}")
+                        await callback.bot.send_document(
+                            chat_id=callback.message.chat.id,
+                            document=material.content
+                        )
                 else:
                     # Документы (pdf, doc, excel, etc.)
                     await callback.bot.send_document(

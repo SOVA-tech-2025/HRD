@@ -1194,10 +1194,6 @@ async def handle_unexpected_broadcast_test_input(message: Message, state: FSMCon
 async def handle_unexpected_broadcast_groups_input(message: Message, state: FSMContext):
     """Обработчик неожиданного ввода при выборе групп для рассылки"""
     await send_fallback_message(message, state)
-@router.message(StateFilter(BroadcastStates.confirming_broadcast))
-async def handle_unexpected_broadcast_confirmation_input(message: Message, state: FSMContext):
-    """Обработчик неожиданного ввода при подтверждении рассылки"""
-    await send_fallback_message(message, state)
 @router.message(F.text)
 async def handle_unexpected_input_with_state(message: Message, state: FSMContext, session: AsyncSession):
     """Универсальный обработчик для неожиданного ввода в любых состояниях"""

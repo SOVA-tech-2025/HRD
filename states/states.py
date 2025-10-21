@@ -262,7 +262,6 @@ class BroadcastStates(StatesGroup):
     selecting_material = State()  # Выбор материала из базы знаний
     selecting_test = State()  # Выбор теста для рассылки (опционально)
     selecting_groups = State()  # Выбор групп для рассылки
-    confirming_broadcast = State()  # Подтверждение рассылки
 
 
 class KnowledgeBaseStates(StatesGroup):
@@ -287,7 +286,6 @@ class KnowledgeBaseStates(StatesGroup):
     
     # Изменение доступа к папке (9-3)
     selecting_access_groups = State()
-    confirming_access_changes = State()
     
     # Изменение названия папки (9-4)
     waiting_for_new_folder_name = State()
