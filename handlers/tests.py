@@ -882,34 +882,10 @@ async def process_test_selection(callback: CallbackQuery, state: FSMContext, ses
     is_employee = "Сотрудник" in role_names
     
     # Проверяем роль пользователя для определения интерфейса
-    # ИСКЛЮЧЕНИЕ: Если наставник пришел из меню "Тесты стажеров" (context != 'taking'), 
-    # всегда показываем интерфейс управления, даже если у него есть доступ к тесту
-    # Для наставников: если context != 'taking', всегда показываем управление
-    if is_mentor and context != 'taking':
-        # Наставник из меню "Тесты стажеров" - показываем интерфейс управления
-        can_edit = await check_user_permission(session, user.id, "edit_tests")
-        user_role = "creator" if can_edit else "mentor"
-        
-        await callback.message.edit_text(
-            test_info,
-            parse_mode="HTML",
-            reply_markup=get_test_actions_keyboard(test_id, user_role)
-        )
-        await callback.answer()
-    elif (is_trainee or is_employee) and has_access:
-        # Для стажёров и сотрудников с доступом - интерфейс прохождения теста
-        # Проверяем доступ к конкретному тесту
-        
-        if not has_access:
-            await callback.message.edit_text(
-                "❌ <b>Доступ к тесту запрещен</b>\n\n"
-                "У тебя нет доступа к этому тесту. Обратись к наставнику для получения доступа.",
-                parse_mode="HTML"
-            )
-            await callback.answer()
-            return
-        
-        # Проверяем, есть ли уже результат
+    # ПРИОРИТЕТ 1: Если пользователь из "Мои тесты 📋" (context == 'taking') и имеет доступ,
+    # показываем интерфейс ПРОХОЖДЕНИЯ для ВСЕХ ролей (стажер, сотрудник, наставник, рекрутер, руководитель)
+    if context == 'taking' and has_access:
+        # УНИВЕРСАЛЬНО: Любая роль из "Мои тесты 📋" с доступом к тесту
         existing_result = await get_user_test_result(session, user.id, test_id)
         
         test_info_for_user = f"""📌 <b>{test.name}</b>
@@ -929,8 +905,30 @@ async def process_test_selection(callback: CallbackQuery, state: FSMContext, ses
         # Устанавливаем состояние для корректной работы кнопки "Начать тест"
         await state.update_data(selected_test_id=test_id)
         await state.set_state(TestTakingStates.waiting_for_test_start)
+    elif is_mentor and context != 'taking':
+        # ПРИОРИТЕТ 2: Наставник из меню "Тесты стажеров" - показываем интерфейс УПРАВЛЕНИЯ
+        can_edit = await check_user_permission(session, user.id, "edit_tests")
+        user_role = "creator" if can_edit else "mentor"
+        
+        await callback.message.edit_text(
+            test_info,
+            parse_mode="HTML",
+            reply_markup=get_test_actions_keyboard(test_id, user_role)
+        )
+        await callback.answer()
+    elif is_recruiter:
+        # ПРИОРИТЕТ 3: Рекрутер из меню "Тесты 📄" - показываем интерфейс УПРАВЛЕНИЯ
+        can_edit = await check_user_permission(session, user.id, "edit_tests")
+        user_role = "creator" if can_edit else "mentor"
+        
+        await callback.message.edit_text(
+            test_info,
+            parse_mode="HTML",
+            reply_markup=get_test_actions_keyboard(test_id, user_role)
+        )
+        await callback.answer()
     else:
-        # Для рекрутеров и других ролей - показываем меню управления
+        # ПРИОРИТЕТ 4: Остальные случаи - показываем меню УПРАВЛЕНИЯ
         can_edit = await check_user_permission(session, user.id, "edit_tests")
         user_role = "creator" if can_edit else "mentor"
         

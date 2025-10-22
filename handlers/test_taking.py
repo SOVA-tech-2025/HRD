@@ -16,7 +16,7 @@ from database.db import (
     get_trainee_learning_path, get_trainee_stage_progress, get_stage_session_progress,
     complete_session_for_trainee, complete_stage_for_trainee, get_user_by_id,
     get_trainee_attestation_status, get_user_roles, get_employee_tests_from_recruiter,
-    get_user_mentor
+    get_user_broadcast_tests, get_user_mentor
 )
 from handlers.mentorship import get_days_word
 from handlers.trainee_trajectory import format_trajectory_info
@@ -136,6 +136,8 @@ async def format_my_tests_display(
     is_trainee = "Стажер" in role_names
     is_mentor = "Наставник" in role_names
     is_employee = "Сотрудник" in role_names
+    is_recruiter = "Рекрутер" in role_names
+    is_manager = "Руководитель" in role_names
     
     # Формируем список тестов
     tests_list = []
@@ -162,6 +164,10 @@ async def format_my_tests_display(
         role_title = "👨‍🏫 <b>Наставник:</b>"
     elif is_employee:
         role_title = "👨‍💼 <b>Сотрудник:</b>"
+    elif is_recruiter:
+        role_title = "👔 <b>Рекрутер:</b>"
+    elif is_manager:
+        role_title = "🔧 <b>Руководитель:</b>"
     else:
         role_title = "👤 <b>Пользователь:</b>"
     
@@ -201,7 +207,7 @@ async def cmd_trainee_broadcast_tests(message: Message, state: FSMContext, sessi
             return
         
         # Получаем тесты ВМЕСТЕ: от рекрутера через рассылку + индивидуальные от наставника (исключая тесты траектории)
-        available_tests = await get_employee_tests_from_recruiter(session, user.id, exclude_completed=False)
+        available_tests = await get_user_broadcast_tests(session, user.id, exclude_completed=False)
         
         if not available_tests:
             no_tests_message = (
@@ -255,6 +261,10 @@ async def show_user_test_scores(message: Message, session: AsyncSession) -> None
         user_role = "стажер"
     elif "Наставник" in user_roles:
         user_role = "наставник"
+    elif "Рекрутер" in user_roles:
+        user_role = "рекрутер"
+    elif "Руководитель" in user_roles:
+        user_role = "руководитель"
     else:
         user_role = "пользователь"
     
@@ -1154,7 +1164,7 @@ async def process_back_to_test_list(callback: CallbackQuery, state: FSMContext, 
         await state.update_data(test_context='taking')
     else:
         # МОИ ТЕСТЫ (индивидуальные) - для стажеров, сотрудников и наставников
-        available_tests = await get_employee_tests_from_recruiter(session, user.id, exclude_completed=False)
+        available_tests = await get_user_broadcast_tests(session, user.id, exclude_completed=False)
         
         if not available_tests:
             no_tests_message = (
@@ -1398,7 +1408,7 @@ async def process_my_broadcast_tests_shortcut(callback: CallbackQuery, state: FS
         return
     
     # Получаем тесты от рекрутера через рассылку + индивидуальные от наставника (исключая тесты траектории)
-    available_tests = await get_employee_tests_from_recruiter(session, user.id, exclude_completed=False)
+    available_tests = await get_user_broadcast_tests(session, user.id, exclude_completed=False)
     
     if not available_tests:
         await callback.message.edit_text(

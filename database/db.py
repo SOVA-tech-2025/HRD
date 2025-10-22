@@ -115,7 +115,7 @@ async def create_initial_data():
             for role in roles:
                 if role.name == "Рекрутер":
                     for perm in permissions:
-                        if perm.name in ["view_trainee_list", "manage_trainees", "assign_mentors", "view_mentorship", "create_tests", "edit_tests", "view_test_results", "manage_groups", "manage_objects"]:
+                        if perm.name in ["view_trainee_list", "manage_trainees", "assign_mentors", "view_mentorship", "create_tests", "edit_tests", "take_tests", "view_test_results", "manage_groups", "manage_objects"]:
                             stmt = insert(role_permissions).values(
                                 role_id=role.id,
                                 permission_id=perm.id
@@ -1010,6 +1010,25 @@ async def get_group_users(session: AsyncSession, group_id: int) -> List[User]:
         return result.scalars().all()
     except Exception as e:
         logger.error(f"Ошибка получения пользователей группы {group_id}: {e}")
+        return []
+
+
+async def get_all_users_in_group(session: AsyncSession, group_id: int) -> List[User]:
+    """Получение ВСЕХ пользователей из группы (включая все роли) для рассылки"""
+    try:
+        stmt = select(User).join(
+            user_groups, User.id == user_groups.c.user_id
+        ).where(
+            user_groups.c.group_id == group_id,
+            User.is_activated == True,
+            User.is_active == True
+        ).order_by(User.full_name)
+        
+        result = await session.execute(stmt)
+        return result.scalars().all()
+        
+    except Exception as e:
+        logger.error(f"Ошибка получения пользователей из группы {group_id}: {e}")
         return []
 
 
@@ -1939,26 +1958,22 @@ async def get_user_available_tests(session: AsyncSession, user_id: int, exclude_
         return []
 
 
-async def get_employee_tests_from_recruiter(session: AsyncSession, user_id: int, exclude_completed: bool = True) -> List[Test]:
+async def get_user_broadcast_tests(session: AsyncSession, user_id: int, exclude_completed: bool = False) -> List[Test]:
     """
-    Получение тестов для сотрудников/стажеров, назначенных рекрутером ИЛИ наставником ВНЕ траектории
+    Универсальная функция получения тестов из рассылок для ЛЮБОГО пользователя
+    (включая стажеров, сотрудников, наставников, рекрутеров и руководителей)
     
     Args:
-        user_id: ID пользователя (сотрудника/стажера)
-        exclude_completed: Исключать ли пройденные тесты
+        user_id: ID пользователя
+        exclude_completed: Исключить пройденные тесты
     
     Returns:
-        List[Test]: Список тестов от рекрутера через рассылку + тесты от наставника вне траектории
+        List[Test]: Список тестов доступных пользователю через рассылку (исключая тесты траектории)
     """
     try:
-        from database.models import user_roles, LearningSession, TraineeSessionProgress, TraineeStageProgress, TraineeLearningPath
+        from database.models import LearningSession, TraineeSessionProgress, TraineeStageProgress, TraineeLearningPath
         
-        # Получаем роль рекрутера
-        recruiter_role = await get_role_by_name(session, "Рекрутер")
-        if not recruiter_role:
-            return []
-        
-        # Получаем все тесты, доступные пользователю
+        # Получаем все тесты, доступные пользователю через TraineeTestAccess
         all_tests_result = await session.execute(
             select(Test).join(
                 TraineeTestAccess, Test.id == TraineeTestAccess.test_id
@@ -1970,7 +1985,7 @@ async def get_employee_tests_from_recruiter(session: AsyncSession, user_id: int,
         )
         all_tests = all_tests_result.scalars().all()
         
-        # Получаем ID тестов из траектории (если есть)
+        # Получаем ID тестов из траектории (если пользователь - стажер с траекторией)
         trajectory_test_ids = set()
         trainee_path_result = await session.execute(
             select(TraineeLearningPath)
@@ -1982,7 +1997,7 @@ async def get_employee_tests_from_recruiter(session: AsyncSession, user_id: int,
         trainee_path = trainee_path_result.scalar_one_or_none()
         
         if trainee_path:
-            # Получаем ID всех тестов из сессий траектории ТОЛЬКО из ОТКРЫТЫХ этапов
+            # Исключаем тесты траектории (только из открытых этапов)
             trajectory_tests_result = await session.execute(
                 select(session_tests.c.test_id).join(
                     LearningSession, LearningSession.id == session_tests.c.session_id
@@ -1992,15 +2007,15 @@ async def get_employee_tests_from_recruiter(session: AsyncSession, user_id: int,
                     TraineeStageProgress, TraineeSessionProgress.stage_progress_id == TraineeStageProgress.id
                 ).where(
                     TraineeStageProgress.trainee_path_id == trainee_path.id,
-                    TraineeStageProgress.is_opened == True  # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: только открытые этапы
+                    TraineeStageProgress.is_opened == True
                 )
             )
             trajectory_test_ids = set(row[0] for row in trajectory_tests_result.all())
         
-        # Фильтруем тесты: исключаем тесты из траектории
+        # Фильтруем: исключаем тесты траектории
         available_tests = [test for test in all_tests if test.id not in trajectory_test_ids]
         
-        # Если нужно исключить пройденные тесты
+        # Опционально исключаем пройденные тесты
         if exclude_completed:
             filtered_tests = []
             for test in available_tests:
@@ -2012,8 +2027,18 @@ async def get_employee_tests_from_recruiter(session: AsyncSession, user_id: int,
         return available_tests
         
     except Exception as e:
-        logger.error(f"Ошибка получения тестов от рекрутера/наставника для пользователя {user_id}: {e}")
+        logger.error(f"Ошибка получения тестов рассылки для пользователя {user_id}: {e}")
         return []
+
+
+async def get_employee_tests_from_recruiter(session: AsyncSession, user_id: int, exclude_completed: bool = True) -> List[Test]:
+    """
+    DEPRECATED: Использовать get_user_broadcast_tests()
+    Оставлено для обратной совместимости
+    
+    Получение тестов для сотрудников/стажеров, назначенных рекрутером ИЛИ наставником ВНЕ траектории
+    """
+    return await get_user_broadcast_tests(session, user_id, exclude_completed)
 
 async def revoke_test_access(session: AsyncSession, trainee_id: int, test_id: int) -> bool:
     """Отзыв доступа к тесту"""
@@ -6182,40 +6207,26 @@ async def broadcast_test_to_groups(session: AsyncSession, test_id: int, group_id
             logger.error(f"Отправитель {sent_by_id} не найден")
             return {"success": False, "error": "Отправитель не найден"}
         
-        # Собираем всех СОТРУДНИКОВ, СТАЖЕРОВ и НАСТАВНИКОВ из выбранных групп
+        # Собираем ВСЕХ пользователей из выбранных групп (включая рекрутеров и руководителей)
         all_users = []
         group_names = []
-        
-        # Получаем роли сотрудника, стажера и наставника
-        employee_role = await get_role_by_name(session, "Сотрудник")
-        trainee_role = await get_role_by_name(session, "Стажер")
-        mentor_role = await get_role_by_name(session, "Наставник")
-        
-        if not employee_role or not trainee_role or not mentor_role:
-            logger.error("Роли 'Сотрудник', 'Стажер' или 'Наставник' не найдены")
-            return {"success": False, "error": "Необходимые роли не найдены"}
         
         for group_id in group_ids:
             group = await get_group_by_id(session, group_id)
             if group:
                 group_names.append(group.name)
-                # Получаем сотрудников из группы
-                employees_in_group = await get_employees_in_group(session, group_id)
-                all_users.extend(employees_in_group)
-                
-                # Получаем стажеров из группы
-                trainees_in_group = await get_trainees_in_group(session, group_id)
-                all_users.extend(trainees_in_group)
-                
-                # Получаем наставников из группы
-                mentors_in_group = await get_mentors_in_group(session, group_id)
-                all_users.extend(mentors_in_group)
+                # Получаем ВСЕХ пользователей из группы (все роли)
+                users_in_group = await get_all_users_in_group(session, group_id)
+                all_users.extend(users_in_group)
         
         # Убираем дубликаты пользователей (если они в нескольких группах)
         unique_users = {}
         for user in all_users:
             unique_users[user.id] = user
         final_users = list(unique_users.values())
+        
+        # КРИТИЧЕСКИ ВАЖНО: Исключаем отправителя из списка получателей
+        final_users = [user for user in final_users if user.id != sent_by_id]
         
         # Статистика рассылки
         total_sent = 0
