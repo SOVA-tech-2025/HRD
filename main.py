@@ -67,9 +67,10 @@ async def main():
 
         # Исправление прав доступа к базе знаний (если нужно)
         logger.info("Проверка прав доступа к базе знаний...")
-        from database.db import fix_knowledge_base_permissions, async_session
+        from database.db import fix_knowledge_base_permissions, fix_recruiter_take_tests_permission, async_session
         async with async_session() as session:
             await fix_knowledge_base_permissions(session)
+            await fix_recruiter_take_tests_permission(session)
             await session.commit()
         
         # Установка команд бота

@@ -261,6 +261,7 @@ class BroadcastStates(StatesGroup):
     waiting_for_photos = State()  # Загрузка фото
     selecting_material = State()  # Выбор материала из базы знаний
     selecting_test = State()  # Выбор теста для рассылки (опционально)
+    selecting_roles = State()  # Выбор ролей для рассылки
     selecting_groups = State()  # Выбор групп для рассылки
 
 

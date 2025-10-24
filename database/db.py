@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker, selectinload
+from sqlalchemy.orm import sessionmaker, selectinload, joinedload
 from sqlalchemy import select, insert, delete, func, update, or_, and_, text
 from typing import AsyncGenerator, Optional, List
 import asyncio
@@ -1022,10 +1022,12 @@ async def get_all_users_in_group(session: AsyncSession, group_id: int) -> List[U
             user_groups.c.group_id == group_id,
             User.is_activated == True,
             User.is_active == True
+        ).options(
+            joinedload(User.roles)  # Загружаем роли заранее для фильтрации
         ).order_by(User.full_name)
         
         result = await session.execute(stmt)
-        return result.scalars().all()
+        return result.scalars().unique().all()
         
     except Exception as e:
         logger.error(f"Ошибка получения пользователей из группы {group_id}: {e}")
@@ -6175,7 +6177,7 @@ async def get_trainee_attestation_status(session: AsyncSession, trainee_id: int,
 async def broadcast_test_to_groups(session: AsyncSession, test_id: int, group_ids: list, 
                                   sent_by_id: int, bot=None, broadcast_script: str = None,
                                   broadcast_photos: list = None, broadcast_material_id: int = None,
-                                  broadcast_docs: list | None = None) -> dict:
+                                  broadcast_docs: list | None = None, target_roles: list = None) -> dict:
     """
     Массовая рассылка пользователям по группам (Task 8 + расширенная версия)
     
@@ -6188,6 +6190,8 @@ async def broadcast_test_to_groups(session: AsyncSession, test_id: int, group_id
         broadcast_script: Текст рассылки (обязательно для новой версии)
         broadcast_photos: Список file_id фотографий
         broadcast_material_id: ID материала из базы знаний
+        broadcast_docs: Список file_id документов
+        target_roles: Список названий ролей для фильтрации получателей (опционально)
     
     Returns:
         dict: Статистика рассылки
@@ -6227,6 +6231,19 @@ async def broadcast_test_to_groups(session: AsyncSession, test_id: int, group_id
         
         # КРИТИЧЕСКИ ВАЖНО: Исключаем отправителя из списка получателей
         final_users = [user for user in final_users if user.id != sent_by_id]
+        
+        # Фильтрация по выбранным ролям (если указаны)
+        if target_roles:
+            filtered_users = []
+            for user in final_users:
+                # Получаем названия ролей пользователя
+                user_role_names = [role.name for role in user.roles]
+                # Проверяем, есть ли хотя бы одна из целевых ролей
+                if any(role_name in target_roles for role_name in user_role_names):
+                    filtered_users.append(user)
+            final_users = filtered_users
+            
+            logger.info(f"Фильтрация по ролям {target_roles}: {len(final_users)} получателей")
         
         # Статистика рассылки
         total_sent = 0
@@ -6719,6 +6736,66 @@ async def fix_knowledge_base_permissions(session: AsyncSession) -> bool:
 
     except Exception as e:
         logger.error(f"Ошибка исправления прав доступа к базе знаний: {e}")
+        return False
+
+
+async def fix_recruiter_take_tests_permission(session: AsyncSession) -> bool:
+    """
+    Одноразовая миграция: добавление права take_tests для роли Рекрутер
+    
+    Эта функция проверяет и добавляет право take_tests рекрутерам, если его нет.
+    Идемпотентна - можно запускать многократно без побочных эффектов.
+    
+    Returns:
+        bool: True если что-то обновили или все уже назначено, False при ошибке
+    """
+    try:
+        # Проверяем существование права take_tests
+        result = await session.execute(
+            select(Permission).where(Permission.name == "take_tests")
+        )
+        permission = result.scalar_one_or_none()
+        
+        if not permission:
+            logger.error("Право take_tests не найдено в системе")
+            return False
+        
+        # Получаем роль Рекрутер
+        result = await session.execute(
+            select(Role).where(Role.name == "Рекрутер")
+        )
+        role = result.scalar_one_or_none()
+        
+        if not role:
+            logger.error("Роль Рекрутер не найдена")
+            return False
+        
+        # Проверяем, есть ли уже связь
+        result = await session.execute(
+            select(role_permissions).where(
+                and_(
+                    role_permissions.c.role_id == role.id,
+                    role_permissions.c.permission_id == permission.id
+                )
+            )
+        )
+        existing_link = result.fetchone()
+        
+        if not existing_link:
+            # Добавляем связь
+            stmt = insert(role_permissions).values(
+                role_id=role.id,
+                permission_id=permission.id
+            )
+            await session.execute(stmt)
+            logger.info("✅ Назначено право take_tests роли Рекрутер (миграция)")
+            return True
+        else:
+            logger.info("✓ Право take_tests уже назначено роли Рекрутер")
+            return True
+    
+    except Exception as e:
+        logger.error(f"❌ Ошибка миграции прав рекрутера: {e}")
         return False
 
 

@@ -21,7 +21,8 @@ from keyboards.keyboards import (
     get_broadcast_success_keyboard, get_main_menu_keyboard, get_keyboard_by_role,
     get_broadcast_photos_keyboard, get_broadcast_folders_keyboard,
     get_broadcast_materials_keyboard, get_broadcast_tests_keyboard,
-    get_broadcast_notification_keyboard, get_broadcast_main_menu_keyboard
+    get_broadcast_notification_keyboard, get_broadcast_main_menu_keyboard,
+    get_broadcast_roles_selection_keyboard
 )
 from utils.logger import log_user_action, log_user_error
 
@@ -77,7 +78,7 @@ async def callback_create_broadcast(callback: CallbackQuery, state: FSMContext, 
         # Запрашиваем текст рассылки
         await callback.message.edit_text(
             "✉️<b>РЕДАКТОР РАССЫЛКИ</b>✉️\n\n"
-            "📝 <b>Шаг 1 из 5: Текст рассылки</b>\n\n"
+            "📝 <b>Шаг 1 из 6: Текст рассылки</b>\n\n"
             "🟡 Введи текст, который увидят получатели рассылки.\n\n"
             "💡 <i>Это может быть информация о новом тесте, материалах или любое другое сообщение.</i>\n\n"
             "📏 Минимум 10 символов, максимум 4000 символов.",
@@ -123,7 +124,7 @@ async def process_broadcast_script(message: Message, state: FSMContext, session:
         # Переходим к загрузке фото
         await message.answer(
             "✉️<b>РЕДАКТОР РАССЫЛКИ</b>✉️\n\n"
-            "📝 <b>Шаг 2 из 5: Фотографии</b>\n\n"
+            "📝 <b>Шаг 2 из 6: Фотографии</b>\n\n"
             "🟡 Отправь фотографии для рассылки (по одной или несколько сразу).\n\n"
             "💡 <i>Фотографии помогут сделать рассылку более наглядной и привлекательной.</i>\n\n"
             "Ты можешь:\n"
@@ -233,7 +234,7 @@ async def callback_skip_photos(callback: CallbackQuery, state: FSMContext, sessi
         if not folders:
             await callback.message.edit_text(
                 "✉️<b>РЕДАКТОР РАССЫЛКИ</b>✉️\n\n"
-                "📝 <b>Шаг 3 из 5: Материалы</b>\n\n"
+                "📝 <b>Шаг 3 из 6: Материалы</b>\n\n"
                 "📚 В базе знаний пока нет материалов.\n"
                 "Сначала создай папки и материалы в разделе 'База знаний'.\n\n"
                 "Переходим к выбору теста...",
@@ -245,7 +246,7 @@ async def callback_skip_photos(callback: CallbackQuery, state: FSMContext, sessi
         
         await callback.message.edit_text(
             "✉️<b>РЕДАКТОР РАССЫЛКИ</b>✉️\n\n"
-            "📝 <b>Шаг 3 из 5: Материалы</b>\n\n"
+            "📝 <b>Шаг 3 из 6: Материалы</b>\n\n"
             "🟡 Выбери папку с материалом для рассылки.\n\n"
             "💡 <i>Материал будет отправлен получателям по кнопке 'Материалы'.</i>",
             parse_mode="HTML",
@@ -281,7 +282,7 @@ async def callback_finish_photos(callback: CallbackQuery, state: FSMContext, ses
         if not folders:
             await callback.message.edit_text(
                 "✉️<b>РЕДАКТОР РАССЫЛКИ</b>✉️\n\n"
-                "📝 <b>Шаг 3 из 5: Материалы</b>\n\n"
+                "📝 <b>Шаг 3 из 6: Материалы</b>\n\n"
                 "📚 В базе знаний пока нет материалов.\n"
                 "Сначала создай папки и материалы в разделе 'База знаний'.\n\n"
                 "Переходим к выбору теста...",
@@ -293,7 +294,7 @@ async def callback_finish_photos(callback: CallbackQuery, state: FSMContext, ses
         
         await callback.message.edit_text(
             "✉️<b>РЕДАКТОР РАССЫЛКИ</b>✉️\n\n"
-            "📝 <b>Шаг 3 из 5: Материалы</b>\n\n"
+            "📝 <b>Шаг 3 из 6: Материалы</b>\n\n"
             f"✅ Загружено: фото {len(photos)}, документов {len(docs)}\n\n"
             "🟡 Выбери папку с материалом для рассылки.\n\n"
             "💡 <i>Материал будет отправлен получателям по кнопке 'Материалы'.</i>",
@@ -316,18 +317,18 @@ async def show_test_selection(callback: CallbackQuery, state: FSMContext, sessio
     if not tests:
         await callback.message.edit_text(
             "✉️<b>РЕДАКТОР РАССЫЛКИ</b>✉️\n\n"
-            "📝 <b>Шаг 4 из 5: Тест</b>\n\n"
+            "📝 <b>Шаг 4 из 6: Тест</b>\n\n"
             "❌ В системе пока нет созданных тестов.\n\n"
-            "Переходим к выбору групп...",
+            "Переходим к выбору ролей...",
             parse_mode="HTML"
         )
-        # Переходим сразу к выбору групп
-        await show_groups_selection(callback, state, session)
+        # Переходим сразу к выбору ролей
+        await show_roles_selection(callback, state, session)
         return
     
     await callback.message.edit_text(
         "✉️<b>РЕДАКТОР РАССЫЛКИ</b>✉️\n\n"
-        "📝 <b>Шаг 4 из 5: Тест</b>\n\n"
+        "📝 <b>Шаг 4 из 6: Тест</b>\n\n"
         "🟡 Выбери тест для рассылки (опционально).\n\n"
         "💡 <i>Если выберешь тест, получатели смогут перейти к нему по кнопке.</i>",
         parse_mode="HTML",
@@ -337,11 +338,26 @@ async def show_test_selection(callback: CallbackQuery, state: FSMContext, sessio
     await state.set_state(BroadcastStates.selecting_test)
 
 
+async def show_roles_selection(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Вспомогательная функция показа выбора ролей"""
+    await callback.message.edit_text(
+        "✉️<b>РЕДАКТОР РАССЫЛКИ</b>✉️\n\n"
+        "📝 <b>Шаг 5 из 6: Выбор ролей</b>\n\n"
+        "🟡 Выбери роли, которым отправить рассылку:\n\n"
+        "💡 <i>Можно выбрать несколько ролей или отправить всем</i>",
+        parse_mode="HTML",
+        reply_markup=get_broadcast_roles_selection_keyboard([])
+    )
+    await state.update_data(selected_roles=[])
+    await state.set_state(BroadcastStates.selecting_roles)
+
+
 async def show_groups_selection(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Вспомогательная функция показа выбора групп"""
     data = await state.get_data()
     selected_test_id = data.get("selected_test_id")
     broadcast_material_id = data.get("broadcast_material_id")
+    selected_roles = data.get("selected_roles", [])
     
     # Получаем все группы
     groups = await get_all_groups(session)
@@ -358,7 +374,7 @@ async def show_groups_selection(callback: CallbackQuery, state: FSMContext, sess
         return
     
     # Формируем информацию о рассылке
-    info_lines = ["✉️<b>РЕДАКТОР РАССЫЛКИ</b>✉️\n\n", "📝 <b>Шаг 5 из 5: Выбор групп</b>\n\n"]
+    info_lines = ["✉️<b>РЕДАКТОР РАССЫЛКИ</b>✉️\n\n", "📝 <b>Шаг 6 из 6: Выбор групп</b>\n\n"]
     
     # Добавляем информацию о тесте (если есть)
     if selected_test_id:
@@ -371,6 +387,18 @@ async def show_groups_selection(callback: CallbackQuery, state: FSMContext, sess
         material = await get_knowledge_material_by_id(session, broadcast_material_id)
         if material:
             info_lines.append(f"🟢 <b>Материал:</b> {material.name}\n")
+    
+    # Добавляем информацию о ролях
+    if selected_roles:
+        role_names = {
+            "trainee": "Стажер",
+            "employee": "Сотрудник",
+            "mentor": "Наставник",
+            "recruiter": "Рекрутер",
+            "manager": "Руководитель"
+        }
+        selected_display = [role_names.get(r, r) for r in selected_roles]
+        info_lines.append(f"🟢 <b>Роли:</b> {', '.join(selected_display)}\n")
     
     info_lines.append("\n🟡 <b>Выбери группы для рассылки👇</b>")
     
@@ -558,8 +586,8 @@ async def callback_select_broadcast_test(callback: CallbackQuery, state: FSMCont
         # Сохраняем выбранный тест
         await state.update_data(selected_test_id=test_id)
         
-        # Переходим к выбору групп
-        await show_groups_selection(callback, state, session)
+        # Переходим к выбору ролей
+        await show_roles_selection(callback, state, session)
         
         log_user_action(callback.from_user.id, "broadcast_test_selected", f"Выбран тест для рассылки: {test.name}")
         
@@ -574,14 +602,141 @@ async def callback_skip_test(callback: CallbackQuery, state: FSMContext, session
     try:
         await callback.answer()
         
-        # Переходим к выбору групп
-        await show_groups_selection(callback, state, session)
+        # Переходим к выбору ролей
+        await show_roles_selection(callback, state, session)
         
         log_user_action(callback.from_user.id, "broadcast_test_skipped", "Тест пропущен")
         
     except Exception as e:
         await callback.message.edit_text("Произошла ошибка")
         log_user_error(callback.from_user.id, "skip_test_error", str(e))
+
+
+@router.callback_query(F.data.startswith("broadcast_role:"), BroadcastStates.selecting_roles)
+async def callback_toggle_broadcast_role(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Выбор/отмена роли для рассылки"""
+    try:
+        await callback.answer()
+        
+        role_key = callback.data.split(":")[1]
+        
+        # Получаем текущие выбранные роли
+        data = await state.get_data()
+        selected_roles = data.get("selected_roles", [])
+        
+        # Переключаем роль
+        if role_key in selected_roles:
+            selected_roles.remove(role_key)
+        else:
+            selected_roles.append(role_key)
+        
+        await state.update_data(selected_roles=selected_roles)
+        
+        # Обновляем клавиатуру
+        role_names = {
+            "trainee": "Стажер",
+            "employee": "Сотрудник", 
+            "mentor": "Наставник",
+            "recruiter": "Рекрутер",
+            "manager": "Руководитель"
+        }
+        selected_display = [role_names[r] for r in selected_roles]
+        
+        info_text = (
+            "✉️<b>РЕДАКТОР РАССЫЛКИ</b>✉️\n\n"
+            "📝 <b>Шаг 5 из 6: Выбор ролей</b>\n\n"
+            "🟡 Выбери роли, которым отправить рассылку:\n\n"
+        )
+        
+        if selected_roles:
+            info_text += f"✅ Выбрано: {', '.join(selected_display)}\n\n"
+        else:
+            info_text += "⚠️ Не выбрано ни одной роли\n\n"
+        
+        info_text += "💡 <i>Можно выбрать несколько ролей или отправить всем</i>"
+        
+        await callback.message.edit_text(
+            info_text,
+            parse_mode="HTML",
+            reply_markup=get_broadcast_roles_selection_keyboard(selected_roles)
+        )
+        
+    except Exception as e:
+        await callback.message.edit_text("Произошла ошибка при выборе роли")
+        log_user_error(callback.from_user.id, "broadcast_role_toggle_error", str(e))
+
+
+@router.callback_query(F.data == "broadcast_roles_all", BroadcastStates.selecting_roles)
+async def callback_select_all_roles(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Переключить все роли (выбрать все / снять все)"""
+    try:
+        data = await state.get_data()
+        current_roles = data.get("selected_roles", [])
+        all_roles = ["trainee", "employee", "mentor", "recruiter", "manager"]
+        
+        # TOGGLE: Если все выбраны → снять все, иначе → выбрать все
+        if set(current_roles) == set(all_roles):
+            # Снять все
+            await callback.answer("Сняты все роли")
+            await state.update_data(selected_roles=[])
+            
+            info_text = (
+                "✉️<b>РЕДАКТОР РАССЫЛКИ</b>✉️\n\n"
+                "📝 <b>Шаг 5 из 6: Выбор ролей</b>\n\n"
+                "🟡 Выбери роли, которым отправить рассылку:\n\n"
+                "⚠️ Не выбрано ни одной роли\n\n"
+                "💡 <i>Можно выбрать несколько ролей или отправить всем</i>"
+            )
+            
+            await callback.message.edit_text(
+                info_text,
+                parse_mode="HTML",
+                reply_markup=get_broadcast_roles_selection_keyboard([])
+            )
+        else:
+            # Выбрать все
+            await callback.answer("Выбраны все роли")
+            await state.update_data(selected_roles=all_roles)
+            
+            info_text = (
+                "✉️<b>РЕДАКТОР РАССЫЛКИ</b>✉️\n\n"
+                "📝 <b>Шаг 5 из 6: Выбор ролей</b>\n\n"
+                "✅ Выбраны все роли: Стажер, Сотрудник, Наставник, Рекрутер, Руководитель\n\n"
+                "💡 <i>Рассылка будет отправлена всем пользователям выбранных групп</i>"
+            )
+            
+            await callback.message.edit_text(
+                info_text,
+                parse_mode="HTML",
+                reply_markup=get_broadcast_roles_selection_keyboard(all_roles)
+            )
+        
+    except Exception as e:
+        await callback.message.edit_text("Произошла ошибка")
+        log_user_error(callback.from_user.id, "broadcast_roles_all_error", str(e))
+
+
+@router.callback_query(F.data == "broadcast_roles_next", BroadcastStates.selecting_roles)
+async def callback_proceed_to_groups(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Переход к выбору групп после выбора ролей"""
+    try:
+        data = await state.get_data()
+        selected_roles = data.get("selected_roles", [])
+        
+        if not selected_roles:
+            await callback.answer("⚠️ Выбери хотя бы одну роль", show_alert=True)
+            return
+        
+        await callback.answer()
+        
+        # Переходим к выбору групп
+        await show_groups_selection(callback, state, session)
+        
+        log_user_action(callback.from_user.id, "broadcast_roles_selected", f"Выбраны роли: {', '.join(selected_roles)}")
+        
+    except Exception as e:
+        await callback.message.edit_text("Произошла ошибка")
+        log_user_error(callback.from_user.id, "broadcast_proceed_groups_error", str(e))
 
 
 @router.callback_query(F.data.startswith("broadcast_group:"), BroadcastStates.selecting_groups)
@@ -681,6 +836,7 @@ async def callback_send_broadcast(callback: CallbackQuery, state: FSMContext, se
         broadcast_material_id = data.get("broadcast_material_id")
         selected_test_id = data.get("selected_test_id")
         selected_groups = data.get("selected_groups", [])
+        selected_roles = data.get("selected_roles", [])
         broadcast_docs = data.get("broadcast_docs", [])
         
         # Проверяем обязательные поля
@@ -700,6 +856,18 @@ async def callback_send_broadcast(callback: CallbackQuery, state: FSMContext, se
             await callback.message.edit_text("❌ У тебя нет прав для массовой рассылки.")
             return
         
+        # Преобразуем ключи ролей в названия для БД
+        target_role_names = None
+        if selected_roles:
+            role_mapping = {
+                "trainee": "Стажер",
+                "employee": "Сотрудник",
+                "mentor": "Наставник",
+                "recruiter": "Рекрутер",
+                "manager": "Руководитель"
+            }
+            target_role_names = [role_mapping[r] for r in selected_roles]
+        
         # Выполняем массовую рассылку с новыми параметрами
         result = await broadcast_test_to_groups(
             session=session,
@@ -710,7 +878,8 @@ async def callback_send_broadcast(callback: CallbackQuery, state: FSMContext, se
             broadcast_script=broadcast_script,
             broadcast_photos=broadcast_photos,
             broadcast_material_id=broadcast_material_id,
-            broadcast_docs=broadcast_docs
+            broadcast_docs=broadcast_docs,
+            target_roles=target_role_names
         )
         
         if not result["success"]:

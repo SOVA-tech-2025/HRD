@@ -1,4 +1,5 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
 def get_welcome_keyboard() -> InlineKeyboardMarkup:
@@ -566,6 +567,51 @@ def get_broadcast_main_menu_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_broadcast_roles_selection_keyboard(selected_roles: list = None) -> InlineKeyboardMarkup:
+    """Клавиатура выбора ролей для рассылки"""
+    if selected_roles is None:
+        selected_roles = []
+    
+    roles = [
+        ("Стажер", "trainee"),
+        ("Сотрудник", "employee"),
+        ("Наставник", "mentor"),
+        ("Рекрутер", "recruiter"),
+        ("Руководитель", "manager")
+    ]
+    
+    keyboard = InlineKeyboardBuilder()
+    
+    for role_display, role_key in roles:
+        checkmark = "✅ " if role_key in selected_roles else ""
+        keyboard.button(
+            text=f"{checkmark}{role_display}",
+            callback_data=f"broadcast_role:{role_key}"
+        )
+    
+    keyboard.adjust(2)  # 2 кнопки в ряд
+    
+    # Кнопки управления
+    if selected_roles:
+        keyboard.row(
+            InlineKeyboardButton(text="➡️ Далее", callback_data="broadcast_roles_next")
+        )
+    
+    # Динамический текст кнопки "Все роли" / "Снять все"
+    all_roles_set = {"trainee", "employee", "mentor", "recruiter", "manager"}
+    if set(selected_roles) == all_roles_set:
+        all_button_text = "❌ Снять все"
+    else:
+        all_button_text = "🌐 Все роли"
+    
+    keyboard.row(
+        InlineKeyboardButton(text=all_button_text, callback_data="broadcast_roles_all"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")
+    )
+    
+    return keyboard.as_markup()
 
 
 def get_question_edit_keyboard(question_id: int) -> InlineKeyboardMarkup:
